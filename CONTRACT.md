@@ -89,13 +89,30 @@ pmtools status --strict   # exit 1 if any marker is STALE (else 0)
 
 ---
 
-## `claim` / `preflight`
+## `preflight` (fleet-only) — ported (JS)
 
-Fleet-only; specified when extracted (Plan A6). Seeded from the lccjs
-`scripts/claim.js` / `scripts/preflight.js`. Parameterized paths:
+`preflight <issue> [--scratch-dir <dir>] [--evidence-dir <dir> ...]`
 
-- scratch timestamps: `<scratchDir>/preflight-<issue>.iso` (default `~/.pmtools/<repo>/`).
+Seeded from lccjs `scripts/preflight.js`, with the two lccjs-specific paths
+parameterized:
+
+- scratch timestamps: `<scratchDir>/preflight-<issue>.iso`
+  (default `~/.pmtools/<repo>/`, where `<repo>` = basename of the git toplevel).
 - evidence scan dirs: `<evidenceDirs>` (default `["docs/logs","docs/research"]`).
 
-Python ports of `claim`/`preflight` are intentionally **deferred** until a
-Python project actually runs the fleet workflow (YAGNI).
+Steps: (1) stamp `started_iso` to the scratch file; (2) start-of-task reads
+(`git status`, `git worktree list`, `gh issue view`); (2.5) surface in-repo
+evidence `<dir>/<N>-*` for every referenced `#N` (match anchored to the `<N>-`
+basename prefix); (3) assert the issue is OPEN — exit 1 otherwise, warn-and-proceed
+when `gh` is offline. Pure functions `preflightIssueGate` / `preflightEvidence`
+are unit-tested.
+
+## `claim` (fleet-only) — DEFERRED
+
+`claim` (lccjs `scripts/claim.js`, ~870 lines: agent-identity precedence,
+session sentinels, worktree race-safety) is **not yet centralized here**. It is
+fleet-only, lccjs already runs it via its `npm run claim` shim, and there is no
+second fleet project consuming it. Centralize it (with a fixture-backed spec for
+its pure parts) when a second project actually adopts the parallel-worktree
+workflow — copying 870 untested lines ahead of a consumer would be cargo. Python
+ports of `claim`/`preflight` are likewise deferred until a Python project goes fleet.

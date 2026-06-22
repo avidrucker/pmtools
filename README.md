@@ -14,8 +14,8 @@ Centralized, project-agnostic project-management helpers for the
 | Command | Tier | Ports |
 |---|---|---|
 | `status` | solo-relevant | py + js |
-| `claim` | fleet-only | js (Python deferred) |
 | `preflight` | fleet-only | js (Python deferred) |
+| `claim` | fleet-only | deferred — stays in lccjs until a 2nd fleet project needs it (see CONTRACT.md) |
 
 ## Use from a project
 
