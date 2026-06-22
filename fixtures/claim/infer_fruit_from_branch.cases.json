@@ -1,0 +1,9 @@
+[
+  { "name": "extracts fruit from a canonical worktree branch", "args": ["cherry/issue-180-some-slug"], "expected": "cherry" },
+  { "name": "extracts fruit when branch has no slug tail", "args": ["apple/issue-99"], "expected": "apple" },
+  { "name": "returns null for main", "args": ["main"], "expected": null },
+  { "name": "returns null for a feature branch without issue-N", "args": ["feature/some-thing"], "expected": null },
+  { "name": "returns null for null", "args": [null], "expected": null },
+  { "name": "returns null for empty string", "args": [""], "expected": null },
+  { "name": "rejects an uppercase fruit prefix (regex is [a-z]+)", "args": ["Cherry/issue-1"], "expected": null }
+]

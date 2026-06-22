@@ -1,0 +1,14 @@
+[
+  { "name": "encodes issue, branch, pid and stamp",
+    "args": [1038, "fig/issue-1038-x", 4242, "2026-06-07T00:00:00.000Z.123456789"],
+    "expected": "claim issue-1038 fig/issue-1038-x pid=4242 2026-06-07T00:00:00.000Z.123456789" },
+  { "name": "distinct pid → distinct message (process A)",
+    "args": [1038, "fig/issue-1038-x", 100, "2026-06-07T00:00:00.000Z.1"],
+    "expected": "claim issue-1038 fig/issue-1038-x pid=100 2026-06-07T00:00:00.000Z.1" },
+  { "name": "distinct pid → distinct message (process B)",
+    "args": [1038, "fig/issue-1038-x", 200, "2026-06-07T00:00:00.000Z.1"],
+    "expected": "claim issue-1038 fig/issue-1038-x pid=200 2026-06-07T00:00:00.000Z.1" },
+  { "name": "distinct stamp → distinct message (same pid)",
+    "args": [1038, "fig/issue-1038-x", 100, "2026-06-07T00:00:00.000Z.222"],
+    "expected": "claim issue-1038 fig/issue-1038-x pid=100 2026-06-07T00:00:00.000Z.222" }
+]

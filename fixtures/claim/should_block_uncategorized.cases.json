@@ -1,0 +1,14 @@
+[
+  { "name": "an uncategorized-placeholder issue is blocked",
+    "args": [{ "labels": ["bug", "area:uncategorized"] }, false], "expected": true },
+  { "name": "an issue with no area:* label at all is blocked",
+    "args": [{ "labels": ["bug", "severity:medium"] }, false], "expected": true },
+  { "name": "a real area:* label is not blocked",
+    "args": [{ "labels": ["area:process", "bug"] }, false], "expected": false },
+  { "name": "a real area:* alongside the placeholder is still blocked",
+    "args": [{ "labels": ["area:process", "area:uncategorized"] }, false], "expected": true },
+  { "name": "--allow-uncategorized bypass short-circuits the block",
+    "args": [{ "labels": ["area:uncategorized"] }, true], "expected": false },
+  { "name": "null info (gh unavailable) is best-effort: never blocked",
+    "args": [null, false], "expected": false }
+]

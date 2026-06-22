@@ -1,0 +1,4 @@
+[
+  { "name": "returns <fruit>/session for apple", "args": ["apple"], "expected": "apple/session" },
+  { "name": "returns <fruit>/session for dragonfruit", "args": ["dragonfruit"], "expected": "dragonfruit/session" }
+]

@@ -1,0 +1,12 @@
+[
+  { "name": "--dry-run with existing worktree: guard does not block",
+    "args": [{ "branch": "apple/issue-42-foo", "fruit": "apple", "issue": 42 }, { "dryRun": true, "force": false }], "expected": false },
+  { "name": "--force with existing worktree: guard does not block",
+    "args": [{ "branch": "apple/issue-42-foo", "fruit": "apple", "issue": 42 }, { "dryRun": false, "force": true }], "expected": false },
+  { "name": "neither flag set with existing worktree: guard blocks",
+    "args": [{ "branch": "apple/issue-42-foo", "fruit": "apple", "issue": 42 }, { "dryRun": false, "force": false }], "expected": true },
+  { "name": "null existingWt: guard never blocks regardless of flags",
+    "args": [null, { "dryRun": false, "force": false }], "expected": false },
+  { "name": "both --dry-run and --force set: guard does not block",
+    "args": [{ "branch": "apple/issue-42-foo", "fruit": "apple", "issue": 42 }, { "dryRun": true, "force": true }], "expected": false }
+]

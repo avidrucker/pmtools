@@ -1,0 +1,13 @@
+[
+  { "name": "warns when the issue carries area:uncategorized",
+    "args": [["bug", "area:uncategorized"]], "expected": true },
+  { "name": "warns when the issue has no area:* label at all",
+    "args": [["bug", "severity:medium"]], "expected": true },
+  { "name": "warns when the label set is empty", "args": [[]], "expected": true },
+  { "name": "does NOT warn when a real area label is present",
+    "args": [["area:process", "bug"]], "expected": false },
+  { "name": "still warns when area:uncategorized sits alongside a real area label",
+    "args": [["area:process", "area:uncategorized"]], "expected": true },
+  { "name": "non-array (gh offline) is best-effort: no warning (null)",
+    "args": [null], "expected": false }
+]

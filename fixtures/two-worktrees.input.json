@@ -1,0 +1,14 @@
+{
+  "grep": [
+    { "file": "src/a.py", "line": 5, "keyword": "@todo", "issue": 200 },
+    { "file": "src/b.py", "line": 12, "keyword": "@todo", "issue": 201 }
+  ],
+  "worktrees": [
+    { "branch": "apple/issue-200-foo", "issue": 200, "agent": "apple" },
+    { "branch": "banana/issue-201-bar", "issue": 201, "agent": "banana" }
+  ],
+  "issues": [
+    { "number": 200, "state": "OPEN" },
+    { "number": 201, "state": "OPEN" }
+  ]
+}

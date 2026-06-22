@@ -1,0 +1,22 @@
+[
+  { "name": "extracts issue from a canonical worktree branch",
+    "args": [[{ "branch": "apple/issue-637-closing-comment", "fruit": "apple" }]],
+    "expected": [{ "branch": "apple/issue-637-closing-comment", "fruit": "apple", "issue": 637 }] },
+  { "name": "skips main branch (no /issue-N pattern)",
+    "args": [[{ "branch": "main", "fruit": null }]], "expected": [] },
+  { "name": "skips session sentinel branches",
+    "args": [[{ "branch": "apple/session", "fruit": "apple" }]], "expected": [] },
+  { "name": "handles mixed entries — returns only those with issue patterns",
+    "args": [[
+      { "branch": "main", "fruit": null },
+      { "branch": "banana/issue-123-some-work", "fruit": "banana" },
+      { "branch": "cherry/session", "fruit": "cherry" },
+      { "branch": "apple/issue-42-fix-thing", "fruit": "apple" }
+    ]],
+    "expected": [
+      { "branch": "banana/issue-123-some-work", "fruit": "banana", "issue": 123 },
+      { "branch": "apple/issue-42-fix-thing", "fruit": "apple", "issue": 42 }
+    ] },
+  { "name": "returns empty array for empty input", "args": [[]], "expected": [] },
+  { "name": "returns empty array for null input", "args": [null], "expected": [] }
+]

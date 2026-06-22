@@ -1,0 +1,12 @@
+[
+  { "name": "a local main base behind origin/main is flagged stale",
+    "args": ["main", 3], "expected": { "checksRemote": true, "behind": 3, "stale": true } },
+  { "name": "a local main base level with origin/main is fresh",
+    "args": ["main", 0], "expected": { "checksRemote": true, "behind": 0, "stale": false } },
+  { "name": "an explicit origin/* base is never flagged",
+    "args": ["origin/main", 5], "expected": { "checksRemote": false, "behind": 5, "stale": false } },
+  { "name": "a non-main base is not checked",
+    "args": ["some-tag", 2], "expected": { "checksRemote": false, "behind": 2, "stale": false } },
+  { "name": "refs/heads/main is also treated as the checked base",
+    "args": ["refs/heads/main", 1], "expected": { "checksRemote": true, "behind": 1, "stale": true } }
+]

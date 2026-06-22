@@ -1,0 +1,10 @@
+{
+  "grep": [
+    { "file": "src/x.py", "line": 3, "keyword": "@todo", "issue": 300 },
+    { "file": "docs/notes.md", "line": 88, "keyword": "@inprogress", "issue": 300 }
+  ],
+  "worktrees": [],
+  "issues": [
+    { "number": 300, "state": "OPEN" }
+  ]
+}

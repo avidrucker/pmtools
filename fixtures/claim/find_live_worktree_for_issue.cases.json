@@ -1,0 +1,21 @@
+[
+  { "name": "returns null for empty entries", "args": [[], 42], "expected": null },
+  { "name": "returns null when issue not present",
+    "args": [[{ "branch": "apple/issue-99-foo", "fruit": "apple", "issue": 99 }], 42], "expected": null },
+  { "name": "returns the entry when issue matches",
+    "args": [[{ "branch": "apple/issue-42-foo", "fruit": "apple", "issue": 42 }], 42],
+    "expected": { "branch": "apple/issue-42-foo", "fruit": "apple", "issue": 42 } },
+  { "name": "returns first match when multiple entries share the issue number",
+    "args": [[
+      { "branch": "apple/issue-42-a", "fruit": "apple", "issue": 42 },
+      { "branch": "banana/issue-42-b", "fruit": "banana", "issue": 42 }
+    ], 42],
+    "expected": { "branch": "apple/issue-42-a", "fruit": "apple", "issue": 42 } },
+  { "name": "non-matching entries do not interfere",
+    "args": [[
+      { "branch": "apple/issue-1-a", "fruit": "apple", "issue": 1 },
+      { "branch": "banana/issue-42-b", "fruit": "banana", "issue": 42 },
+      { "branch": "cherry/issue-99-c", "fruit": "cherry", "issue": 99 }
+    ], 42],
+    "expected": { "branch": "banana/issue-42-b", "fruit": "banana", "issue": 42 } }
+]
