@@ -1,0 +1,12 @@
+{
+  "markers": [
+    { "issue": 179, "file": "src/a.py", "line": 42, "keyword": "@todo", "state": "CLOSED", "worktree": null, "status": "STALE" },
+    { "issue": 180, "file": "src/b.py", "line": 10, "keyword": "@todo", "state": "OPEN", "worktree": "apple", "status": "CLAIMED" },
+    { "issue": 181, "file": "src/c.py", "line": 7, "keyword": "@inprogress", "state": "OPEN", "worktree": null, "status": "STALE" },
+    { "issue": 182, "file": "src/d.py", "line": 99, "keyword": "@todo", "state": "UNKNOWN", "worktree": null, "status": "IDLE" }
+  ],
+  "stale": [
+    { "issue": 179, "file": "src/a.py", "line": 42, "keyword": "@todo", "state": "CLOSED", "worktree": null, "status": "STALE" },
+    { "issue": 181, "file": "src/c.py", "line": 7, "keyword": "@inprogress", "state": "OPEN", "worktree": null, "status": "STALE" }
+  ]
+}
