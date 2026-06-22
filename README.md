@@ -14,8 +14,8 @@ Centralized, project-agnostic project-management helpers for the
 | Command | Tier | Ports |
 |---|---|---|
 | `status` | solo-relevant | py + js |
-| `preflight` | fleet-only | js (Python deferred) |
-| `claim` | fleet-only | deferred — stays in lccjs until a 2nd fleet project needs it (see CONTRACT.md) |
+| `preflight` | fleet-only | py + js |
+| `claim` | fleet-only | py + js (lccjs-isms parameterized: `--worktree-dir`, `--roster`, `--lane-check` (off by default), `--copy-env`) |
 
 ## Use from a project
 
@@ -31,11 +31,22 @@ thin `npm run` shims for back-compat (see its `enrichment.*Command`).
 ## Run the tests
 
 ```bash
-python3 -m unittest discover -s py   # Python port vs fixtures (stdlib only, no pip install)
-node --test 'js/*.test.js'           # Node port vs the SAME fixtures
+./run-tests.sh                       # all stages: py unittest + node:test + integration
 ```
 
-Both ports consume `fixtures/*.input.json` and must produce `fixtures/*.expected.json`.
+`run-tests.sh` runs three stages and exits non-zero if any fails:
+
+```bash
+python3 -m unittest discover -s py   # 1. Python port vs fixtures (stdlib only, no pip install)
+node --test 'js/*.test.js'           # 2. Node port vs the SAME fixtures
+bash tests/integration.sh            # 3. impure claim/status/preflight CLIs (py + js) vs temp git repos
+```
+
+The pure ports consume `fixtures/*.input.json` and must produce
+`fixtures/*.expected.json`. The integration stage exercises the impure CLIs
+(real `git worktree add`, real `refs/claims/*` push to a local bare `origin`,
+lane-gate on/off, CLOSED guard, `--worktree-dir` parameterization) against
+throwaway repos.
 
 ## Parity rule
 
