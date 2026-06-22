@@ -32,7 +32,7 @@ thin `npm run` shims for back-compat (see its `enrichment.*Command`).
 
 ```bash
 python3 -m unittest discover -s py   # Python port vs fixtures (stdlib only, no pip install)
-node --test js                       # Node port vs the SAME fixtures
+node --test 'js/*.test.js'           # Node port vs the SAME fixtures
 ```
 
 Both ports consume `fixtures/*.input.json` and must produce `fixtures/*.expected.json`.
