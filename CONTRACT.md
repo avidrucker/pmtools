@@ -15,9 +15,11 @@ source of truth; `fixtures/` are the golden cases every port is graded against.
 | `status [--strict] [--json]` | Reconcile `@todo`/`@inprogress` markers against worktrees + issue state | solo-relevant |
 | `claim <issue> [slug] --as <name> [--base <ref>] [--dry-run] [--lane-check] [--copy-env] [--worktree-dir D] [--roster a,b,c]` | Stake a worktree under an agent identity | fleet-only |
 | `preflight <issue>` | Stamp start time, run start-of-task reads, assert issue OPEN | fleet-only |
+| `close <issue> [--branch N] [--max N] [--dry-run] [--keep] [--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] [--worktree-dir D]` | Land the close commit on `origin/main`, then (and only then) tear down the worktree | fleet-only |
 
-`status` is specified in full below; `claim` and `preflight` are specified in
-their own sections (both now ported to py + js). See §claim / §preflight.
+`status` is specified in full below; `claim`, `preflight`, and `close` are
+specified in their own sections (all now ported to py + js). See §claim /
+§preflight / §close.
 
 ---
 
@@ -171,3 +173,90 @@ collision, or "no candidate succeeded").
 Feeds `buildClaimMessage` (format fixture-tested). Python uses
 `datetime.now(timezone.utc).isoformat()` + `time.monotonic_ns()` + `os.getpid()`;
 JS uses `new Date().toISOString()` + `process.hrtime.bigint()` + `process.pid`.
+
+## `close` (fleet-only) — ported (py + js)
+
+`close <issue> [flags]` lands the close commit on `origin/main` and, **only
+after** confirming it landed, tears down the worktree. The symmetric mirror of
+`claim`. Ported from lccjs `scripts/close.js`; the pure decision seams live in
+`close_core.{py,js}` (graded against `fixtures/close/*`), the impure
+orchestration in `close.{py,js}`. The two language ports are faithful twins.
+
+**Boundary:** `close` does NOT author the closing commit. The agent commits the
+marker deletion + `Closes #N` message FIRST; `close` owns only the racy push +
+the gated teardown — so it can never fabricate a close.
+
+### Flags
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--branch <name>` | current branch | Supply the `<fruit>/issue-N` branch when invoking from the main checkout; `close` then chdirs into `<root>/<worktreeDir>/<fruit>-issue-N`. |
+| `--max N` | `5` | Push-race retry budget (invalid → default). |
+| `--dry-run` | off | Print the `WOULD CLOSE` plan, change nothing, exit 0. |
+| `--keep` | off | Land the commit but do NOT tear down the worktree/branch. |
+| `--no-verify-issue` | off | Skip the post-close `gh issue close` fallback. |
+| `--skip-marker-check` | off | Skip the marker-deleted guard. |
+| `--skip-keyword-check` | off | Skip the Guard 2 issue-title keyword spot-check. |
+| `--skip-scope-audit` | off | Suppress the informational `git diff --stat` scope summary. |
+| `--worktree-dir <dir>` | `.claude/worktrees` | **Parameterized** (lccjs hardcoded it). Worktree parent dir, relative to main repo root. |
+
+### Pure seams (`close_core`, graded against `fixtures/close/*`)
+
+`classify_push_error` (`race`/`rejected-other`; race regexes checked first,
+unrecognized → `rejected-other`), `should_cleanup` (`onOriginMain === true`
+only), `claim_ref_delete_command` + `classify_claim_ref_delete`
+(`DELETED`/`ABSENT`/`WARN`, idempotent), `classify_rebase_conflict`
+(`none`/`union-only`/`blocking` — `unionFiles` defaults **EMPTY** in pmtools, so
+any conflict is `blocking`), `body_closes_issue` (GitHub close-keyword matcher),
+`extract_keywords` + `keywords_overlap` (+ `KEYWORD_STOP_SET` / `SHORT_TECH_WORDS`),
+`marker_still_present`, `scope_audit_diff_command`.
+
+### Guard / flow sequence (in `main()` order)
+
+1. `parseArgs`; pre-flight: branch must match `/issue-<N>` AND the given issue;
+   with `--branch`, chdir into the worktree.
+2. `findClosingCommitSha`: scan `origin/main..HEAD` for a `Closes #N` body.
+   Recovery path: if none, fetch + scan `origin/main -100` for an already-pushed
+   close; if the issue is non-OPEN, treat as a clean close (delete claim ref,
+   sync main, teardown).
+3. Scope audit (skippable, **informational**): `git fetch origin main`; diff
+   `merge-base..HEAD` (fallback `origin/main`).
+4. *velocity-row guard integrates once pmtools velocity lands (deferred — issue
+   tracked separately).*
+5. Guard 2 keyword check (skippable): closing subject vs `gh` issue title;
+   degrades gracefully offline.
+6. Marker-deleted guard (skippable): `git grep` for `@todo/@inprogress #N` over
+   **all tracked files** (language-agnostic — not just `*.js/*.ts`).
+7. No rebase/merge in progress; working tree clean.
+8. `--dry-run` → print the `WOULD CLOSE` plan, return.
+9. Land loop: up to `--max` rounds of `tryLand()` = fetch → `git rebase
+   origin/main` (any conflict → abort + die "resolve manually"; the commit is
+   safe/local) → `git push origin HEAD:main`. Exit 0 ⇒ `ok`; else
+   `classifyPushError` → retry `race`, abort `rejected-other`.
+10. Gate: `git fetch origin main`; `shouldCleanup({onOriginMain})` where
+    `onOriginMain` checks `git branch -r --contains <sha>` ⊇ `origin/main`. Not
+    on origin/main → die (refuse teardown).
+11. `deleteClaimRef` (best-effort, idempotent).
+12. Verify-issue (skippable): if `gh issue view N` still OPEN → `gh issue close`.
+13. Teardown (unless `--keep`): chdir to main root; `git pull --ff-only origin
+    main`; `git worktree remove` + `git branch -D` + `git worktree prune`. Run
+    synchronously (no detached-subprocess trick needed; there is no npm getcwd
+    bug to dodge), but always chdir to root first.
+
+### Exit codes
+
+`0` on success (close, recovery clean-close, dry-run, or `--keep`). `1` on any
+`die`: not a worktree branch / wrong issue, missing worktree under `--branch`,
+no `Closes #N` commit, blocking rebase conflict, `rejected-other` push,
+exhausted `--max` race retries, the on-origin-main gate failing, marker still
+present, or keyword mismatch.
+
+### Deferred / omitted (lccjs-specific, intentionally NOT ported)
+
+The velocity CSV/SQLite guards (`checkVelocityTicketMatch`,
+`checkVelocityRowExists`, the CSV-diff parsers, `better-sqlite3`), the
+learnings-README conflict resolver (`isReadmeLearningsConflict` /
+`resolveReadmeConflict`), union-file auto-resolve, and the parent-tracker scan
+(`scanParentTrackers`). Consequently `unionFiles` defaults EMPTY and **any**
+rebase conflict is `blocking`. The velocity-row guard re-integrates once
+`pmtools velocity` lands (tracked separately).

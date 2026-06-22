@@ -14,6 +14,8 @@ PY_STATUS="$PMTOOLS_ROOT/py/status.py"
 JS_STATUS="$PMTOOLS_ROOT/js/status.js"
 PY_PREFLIGHT="$PMTOOLS_ROOT/py/preflight.py"
 JS_PREFLIGHT="$PMTOOLS_ROOT/js/preflight.js"
+PY_CLOSE="$PMTOOLS_ROOT/py/close.py"
+JS_CLOSE="$PMTOOLS_ROOT/js/close.js"
 
 FAILS=0
 PASSES=0
@@ -73,7 +75,30 @@ state="$1"
 labels='$2'
 case "\$*" in
   *"issue view"*"-q .state"*) echo "\$state" ;;
+  *"issue view"*"-q .title"*) echo "Test issue widget keyword" ;;
   *"issue view"*"--json"*) printf '{"number":1,"title":"Test issue","state":"%s","body":"b","comments":[],"labels":%s}\n' "\$state" "\$labels" ;;
+  *"issue close"*) echo "closed" ;;
+  *) exit 1 ;;
+esac
+EOF
+  chmod +x "$d/gh"
+  echo "$d"
+}
+
+# A fake gh whose issue title shares the keyword "widget" with the close commit
+# subject (so Guard 2 keyword-overlap passes), reporting a chosen state.
+make_fake_gh_titled() { # <state> <title>
+  local d="$TMPROOT/fakeghT.$RANDOM"
+  mkdir -p "$d"
+  cat > "$d/gh" <<EOF
+#!/usr/bin/env bash
+state="$1"
+title="$2"
+case "\$*" in
+  *"issue view"*"-q .state"*) echo "\$state" ;;
+  *"issue view"*"-q .title"*) echo "\$title" ;;
+  *"issue view"*"--json"*) printf '{"number":1,"title":"%s","state":"%s","body":"b","comments":[],"labels":[]}\n' "\$title" "\$state" ;;
+  *"issue close"*) echo "closed" ;;
   *) exit 1 ;;
 esac
 EOF
@@ -156,6 +181,69 @@ run_claim_suite() {
 
 run_claim_suite "py" python3 "$PY_CLAIM"
 run_claim_suite "js" node "$JS_CLAIM"
+
+# ---------------------------------------------------------------------------
+# close battery for one runner: claim → commit a real `Closes #N` in the
+# worktree → close → assert it landed on origin/main, the worktree+branch are
+# gone, and refs/claims/issue-N was deleted on origin. Hermetic: local bare
+# origin + fake gh on PATH (title shares the "widget" keyword with the subject).
+# ---------------------------------------------------------------------------
+run_close_suite() {
+  # args: <lang> <claim-interp> <claim-script> <close-interp> <close-script>
+  local lang="$1" ci="$2" cs="$3" oi="$4" os="$5"
+  local -a CLAIM=("$ci" "$cs")
+  local -a CLOSE=("$oi" "$os")
+  echo "-- [$lang] close battery --"
+
+  local repo; repo="$(new_env)"
+  local o="$TMPROOT/closeout.$RANDOM"
+  local gh; gh="$(make_fake_gh_titled OPEN 'Fix the widget renderer')"
+  local N=21
+
+  # 1) claim the issue as apple (fake gh OPEN; share keyword via the title).
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" "$N" --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] close: claim $N as apple exit 0"
+  local wt="$repo/.claude/worktrees/apple-issue-$N"
+  assert_dir "$wt" "[$lang] close: worktree staked"
+
+  # 2) in the worktree, make a trivial source change + commit with a subject that
+  #    shares the keyword "widget" with the fake issue title, body `Closes #N`.
+  (
+    cd "$wt"
+    git config user.email tester@example.com
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'widget impl\n' > widget.txt
+    git add widget.txt
+    git commit -qm "feat: add widget renderer" -m "Closes #$N"
+  )
+
+  # 3) close it. From the main checkout, pass --branch so close chdirs into the wt.
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "apple/issue-$N" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] close: exit 0"
+  assert_contains "$o" "CLOSED" "[$lang] close: prints CLOSED banner"
+
+  # 4) the commit is on origin/main (check the bare origin's main ref directly).
+  if git --git-dir="$(dirname "$repo")/origin.git" log main --format=%s 2>/dev/null | grep -q "add widget renderer"; then
+    pass "[$lang] close: commit landed on origin/main"
+  else
+    fail "[$lang] close: commit landed on origin/main"; sed 's/^/      /' "$o"
+  fi
+
+  # 5) the worktree dir is gone and the branch is deleted.
+  if [ -d "$wt" ]; then fail "[$lang] close: worktree removed"; else pass "[$lang] close: worktree removed"; fi
+  assert_no_branch "$repo" "apple/issue-$N" "[$lang] close: branch apple/issue-$N deleted"
+
+  # 6) refs/claims/issue-N was deleted on origin.
+  if git -C "$repo" ls-remote origin 'refs/claims/*' 2>/dev/null | grep -q "refs/claims/issue-$N"; then
+    fail "[$lang] close: refs/claims/issue-$N deleted on origin (still present)"
+  else
+    pass "[$lang] close: refs/claims/issue-$N deleted on origin"
+  fi
+}
+
+run_close_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"
+run_close_suite "js" node "$JS_CLAIM" node "$JS_CLOSE"
 
 # ---------------------------------------------------------------------------
 # 6) Smoke: status --json valid JSON; preflight runs without crashing.

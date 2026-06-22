@@ -1,0 +1,14 @@
+[
+  { "name": "[deleted] → DELETED",
+    "args": [" - [deleted]         refs/claims/issue-1039"], "expected": "DELETED" },
+  { "name": "clean/empty exit → DELETED",
+    "args": [""], "expected": "DELETED" },
+  { "name": "null → DELETED",
+    "args": [null], "expected": "DELETED" },
+  { "name": "remote ref does not exist → ABSENT (idempotent)",
+    "args": ["error: unable to delete 'refs/claims/issue-1039': remote ref does not exist"], "expected": "ABSENT" },
+  { "name": "offline → WARN",
+    "args": ["fatal: Could not resolve host: github.com"], "expected": "WARN" },
+  { "name": "unrecognised output → WARN",
+    "args": ["some unrecognised git output"], "expected": "WARN" }
+]

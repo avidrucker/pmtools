@@ -1,0 +1,22 @@
+[
+  { "name": "cannot lock ref → race (the #200 incident signature)",
+    "args": ["! [remote rejected] HEAD -> main (cannot lock ref 'refs/heads/main': is at abc but expected def)"], "expected": "race" },
+  { "name": "non-fast-forward → race",
+    "args": ["! [rejected] HEAD -> main (non-fast-forward)"], "expected": "race" },
+  { "name": "fetch first → race",
+    "args": ["Updates were rejected because the remote contains work that you do not have locally.\n! [rejected] refs/heads/main -> main (fetch first)"], "expected": "race" },
+  { "name": "tip of your current branch is behind → race",
+    "args": ["error: failed to push some refs\nhint: tip of your current branch is behind its remote counterpart"], "expected": "race" },
+  { "name": "[rejected] without a more specific reason → race",
+    "args": ["! [rejected] HEAD -> main (some generic reason)"], "expected": "race" },
+  { "name": "pre-push hook block → rejected-other (PDD gate failure)",
+    "args": ["[pre-push] BLOCKED: PDD scan FAILED\nerror: failed to push some refs"], "expected": "rejected-other" },
+  { "name": "server-side protected branch → rejected-other",
+    "args": ["remote: error: GH006: Protected branch update failed for refs/heads/main"], "expected": "rejected-other" },
+  { "name": "authentication failure → rejected-other",
+    "args": ["error: Authentication failed for 'https://github.com/owner/repo.git'"], "expected": "rejected-other" },
+  { "name": "empty string → rejected-other (unrecognized; do not loop blindly)",
+    "args": [""], "expected": "rejected-other" },
+  { "name": "null → rejected-other (coerced to empty string)",
+    "args": [null], "expected": "rejected-other" }
+]

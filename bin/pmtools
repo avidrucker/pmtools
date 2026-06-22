@@ -5,7 +5,7 @@
 # anywhere and `pmtools` works from any cwd once this script is on PATH —
 # no hardcoded paths in any consumer config.
 #
-#   pmtools <status|claim|preflight> [--port py|js] [args...]
+#   pmtools <status|claim|preflight|close> [--port py|js] [args...]
 #
 # Clone root:  $PMTOOLS_HOME  >  self-resolved (this script's dir/..)
 # Port:        --port <py|js>  >  $PMTOOLS_PORT  >  py (default)
@@ -38,13 +38,13 @@ cmd="${args[0]:-}"
 rest=("${args[@]:1}")
 
 case "$cmd" in
-  status|claim|preflight) ;;
+  status|claim|preflight|close) ;;
   ""|-h|--help)
-    echo "usage: pmtools <status|claim|preflight> [--port py|js] [args...]"
+    echo "usage: pmtools <status|claim|preflight|close> [--port py|js] [args...]"
     echo "  clone root: \$PMTOOLS_HOME or self-resolved ($root)"
     echo "  port:       --port / \$PMTOOLS_PORT / py (current: $port)"
     exit 0 ;;
-  *) echo "pmtools: unknown command '$cmd' (expected status|claim|preflight)" >&2; exit 2 ;;
+  *) echo "pmtools: unknown command '$cmd' (expected status|claim|preflight|close)" >&2; exit 2 ;;
 esac
 
 case "$port" in

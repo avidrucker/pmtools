@@ -16,6 +16,7 @@ Centralized, project-agnostic project-management helpers for the
 | `status` | solo-relevant | py + js |
 | `preflight` | fleet-only | py + js |
 | `claim` | fleet-only | py + js (lccjs-isms parameterized: `--worktree-dir`, `--roster`, `--lane-check` (off by default), `--copy-env`) |
+| `close` | fleet-only | py + js (generic core only: racy push loop + gated teardown; `--worktree-dir` parameterized; velocity/learnings/tracker guards deferred) |
 
 ## Install (one-time) — `pmtools` on PATH
 
@@ -33,6 +34,7 @@ can live anywhere and you never hardcode its path. Now from any cwd:
 pmtools status --json
 pmtools claim 42 --as apple
 pmtools preflight 42
+pmtools close 42                  # from inside the worktree, after committing `Closes #42`
 pmtools status --port js          # force the Node port (default: py)
 ```
 

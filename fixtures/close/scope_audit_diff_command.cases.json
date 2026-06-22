@@ -1,0 +1,12 @@
+[
+  { "name": "a merge-base is available → diff merge-base..HEAD",
+    "args": ["abc1234"], "expected": "git diff --stat abc1234 HEAD" },
+  { "name": "trims surrounding whitespace/newline from the merge-base SHA",
+    "args": ["  abc1234\n"], "expected": "git diff --stat abc1234 HEAD" },
+  { "name": "empty merge-base → fall back to origin/main comparison",
+    "args": [""], "expected": "git diff --stat origin/main" },
+  { "name": "whitespace-only merge-base → fall back",
+    "args": ["   "], "expected": "git diff --stat origin/main" },
+  { "name": "null merge-base → fall back (never throws)",
+    "args": [null], "expected": "git diff --stat origin/main" }
+]

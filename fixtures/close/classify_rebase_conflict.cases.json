@@ -1,0 +1,15 @@
+[
+  { "name": "empty array → none", "args": [[]], "expected": "none" },
+  { "name": "null → none", "args": [null], "expected": "none" },
+  { "name": "a source file → blocking", "args": [["src/core/assembler.js"]], "expected": "blocking" },
+  { "name": "README.md → blocking", "args": [["README.md"]], "expected": "blocking" },
+  { "name": "two files → blocking", "args": [["docs/puzzle-velocity.csv", "README.md"]], "expected": "blocking" },
+  { "name": "any single conflict is blocking (union default EMPTY in pmtools)",
+    "args": [["docs/puzzle-clusters.csv"]], "expected": "blocking" },
+  { "name": "path strings are trimmed before comparison",
+    "args": [["  src/x.js  "]], "expected": "blocking" },
+  { "name": "custom unionFiles arg → union-only when all paths are in it",
+    "args": [["custom/log.csv"], ["custom/log.csv"]], "expected": "union-only" },
+  { "name": "custom unionFiles arg → blocking when a non-union path is present",
+    "args": [["custom/log.csv", "src/x.js"], ["custom/log.csv"]], "expected": "blocking" }
+]
