@@ -17,16 +17,44 @@ Centralized, project-agnostic project-management helpers for the
 | `preflight` | fleet-only | py + js |
 | `claim` | fleet-only | py + js (lccjs-isms parameterized: `--worktree-dir`, `--roster`, `--lane-check` (off by default), `--copy-env`) |
 
-## Use from a project
+## Install (one-time) — `pmtools` on PATH
 
-Clone this repo and point your project's `.claude/orchestrate.json` at it:
+Clone this repo **anywhere**, then put the self-locating dispatcher on your PATH:
 
-```json
-{ "pmtools": { "home": "~/code/pmtools", "port": "py" } }
+```bash
+./install.sh                 # symlinks bin/pmtools -> ~/.local/bin/pmtools
+# or pick another PATH dir:  ./install.sh /usr/local/bin
 ```
 
-The skill derives the enrichment commands as `<home>/<port>/<tool>`. lccjs keeps
-thin `npm run` shims for back-compat (see its `enrichment.*Command`).
+`bin/pmtools` resolves its **own** clone root (following the symlink), so the clone
+can live anywhere and you never hardcode its path. Now from any cwd:
+
+```bash
+pmtools status --json
+pmtools claim 42 --as apple
+pmtools preflight 42
+pmtools status --port js          # force the Node port (default: py)
+```
+
+- Clone root: `$PMTOOLS_HOME` if set, else self-resolved from the dispatcher's location.
+- Port: `--port py|js` > `$PMTOOLS_PORT` > `py`.
+
+## Use from a project
+
+Once `pmtools` is on PATH, a project's `.claude/orchestrate.json` needs **no path** —
+point enrichment at the dispatcher:
+
+```json
+{ "enrichment": {
+    "statusCommand": "pmtools status",
+    "claimCommand": "pmtools claim",
+    "preflightCommand": "pmtools preflight"
+} }
+```
+
+(If you don't install on PATH, the skill still derives `<pmtools.home>/<port>/<tool>`
+from config, and lccjs keeps thin `npm run` shims — but PATH install is the
+zero-hardcoded-path option.)
 
 ## Run the tests
 

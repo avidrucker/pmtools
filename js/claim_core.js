@@ -243,7 +243,7 @@ function buildBannerLines(fruit, branch, wtPath, base, mode, dry, commentCount, 
     lines.push('  next:');
     lines.push(`    cd ${short}`);
     lines.push(`    # (claim already flipped the ${todoKw} #N marker to ${inprogressKw} #N if one was found)`);
-    lines.push('    # reuse this identity for later worktrees:  npm run claim -- <issue> --as ' + fruit);
+    lines.push('    # reuse this identity for later worktrees:  pmtools claim <issue> --as ' + fruit);
   }
   lines.push(bar);
   lines.push(`CLAIM ${dry ? 'DRYRUN' : 'OK'} agent=${fruit} branch=${branch} path=${wtPath}`);

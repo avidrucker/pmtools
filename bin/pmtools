@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# pmtools — self-locating dispatcher.
+#
+# Resolves its OWN clone root (following symlinks), so the clone can live
+# anywhere and `pmtools` works from any cwd once this script is on PATH —
+# no hardcoded paths in any consumer config.
+#
+#   pmtools <status|claim|preflight> [--port py|js] [args...]
+#
+# Clone root:  $PMTOOLS_HOME  >  self-resolved (this script's dir/..)
+# Port:        --port <py|js>  >  $PMTOOLS_PORT  >  py (default)
+set -euo pipefail
+
+# Resolve this script's real path, following a chain of symlinks, without
+# depending on GNU `realpath` (portable to macOS too).
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+selfdir="$(cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd)"
+
+root="${PMTOOLS_HOME:-$(dirname "$selfdir")}"   # bin/.. == clone root
+port="${PMTOOLS_PORT:-py}"
+
+# Pull out the dispatcher-level --port flag wherever it appears; keep the rest
+# (command + the tool's own args) intact and in order.
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --port) port="${2:-}"; shift 2 ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+
+cmd="${args[0]:-}"
+rest=("${args[@]:1}")
+
+case "$cmd" in
+  status|claim|preflight) ;;
+  ""|-h|--help)
+    echo "usage: pmtools <status|claim|preflight> [--port py|js] [args...]"
+    echo "  clone root: \$PMTOOLS_HOME or self-resolved ($root)"
+    echo "  port:       --port / \$PMTOOLS_PORT / py (current: $port)"
+    exit 0 ;;
+  *) echo "pmtools: unknown command '$cmd' (expected status|claim|preflight)" >&2; exit 2 ;;
+esac
+
+case "$port" in
+  py) exec python3 "$root/py/$cmd.py" "${rest[@]}" ;;
+  js) exec node    "$root/js/$cmd.js" "${rest[@]}" ;;
+  *)  echo "pmtools: unknown port '$port' (expected py|js)" >&2; exit 2 ;;
+esac

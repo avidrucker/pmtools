@@ -379,7 +379,7 @@ def build_banner_lines(fruit, branch, wt_path, base, mode, dry,
         lines.append("  next:")
         lines.append("    cd {}".format(short))
         lines.append("    # (claim already flipped the {} #N marker to {} #N if one was found)".format(TODO_KW, INPROGRESS_KW))
-        lines.append("    # reuse this identity for later worktrees:  npm run claim -- <issue> --as " + fruit)
+        lines.append("    # reuse this identity for later worktrees:  pmtools claim <issue> --as " + fruit)
     lines.append(bar)
     lines.append("CLAIM {} agent={} branch={} path={}".format("DRYRUN" if dry else "OK", fruit, branch, wt_path))
     return lines
