@@ -18,6 +18,8 @@ PY_CLOSE="$PMTOOLS_ROOT/py/close.py"
 JS_CLOSE="$PMTOOLS_ROOT/js/close.js"
 PY_ERROR="$PMTOOLS_ROOT/py/error.py"
 PY_VELOCITY="$PMTOOLS_ROOT/py/velocity.py"
+JS_ERROR="$PMTOOLS_ROOT/js/error.js"
+JS_VELOCITY="$PMTOOLS_ROOT/js/velocity.js"
 
 FAILS=0
 PASSES=0
@@ -284,80 +286,124 @@ ghopen="$(make_fake_gh OPEN '[]')"
 assert_exit "$?" 0 "[py] preflight OPEN gate passes with gh=OPEN"
 
 # ---------------------------------------------------------------------------
-# storage battery (Python): error/velocity stores against a temp repo whose
-# .claude/orchestrate.json enables errors with a csvMirror and leaves velocity
-# disabled. SQLite is source of truth; CSV is a derived mirror. Uses the sqlite3
-# CLI for DB assertions. Confine the DB to the temp tree via --db-path so we
-# never touch ~/.pmtools.
+# storage battery for one runner (py | js): error/velocity stores against a temp
+# repo whose .claude/orchestrate.json enables errors with a csvMirror and leaves
+# velocity disabled. SQLite is the source of truth; CSV is a derived mirror. Uses
+# the sqlite3 CLI for DB assertions. Confine the DB to the temp tree via
+# --db-path so we never touch ~/.pmtools.
+#
+# args: <lang> <error-interp> <error-script> <velocity-interp> <velocity-script>
 # ---------------------------------------------------------------------------
-echo "-- [py] storage battery (error / velocity) --"
+run_storage_suite() {
+  local lang="$1" ei="$2" es="$3" vi="$4" vs="$5"
+  local -a ERR=("$ei" "$es")
+  local -a VEL=("$vi" "$vs")
+  echo "-- [$lang] storage battery (error / velocity) --"
 
-# A repo with errors ENABLED + csvMirror, velocity DISABLED.
-store_repo="$(new_env)"
-mkdir -p "$store_repo/.claude"
-cat > "$store_repo/.claude/orchestrate.json" <<'EOF'
+  # A repo with errors ENABLED + csvMirror, velocity DISABLED.
+  local store_repo; store_repo="$(new_env)"
+  mkdir -p "$store_repo/.claude"
+  cat > "$store_repo/.claude/orchestrate.json" <<'EOF'
 { "storage": {
     "dbPath": null,
     "errors":   { "enabled": true,  "csvMirror": "docs/errors.csv" },
     "velocity": { "enabled": false }
 } }
 EOF
-STORE_DB="$store_repo/pmtools-test.db"
-STORE_CSV="$store_repo/docs/errors.csv"
-o="$TMPROOT/store.$RANDOM"
+  local STORE_DB="$store_repo/pmtools-test.db"
+  local STORE_CSV="$store_repo/docs/errors.csv"
+  local o="$TMPROOT/store.$RANDOM"
 
-# 1) errors enabled: a valid row lands in the DB AND the CSV mirror is written.
-( cd "$store_repo" && python3 "$PY_ERROR" log \
-    '{"occurred_iso":"2026-06-23T10:00:00-1000","agent":"apple","model":"opus-4.8","ticket":3,"error_type":"CLAIM_FAIL","message":"could not claim","context":{"issue":3}}' \
-    --db-path "$STORE_DB" ) >"$o" 2>&1
-assert_exit "$?" 0 "[py] error log (enabled) exit 0"
-assert_contains "$o" "Inserted error row" "[py] error log prints inserted-row line"
-if [ "$(sqlite3 "$STORE_DB" 'SELECT count(*) FROM errors;' 2>/dev/null)" = "1" ]; then
-  pass "[py] error row landed in sqlite (count == 1)"
-else
-  fail "[py] error row landed in sqlite (count == 1)"; sed 's/^/      /' "$o"
-fi
-if [ -f "$STORE_CSV" ]; then pass "[py] csv mirror file exists"; else fail "[py] csv mirror file exists"; fi
-# header line present
-assert_contains "$STORE_CSV" "id,occurred_iso,agent,model,ticket,repo,error_type,message,context,notes" "[py] csv mirror has the header row"
-assert_contains "$STORE_CSV" "AUTO-GENERATED" "[py] csv mirror has the AUTO-GENERATED preamble"
-# exactly 1 data row = total 3 lines (preamble + header + 1 row)
-if [ "$(wc -l < "$STORE_CSV")" = "3" ]; then pass "[py] csv mirror has exactly 1 data row"; else
-  fail "[py] csv mirror has exactly 1 data row"; sed 's/^/      /' "$STORE_CSV"; fi
+  # 1) errors enabled: a valid row lands in the DB AND the CSV mirror is written.
+  ( cd "$store_repo" && "${ERR[@]}" log \
+      '{"occurred_iso":"2026-06-23T10:00:00-1000","agent":"apple","model":"opus-4.8","ticket":3,"error_type":"CLAIM_FAIL","message":"could not claim","context":{"issue":3}}' \
+      --db-path "$STORE_DB" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] error log (enabled) exit 0"
+  assert_contains "$o" "Inserted error row" "[$lang] error log prints inserted-row line"
+  if [ "$(sqlite3 "$STORE_DB" 'SELECT count(*) FROM errors;' 2>/dev/null)" = "1" ]; then
+    pass "[$lang] error row landed in sqlite (count == 1)"
+  else
+    fail "[$lang] error row landed in sqlite (count == 1)"; sed 's/^/      /' "$o"
+  fi
+  if [ -f "$STORE_CSV" ]; then pass "[$lang] csv mirror file exists"; else fail "[$lang] csv mirror file exists"; fi
+  # header line present
+  assert_contains "$STORE_CSV" "id,occurred_iso,agent,model,ticket,repo,error_type,message,context,notes" "[$lang] csv mirror has the header row"
+  assert_contains "$STORE_CSV" "AUTO-GENERATED" "[$lang] csv mirror has the AUTO-GENERATED preamble"
+  # exactly 1 data row = total 3 lines (preamble + header + 1 row)
+  if [ "$(wc -l < "$STORE_CSV")" = "3" ]; then pass "[$lang] csv mirror has exactly 1 data row"; else
+    fail "[$lang] csv mirror has exactly 1 data row"; sed 's/^/      /' "$STORE_CSV"; fi
 
-# 2) errors disabled: a config with errors disabled refuses with the notice,
-#    exits 0, and inserts nothing.
-dis_repo="$(new_env)"
-mkdir -p "$dis_repo/.claude"
-cat > "$dis_repo/.claude/orchestrate.json" <<'EOF'
+  # 2) errors disabled: a config with errors disabled refuses with the notice,
+  #    exits 0, and inserts nothing.
+  local dis_repo; dis_repo="$(new_env)"
+  mkdir -p "$dis_repo/.claude"
+  cat > "$dis_repo/.claude/orchestrate.json" <<'EOF'
 { "storage": { "errors": { "enabled": false } } }
 EOF
-DIS_DB="$dis_repo/pmtools-test.db"
-( cd "$dis_repo" && python3 "$PY_ERROR" log \
-    '{"occurred_iso":"i","message":"m"}' --db-path "$DIS_DB" ) >"$o" 2>&1
-assert_exit "$?" 0 "[py] error log (disabled) exit 0"
-assert_contains "$o" "errors store disabled for this project" "[py] error log (disabled) prints the disabled notice"
-if [ -f "$DIS_DB" ]; then
-  fail "[py] error log (disabled) inserted nothing (no DB created)"
-else
-  pass "[py] error log (disabled) inserted nothing (no DB created)"
-fi
+  local DIS_DB="$dis_repo/pmtools-test.db"
+  ( cd "$dis_repo" && "${ERR[@]}" log \
+      '{"occurred_iso":"i","message":"m"}' --db-path "$DIS_DB" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] error log (disabled) exit 0"
+  assert_contains "$o" "errors store disabled for this project" "[$lang] error log (disabled) prints the disabled notice"
+  if [ -f "$DIS_DB" ]; then
+    fail "[$lang] error log (disabled) inserted nothing (no DB created)"
+  else
+    pass "[$lang] error log (disabled) inserted nothing (no DB created)"
+  fi
 
-# 3) velocity disabled by default: refuses with the disabled notice, exit 0.
-( cd "$store_repo" && python3 "$PY_VELOCITY" log \
-    '{"role":"DEV","agent":"apple"}' --db-path "$STORE_DB" ) >"$o" 2>&1
-assert_exit "$?" 0 "[py] velocity log (disabled by default) exit 0"
-assert_contains "$o" "velocity store disabled for this project" "[py] velocity log prints the disabled notice"
-if [ "$(sqlite3 "$STORE_DB" 'SELECT count(*) FROM velocity;' 2>/dev/null)" = "0" ]; then
-  pass "[py] velocity disabled: no row inserted (count == 0)"
-else
-  fail "[py] velocity disabled: no row inserted (count == 0)"
-fi
+  # 3) velocity disabled by default: refuses with the disabled notice, exit 0.
+  ( cd "$store_repo" && "${VEL[@]}" log \
+      '{"role":"DEV","agent":"apple"}' --db-path "$STORE_DB" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] velocity log (disabled by default) exit 0"
+  assert_contains "$o" "velocity store disabled for this project" "[$lang] velocity log prints the disabled notice"
+  if [ "$(sqlite3 "$STORE_DB" 'SELECT count(*) FROM velocity;' 2>/dev/null)" = "0" ]; then
+    pass "[$lang] velocity disabled: no row inserted (count == 0)"
+  else
+    fail "[$lang] velocity disabled: no row inserted (count == 0)"
+  fi
 
-# 4) error log re-export: `error export` rewrites the CSV from the DB on demand.
-( cd "$store_repo" && python3 "$PY_ERROR" export --db-path "$STORE_DB" --csv "$STORE_CSV" ) >"$o" 2>&1
-assert_exit "$?" 0 "[py] error export exit 0"
-assert_contains "$o" "Exported 1 rows" "[py] error export re-exports the single row"
+  # 4) error log re-export: `error export` rewrites the CSV from the DB on demand.
+  ( cd "$store_repo" && "${ERR[@]}" export --db-path "$STORE_DB" --csv "$STORE_CSV" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] error export exit 0"
+  assert_contains "$o" "Exported 1 rows" "[$lang] error export re-exports the single row"
+}
+
+run_storage_suite "py" python3 "$PY_ERROR" python3 "$PY_VELOCITY"
+run_storage_suite "js" node "$JS_ERROR" node "$JS_VELOCITY"
+
+# ---------------------------------------------------------------------------
+# cross-port parity: the SAME error row logged via py and via js must produce an
+# identical sqlite row AND identical CSV bytes (modulo the db filename embedded
+# in the preamble's Source: line). This is the whole point of the JS port.
+# ---------------------------------------------------------------------------
+echo "-- cross-port parity (py vs js: identical DB row + CSV bytes) --"
+xp_repo="$(new_env)"
+mkdir -p "$xp_repo/.claude"
+cat > "$xp_repo/.claude/orchestrate.json" <<'EOF'
+{ "storage": { "errors": { "enabled": true } } }
+EOF
+XP_ROW='{"occurred_iso":"2026-06-23T10:00:00-1000","agent":"apple","model":"opus-4.8","ticket":7,"repo":"pmtools","error_type":"DB_FAIL","message":"weird, message \"q\"","context":{"a":1,"b":[2,3]},"notes":"n"}'
+XP_PY_DB="$xp_repo/xp-py.db";  XP_JS_DB="$xp_repo/xp-js.db"
+XP_PY_CSV="$xp_repo/xp-py.csv"; XP_JS_CSV="$xp_repo/xp-js.csv"
+xo="$TMPROOT/xp.$RANDOM"
+
+( cd "$xp_repo" && python3 "$PY_ERROR" log "$XP_ROW" --db-path "$XP_PY_DB" --csv "$XP_PY_CSV" ) >"$xo" 2>&1
+( cd "$xp_repo" && node    "$JS_ERROR" log "$XP_ROW" --db-path "$XP_JS_DB" --csv "$XP_JS_CSV" ) >>"$xo" 2>&1
+
+if diff <(sqlite3 -json "$XP_PY_DB" 'SELECT * FROM errors ORDER BY id') \
+        <(sqlite3 -json "$XP_JS_DB" 'SELECT * FROM errors ORDER BY id') >/dev/null 2>&1; then
+  pass "cross-port: py and js produce an identical sqlite row"
+else
+  fail "cross-port: py and js produce an identical sqlite row"; sed 's/^/      /' "$xo"
+fi
+# Compare CSV bytes after neutralising the per-port db filename in the preamble.
+if diff <(sed "s#${XP_PY_DB##*/}#DB#" "$XP_PY_CSV") \
+        <(sed "s#${XP_JS_DB##*/}#DB#" "$XP_JS_CSV") >/dev/null 2>&1; then
+  pass "cross-port: py and js produce identical CSV bytes (modulo db filename)"
+else
+  fail "cross-port: py and js produce identical CSV bytes (modulo db filename)"
+  diff <(sed "s#${XP_PY_DB##*/}#DB#" "$XP_PY_CSV") <(sed "s#${XP_JS_DB##*/}#DB#" "$XP_JS_CSV") | sed 's/^/      /'
+fi
 
 echo
 echo "== integration: $PASSES passed, $FAILS failed =="

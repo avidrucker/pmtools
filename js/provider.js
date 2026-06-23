@@ -33,6 +33,15 @@ class GitHubProvider {
     return out ? JSON.parse(out) : [];
   }
 
+  // Best-effort `gh issue view <N> --json title -q .title`. null on failure
+  // (offline / missing gh / not found). Mirrors py/velocity.py fetch_title.
+  issueTitle(number) {
+    const out = run('gh', ['issue', 'view', String(number), '--json', 'title', '-q', '.title']);
+    if (out === null) return null;
+    const t = out.trim();
+    return t || null;
+  }
+
   createLabel(name, color, description, repo) {
     const args = ['label', 'create', name, '--color', color, '--description', description, '--force'];
     if (repo) args.splice(2, 0, '-R', repo);
@@ -47,6 +56,7 @@ class GitLabProvider {
   }
   issueStates() { return this._stub(); }
   listOpenIssues() { return this._stub(); }
+  issueTitle() { return this._stub(); }
   createLabel() { return this._stub(); }
 }
 
