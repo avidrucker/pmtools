@@ -1,0 +1,16 @@
+[
+  { "name": "plain velocity row needs no quoting",
+    "args": [{ "id": 1, "ticket": 3, "title": "do thing", "role": "DEV", "h_min": 30, "c_min": 20, "actual_min": 25, "delta_h_min": 5, "delta_c_min": -5, "started_iso": "i1", "finished_iso": "i2", "closed_commit": "abc", "notes": null, "agent": "apple", "model": "opus-4.8", "repo": "pmtools" },
+             ["id", "ticket", "title", "role", "h_min", "c_min", "actual_min", "delta_h_min", "delta_c_min", "started_iso", "finished_iso", "closed_commit", "notes", "agent", "model", "repo"]],
+    "expected": "1,3,do thing,DEV,30,20,25,5,-5,i1,i2,abc,,apple,opus-4.8,pmtools" },
+
+  { "name": "a title with a comma is quoted",
+    "args": [{ "id": 2, "ticket": null, "title": "fix a, b", "role": "PM", "h_min": null, "c_min": null, "actual_min": null, "delta_h_min": null, "delta_c_min": null, "started_iso": null, "finished_iso": null, "closed_commit": null, "notes": null, "agent": "banana", "model": null, "repo": null },
+             ["id", "ticket", "title", "role", "h_min", "c_min", "actual_min", "delta_h_min", "delta_c_min", "started_iso", "finished_iso", "closed_commit", "notes", "agent", "model", "repo"]],
+    "expected": "2,,\"fix a, b\",PM,,,,,,,,,,banana,," },
+
+  { "name": "a notes field with quotes and a newline is escaped",
+    "args": [{ "id": 3, "ticket": null, "title": null, "role": "WRITER", "h_min": null, "c_min": null, "actual_min": null, "delta_h_min": null, "delta_c_min": null, "started_iso": null, "finished_iso": null, "closed_commit": null, "notes": "said \"hi\"\nthen left", "agent": "cherry", "model": null, "repo": null },
+             ["id", "ticket", "title", "role", "h_min", "c_min", "actual_min", "delta_h_min", "delta_c_min", "started_iso", "finished_iso", "closed_commit", "notes", "agent", "model", "repo"]],
+    "expected": "3,,,WRITER,,,,,,,,,\"said \"\"hi\"\"\nthen left\",cherry,," }
+]

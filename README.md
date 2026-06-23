@@ -17,6 +17,17 @@ Centralized, project-agnostic project-management helpers for the
 | `preflight` | fleet-only | py + js |
 | `claim` | fleet-only | py + js (lccjs-isms parameterized: `--worktree-dir`, `--roster`, `--lane-check` (off by default), `--copy-env`) |
 | `close` | fleet-only | py + js (generic core only: racy push loop + gated teardown; `--worktree-dir` parameterized; velocity/learnings/tracker guards deferred) |
+| `error` | storage | **py** (js pending — follow-on via the `sqlite3` CLI) |
+| `velocity` | storage | **py** (js pending — follow-on via the `sqlite3` CLI) |
+
+`error` / `velocity` are a configurable SQLite-primary storage layer (SQLite is
+the source of truth; CSV is a derived mirror). Per-store, per-project config via
+the `.claude/orchestrate.json` `storage` block — see CONTRACT.md §storage.
+
+```bash
+pmtools error log '{"occurred_iso":"2026-06-23T10:00:00-1000","error_type":"CLAIM_FAIL","message":"could not claim","ticket":3}'
+pmtools velocity log '{"role":"DEV","agent":"apple","ticket":3,"h_min":30,"actual_min":25}'
+```
 
 ## Install (one-time) — `pmtools` on PATH
 

@@ -16,6 +16,8 @@ source of truth; `fixtures/` are the golden cases every port is graded against.
 | `claim <issue> [slug] --as <name> [--base <ref>] [--dry-run] [--lane-check] [--copy-env] [--worktree-dir D] [--roster a,b,c]` | Stake a worktree under an agent identity | fleet-only |
 | `preflight <issue>` | Stamp start time, run start-of-task reads, assert issue OPEN | fleet-only |
 | `close <issue> [--branch N] [--max N] [--dry-run] [--keep] [--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] [--worktree-dir D]` | Land the close commit on `origin/main`, then (and only then) tear down the worktree | fleet-only |
+| `error <log\|export> '<json>' [--db-path P] [--csv P\|--no-csv]` | Log an agent error into the SQLite errors store (+ optional derived CSV mirror) | storage |
+| `velocity <log\|export> '<json>' [--db-path P] [--csv P\|--no-csv]` | Log a velocity row into the SQLite velocity store (+ optional derived CSV mirror) | storage |
 
 `status` is specified in full below; `claim`, `preflight`, and `close` are
 specified in their own sections (all now ported to py + js). See §claim /
@@ -260,3 +262,117 @@ learnings-README conflict resolver (`isReadmeLearningsConflict` /
 (`scanParentTrackers`). Consequently `unionFiles` defaults EMPTY and **any**
 rebase conflict is `blocking`. The velocity-row guard re-integrates once
 `pmtools velocity` lands (tracked separately).
+
+---
+
+## storage (error + velocity stores) — ported (py; js a follow-on)
+
+A configurable SQLite-primary storage layer. **SQLite is the source of truth.**
+The CSV mirror is ONLY a derived, shallow full-table dump (atomic temp→rename,
+`# AUTO-GENERATED` preamble) — never written to directly; it is regenerated on
+every write and on demand via `export`. Two stores ship: **errors** (agent
+error log) and **velocity** (per-ticket time tracking). Seeded from lccjs
+`scripts/{errors,velocity}-seed.js` + `{error,velocity}-log.js` +
+`velocity-export.js`.
+
+Pure seams live in `store_core.{py,…}` (constants, validators, delta derivation,
+CSV encoders — graded against `fixtures/{error,velocity}/*`). The impure sqlite
+engine is `store.{py,…}`; the per-project config loader is `config.{py,…}`; the
+CLIs are `error.{py,…}` / `velocity.{py,…}`.
+
+### Configuration — per-store, per-project (`.claude/orchestrate.json`)
+
+```jsonc
+"storage": {
+  "dbPath": null,                  // null => ~/.pmtools/<repo>/pmtools.db
+  "velocity": { "enabled": false, "csvMirror": null, "logCommand": null },
+  "errors":   { "enabled": true,  "csvMirror": null, "logCommand": null }
+}
+```
+
+- `dbPath: null` → `~/.pmtools/<repo>/pmtools.db` (`<repo>` = basename of the git
+  toplevel — the same convention as `preflight`'s scratch dir).
+- `enabled: false` → the store's `log`/`export` refuses with
+  `"<store> store disabled for this project"` and **exits 0** (a disabled store is
+  not an error). **errors defaults enabled; velocity defaults disabled (opt-in).**
+- `csvMirror: "path"` → after each write (and on `export`) the full table is
+  re-exported to that path (relative to cwd). `csvMirror: null` → DB only.
+- A missing file / missing `storage` key / partial per-store block all fall back
+  to the defaults above.
+
+### Commands
+
+```
+pmtools error    log '<json>' [--db-path P] [--csv P | --no-csv]
+pmtools error    export        [--db-path P] [--csv P]
+pmtools velocity log '<json>' [--db-path P] [--csv P | --no-csv]
+pmtools velocity export        [--db-path P] [--csv P]
+```
+
+- `--db-path P` overrides `storage.dbPath`. CSV target precedence: `--no-csv`
+  (DB only) > `--csv P` > `storage.<store>.csvMirror`.
+- `log` validates the JSON payload via `store_core`, inserts via `store`, then
+  exports to the resolved CSV mirror if one is set. `export` re-exports the whole
+  table from the DB on demand.
+- Exit `0` on success or disabled-store; `1` on missing arg, invalid JSON,
+  validation failure, or DB error.
+
+### errors schema (verbatim from lccjs errors-seed.js)
+
+```
+errors(
+  id INTEGER PK AUTOINCREMENT, occurred_iso TEXT NOT NULL, agent TEXT,
+  model TEXT, ticket INTEGER, repo TEXT, error_type TEXT, message TEXT,
+  context TEXT, notes TEXT)
+indices: (agent, occurred_iso); (error_type); (ticket)
+```
+
+**Validation** (`validate_error_row`): required `occurred_iso` (non-empty) +
+non-empty `message`; `error_type` ∈ {TOOL_DENIED, HOOK_BLOCK, CLAIM_FAIL,
+BASH_FAIL, GIT_FAIL, GIT_STATE, GH_FAIL, GH_INFO, DB_FAIL, FILE_FAIL,
+EDIT_PRECOND, SKILL_FAIL, NETWORK_FAIL, VALIDATION_FAIL, COMPLIANCE_FAIL,
+BEHAVIORAL_FAIL, OTHER}; `model` matches `^[a-z]+-\d+\.\d+$` (hard reject);
+`ticket` a positive int; `context` serialized to compact JSON if an object/array,
+and required to *parse* as JSON if a string (guards `json_extract()` queries).
+`repo` defaults to the git-repo basename when omitted.
+
+### velocity schema (verbatim from lccjs velocity-seed.js)
+
+```
+velocity(
+  id INTEGER PK AUTOINCREMENT, ticket INTEGER, title TEXT, role TEXT,
+  h_min REAL, c_min REAL, actual_min REAL, delta_h_min REAL, delta_c_min REAL,
+  started_iso TEXT, finished_iso TEXT, closed_commit TEXT, notes TEXT,
+  agent TEXT, model TEXT, repo TEXT)
+index: UNIQUE(ticket, agent, started_iso) WHERE started_iso IS NOT NULL  (partial)
+```
+
+**Validation** (`validate_velocity_row`): required `role` ∈ {DEV, TEST, WRITER,
+RESEARCH, SPIKE, ARC, PM, COMBO, DATA, CHORE, REVIEW} (closed vocabulary, hard
+reject) + `agent`; `ticket` nullable but a positive int when present;
+`h_min`/`c_min`/`actual_min` optional non-negative numbers. `delta_h_min` =
+`h_min − actual_min` and `delta_c_min` = `c_min − actual_min` are **derived**
+(null if either operand is null). `model` is NOTICE-not-reject (a non-canonical
+model is recorded with a one-line notice, never rejected — models are open-
+growth). When `title` is omitted and a `ticket` is present, the title is fetched
+best-effort via `gh issue view <N> --json title -q .title` (falls back to
+`#<N> (title unavailable)`).
+
+### CSV mirror semantics (derived, never authoritative)
+
+Fixed column order = the table's column order (the `*_COLS` constants). Line 1 =
+`# AUTO-GENERATED by pmtools — do not edit directly. Source: <dbPath>`; line 2 =
+the header (`col,col,…`); then one line per row ordered by `id`. RFC-4180 field
+encoding: a field containing `,` `"` CR or LF is wrapped in double-quotes with
+internal quotes doubled. The write is atomic (temp file → rename), so a crash
+mid-write never leaves a partial CSV. **SQLite is the source of truth — the CSV is
+a derived mirror, regenerated on write/on-demand and safe to delete.**
+
+### Parity (JS follow-on)
+
+`store_core` is pure and language-neutral; its fixtures (`fixtures/error/*`,
+`fixtures/velocity/*`) are shared `{name, args, expected}` cases. **Validation-
+failure** cases use the convention `{name, args, expected_error: true}` — every
+port asserts a raised/thrown error for those (rather than comparing a value). The
+JS port (`js/store_core.js` + a sqlite engine driving the **`sqlite3` CLI**, since
+better-sqlite3 is not assumed) is a follow-on graded against these same fixtures.
