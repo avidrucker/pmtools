@@ -213,6 +213,17 @@ def build_worktree_name(parts):
         parts["agent"], parts["project"], parts["lang"], parts["issue"])
 
 
+def branch_to_worktree_name(branch):
+    """Map a branch (new OR legacy) to its worktree dir name — the back-compat
+    bridge close uses. New br-…/… -> wt-…; legacy <fruit>/issue-N… -> <fruit>-issue-N."""
+    if not branch:
+        return None
+    is_new = branch.startswith("br-")
+    core = branch[3:] if is_new else branch
+    flat = re.sub(r"(issue-\d+).*$", r"\1", core.replace("/", "-", 1))
+    return "wt-" + flat if is_new else flat
+
+
 def sentinel_branch(fruit):
     """Return the <fruit>/session sentinel branch name."""
     return "{}/session".format(fruit)

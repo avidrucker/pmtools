@@ -13,7 +13,7 @@ const { getProvider } = require('./provider');
 const { parseCanonicalMarker, parsePddignore, isPddIgnored } = require('./status_core');
 const { loadPddConfig } = require('./config');
 
-const DEFAULT_BRANCH_PATTERN = '^(?<agent>[a-z]+)/issue-(?<issue>\\d+)';
+const DEFAULT_BRANCH_PATTERN = '^(?:br-)?(?<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?<issue>\\d+)';
 
 function run(cmd, args) {
   try {

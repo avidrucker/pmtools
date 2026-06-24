@@ -37,6 +37,7 @@ import sys
 import close_core as core
 import config
 import store
+import claim_core
 from close_core import (
     DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
     claim_ref_delete_command, classify_claim_ref_delete,
@@ -365,21 +366,24 @@ def main():
     # --- pre-flight: refuse to start unless the close is real and the tree sane.
     branch = opts["branch"] or current_branch()
     # Injection guard (#37): --branch is interpolated into teardown's `git branch
-    # -D <branch>`. Reject shell metacharacters, then require an ANCHORED
-    # <fruit>/issue-<N>[-slug] shape (the old guards were unanchored substring
-    # searches, so `x/issue-17; touch ...` slipped through both).
+    # -D <branch>`. Reject shell metacharacters, then require an ANCHORED branch
+    # shape bound to the issue token (the old guards were unanchored substring
+    # searches, so `x/issue-17; touch ...` slipped through). The anchored shape
+    # tolerates the br-/<project>-<lang>- self-describing scheme (#17) as well as
+    # legacy <fruit>/issue-N names — and, by anchoring, refuses a slug-embedded
+    # `-issue-M` from masquerading as the issue token.
     if not branch or not is_safe_ref(branch):
         die('branch "{}" contains unsafe characters — '
             "only letters, digits, and . _ / - are allowed.".format(branch or "?"))
-    if not re.match(r"^[A-Za-z0-9._-]+/issue-\d+(?:-[A-Za-z0-9._-]+)?$", branch):
-        die('current branch "{}" is not a <fruit>/issue-<N> worktree branch. '
+    if not re.match(r"^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-\d+(?:-[A-Za-z0-9._-]+)?$", branch):
+        die('current branch "{}" is not a [br-]<agent>/[<project>-<lang>-]issue-<N> worktree branch. '
             "Run this from inside the puzzle's worktree, not the main checkout.".format(branch))
-    if not re.match(r"^[A-Za-z0-9._-]+/issue-{}(?:-[A-Za-z0-9._-]+)?$".format(issue), branch):
+    if not re.match(r"^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-{}(?:-[A-Za-z0-9._-]+)?$".format(issue), branch):
         die('branch "{}" does not match issue #{}. Wrong worktree?'.format(branch, issue))
 
     root = main_root()
-    fruit = branch.split("/")[0]
-    wt_path = os.path.join(root, opts["worktreeDir"], "{}-issue-{}".format(fruit, issue))
+    fruit = claim_core.infer_fruit_from_branch(branch) or branch.split("/")[0]
+    wt_path = os.path.join(root, opts["worktreeDir"], claim_core.branch_to_worktree_name(branch))
     if opts["branch"]:
         try:
             os.chdir(wt_path)
