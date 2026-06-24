@@ -1,0 +1,22 @@
+# .pddignore — paths pmtools status (PDD marker scan) skips for THIS repo.
+# gitignore-style globs, one per line; blank lines and '#' comments ignored.
+# Only canonical `@(todo|inprogress) #<issue>:<estimate>` markers are actionable;
+# everything below contains marker-like text but no real puzzles.
+
+# --- dependencies / generated ---
+node_modules/**
+
+# --- agent harness working dirs ---
+.claude/**
+
+# --- golden fixtures + integration scripts carry marker-like TEST DATA
+#     (e.g. fixtures/status/*, fixtures/claim/*, tests/integration.sh) ---
+fixtures/**
+tests/**
+
+# --- docs + the committed CSV store mirrors (prose / data that quotes markers) ---
+docs/**
+*.md
+
+# --- the illustrative example ignore file ---
+.pddignore.example
