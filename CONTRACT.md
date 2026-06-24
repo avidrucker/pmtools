@@ -366,7 +366,7 @@ identically. (Port of lccjs#1437.)
 
 ---
 
-## storage (error + velocity stores) — ported (py; js a follow-on)
+## storage (error + velocity stores) — ported (py + js)
 
 A configurable SQLite-primary storage layer. **SQLite is the source of truth.**
 The CSV mirror is ONLY a derived, shallow full-table dump (atomic temp→rename,
@@ -479,11 +479,13 @@ internal quotes doubled. The write is atomic (temp file → rename), so a crash
 mid-write never leaves a partial CSV. **SQLite is the source of truth — the CSV is
 a derived mirror, regenerated on write/on-demand and safe to delete.**
 
-### Parity (JS follow-on)
+### Parity (py + js)
 
 `store_core` is pure and language-neutral; its fixtures (`fixtures/error/*`,
 `fixtures/velocity/*`) are shared `{name, args, expected}` cases. **Validation-
 failure** cases use the convention `{name, args, expected_error: true}` — every
 port asserts a raised/thrown error for those (rather than comparing a value). The
 JS port (`js/store_core.js` + a sqlite engine driving the **`sqlite3` CLI**, since
-better-sqlite3 is not assumed) is a follow-on graded against these same fixtures.
+better-sqlite3 is not assumed) is **implemented**, graded against these same
+fixtures and verified byte-for-byte against the Python port (the cross-port
+parity check in `tests/integration.sh`).

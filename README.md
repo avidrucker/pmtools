@@ -18,8 +18,8 @@ Centralized, project-agnostic project-management helpers for the
 | `claim` | fleet-only | py + js (lccjs-isms parameterized: `--worktree-dir`, `--roster`, `--lane-check` (off by default), `--copy-env`) |
 | `close` | fleet-only | py + js (racy push loop + gated teardown; `--worktree-dir` parameterized; **config-gated velocity-row guard** (#5); learnings/tracker guards omitted) |
 | `release` | fleet-only | py + js (abandon a claim + tear down its worktree, issue stays OPEN; data-loss guard refuses unpushed/dirty without `--force`) |
-| `error` | storage | **py** (js pending — follow-on via the `sqlite3` CLI) |
-| `velocity` | storage | **py** (js pending — follow-on via the `sqlite3` CLI) |
+| `error` | storage | py + js (js drives the `sqlite3` CLI; cross-port parity green) |
+| `velocity` | storage | py + js (js drives the `sqlite3` CLI; cross-port parity green) |
 
 `error` / `velocity` are a configurable SQLite-primary storage layer (SQLite is
 the source of truth; CSV is a derived mirror). Per-store, per-project config via
