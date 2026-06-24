@@ -20,6 +20,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const config = require('./config');
+
 const DEFAULT_EVIDENCE_DIRS = ['docs/logs', 'docs/research'];
 
 function sh(cmd) {
@@ -75,8 +77,10 @@ function listEvidenceFiles(evidenceDirs) {
 }
 
 function defaultScratchDir() {
-  const top = (sh('git rev-parse --show-toplevel') || '').trim();
-  const repo = top ? path.basename(top) : 'repo';
+  // Key the scratch dir off the MAIN checkout so worktrees don't scatter
+  // ~/.pmtools/<worktree>/ dirs (#26).
+  const root = config.mainRepoRoot();
+  const repo = root ? path.basename(root) : 'repo';
   return path.join(os.homedir(), '.pmtools', repo);
 }
 

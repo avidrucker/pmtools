@@ -34,7 +34,9 @@ def die(msg):
 
 
 def _repo_basename(cwd=None):
-    root = config.repo_root(cwd)
+    # The `repo` data column labels the PROJECT; from a worktree that is still
+    # the main repo, so key off main_repo_root (#26), not the worktree toplevel.
+    root = config.main_repo_root(cwd)
     return os.path.basename(root) if root else "repo"
 
 

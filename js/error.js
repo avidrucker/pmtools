@@ -29,7 +29,9 @@ function die(msg) {
 }
 
 function repoBasename(cwd = null) {
-  const root = config.repoRoot(cwd);
+  // The `repo` data column labels the PROJECT; from a worktree that is still the
+  // main repo, so key off mainRepoRoot (#26), not the worktree toplevel.
+  const root = config.mainRepoRoot(cwd);
   return root ? path.basename(root) : 'repo';
 }
 

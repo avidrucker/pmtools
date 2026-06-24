@@ -40,12 +40,32 @@ function sh(cmd, args) {
 }
 
 // Absolute git toplevel for `cwd` (default process.cwd()), or null.
+// NOTE: in a worktree this is the WORKTREE, not the main checkout — correct for
+// finding the committed .claude/orchestrate.json; for per-project STATE identity
+// use mainRepoRoot() instead (#26).
 function repoRoot(cwd = null) {
   const args = cwd
     ? ['-C', cwd, 'rev-parse', '--show-toplevel']
     : ['rev-parse', '--show-toplevel'];
   const top = (sh('git', args) || '').trim();
   return top || null;
+}
+
+// Absolute path of the MAIN checkout's root (NOT a worktree), or null. Per-project
+// STATE (DB path, scratch dir, the `repo` data column) keys off this so every
+// worktree of one repo shares one identity. Uses --git-common-dir (from a
+// worktree it points at the main repo's .git) and takes its parent; mirrors
+// close.js's mainRoot(). Falls back to a relative --git-common-dir resolved
+// against cwd for older git without --path-format.
+function mainRepoRoot(cwd = null) {
+  const base = cwd ? ['-C', cwd] : [];
+  let common = (sh('git', [...base, 'rev-parse', '--path-format=absolute', '--git-common-dir']) || '').trim();
+  if (!common) {
+    const rel = (sh('git', [...base, 'rev-parse', '--git-common-dir']) || '').trim();
+    if (!rel) return null;
+    common = path.resolve(cwd || process.cwd(), rel);
+  }
+  return path.dirname(common);
 }
 
 function expanduser(p) {
@@ -56,7 +76,7 @@ function expanduser(p) {
 
 // The dbPath default: ~/.pmtools/<repo>/pmtools.db (<repo> = root basename).
 function defaultDbPath(root = null) {
-  const r = root === null ? repoRoot() : root;
+  const r = root === null ? mainRepoRoot() : root;
   const repo = r ? path.basename(r) : 'repo';
   return path.join(os.homedir(), '.pmtools', repo, 'pmtools.db');
 }
@@ -96,7 +116,8 @@ function loadStorageConfig(cwd = null) {
 
   let dbPath = rawStorage.dbPath;
   if (!dbPath) {
-    dbPath = defaultDbPath(root);
+    // State identity = MAIN checkout, so all worktrees share one DB (#26).
+    dbPath = defaultDbPath(mainRepoRoot(cwd));
   } else {
     dbPath = expanduser(dbPath);
   }
@@ -136,5 +157,5 @@ function loadPddConfig(cwd = null) {
 }
 
 module.exports = {
-  repoRoot, defaultDbPath, loadStorageConfig, loadPddConfig, expanduser,
+  repoRoot, mainRepoRoot, defaultDbPath, loadStorageConfig, loadPddConfig, expanduser,
 };
