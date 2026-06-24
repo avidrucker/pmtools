@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 node_modules/
+
+# SQLite store artifacts (the dogfood DB lives out-of-tree at ~/.pmtools/<repo>/;
+# these guard against an in-tree dbPath override). CSV mirrors are committed.
+*.db
+*.db-wal
+*.db-shm
