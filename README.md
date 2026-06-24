@@ -16,7 +16,7 @@ Centralized, project-agnostic project-management helpers for the
 | `status` | solo-relevant | py + js |
 | `preflight` | fleet-only | py + js |
 | `claim` | fleet-only | py + js (lccjs-isms parameterized: `--worktree-dir`, `--roster`, `--lane-check` (off by default), `--copy-env`) |
-| `close` | fleet-only | py + js (generic core only: racy push loop + gated teardown; `--worktree-dir` parameterized; velocity/learnings/tracker guards deferred) |
+| `close` | fleet-only | py + js (racy push loop + gated teardown; `--worktree-dir` parameterized; **config-gated velocity-row guard** (#5); learnings/tracker guards omitted) |
 | `error` | storage | **py** (js pending — follow-on via the `sqlite3` CLI) |
 | `velocity` | storage | **py** (js pending — follow-on via the `sqlite3` CLI) |
 
@@ -28,6 +28,16 @@ the `.claude/orchestrate.json` `storage` block — see CONTRACT.md §storage.
 and honors a repo-root `.pddignore` (gitignore-style globs; copy
 `.pddignore.example`). Scanning is toggled by the `pdd` block (`pdd.enabled`,
 default true) — see CONTRACT.md §status.
+
+### Dogfooding
+
+pmtools eats its own dog food: this repo ships a tracked `.claude/orchestrate.json`
+that **enables both stores** (errors + velocity; the SQLite DB lives out-of-tree
+at `~/.pmtools/<repo>/`, CSV mirrors committed under `docs/`) and a `.pddignore`
+that keeps `pmtools status` on this tree clean (fixtures/tests carry marker-like
+test data, not real puzzles). **Because velocity is enabled, `pmtools close` here
+requires a velocity row for the ticket** (the config-gated guard from #5) — log
+your session first, or pass `--skip-velocity-check` for PM/triage closes.
 
 ```bash
 pmtools error log '{"occurred_iso":"2026-06-23T10:00:00-1000","error_type":"CLAIM_FAIL","message":"could not claim","ticket":3}'
