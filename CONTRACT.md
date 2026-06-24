@@ -200,6 +200,7 @@ the gated teardown — so it can never fabricate a close.
 | `--skip-marker-check` | off | Skip the marker-deleted guard. |
 | `--skip-keyword-check` | off | Skip the Guard 2 issue-title keyword spot-check. |
 | `--skip-scope-audit` | off | Suppress the informational `git diff --stat` scope summary. |
+| `--skip-velocity-check` | off | Skip the velocity-row guard (PM/triage closes without a logged session). |
 | `--worktree-dir <dir>` | `.claude/worktrees` | **Parameterized** (lccjs hardcoded it). Worktree parent dir, relative to main repo root. |
 
 ### Pure seams (`close_core`, graded against `fixtures/close/*`)
@@ -211,7 +212,11 @@ only), `claim_ref_delete_command` + `classify_claim_ref_delete`
 (`none`/`union-only`/`blocking` — `unionFiles` defaults **EMPTY** in pmtools, so
 any conflict is `blocking`), `body_closes_issue` (GitHub close-keyword matcher),
 `extract_keywords` + `keywords_overlap` (+ `KEYWORD_STOP_SET` / `SHORT_TECH_WORDS`),
-`marker_still_present`, `scope_audit_diff_command`.
+`marker_still_present`, `scope_audit_diff_command`, `velocity_row_present`
+(Check A — any row for the ticket), `velocity_ticket_mismatch` +
+`compute_velocity_mismatch` (Guard 1 — closing agent's row must carry this
+ticket; a correct-ticket row by any agent passes; concurrent agents' off-ticket
+rows never false-block).
 
 ### Guard / flow sequence (in `main()` order)
 
@@ -223,8 +228,13 @@ any conflict is `blocking`), `body_closes_issue` (GitHub close-keyword matcher),
    sync main, teardown).
 3. Scope audit (skippable, **informational**): `git fetch origin main`; diff
    `merge-base..HEAD` (fallback `origin/main`).
-4. *velocity-row guard integrates once pmtools velocity lands (deferred — issue
-   tracked separately).*
+4. Velocity-row guard (skippable via `--skip-velocity-check`): **config-gated** —
+   no-ops unless `storage.velocity.enabled`. SQLite is the source of truth (reads
+   the DB, not the CSV); absent DB → warn + skip (first run / CI). Else
+   `velocity_row_present` (Check A): die unless a velocity row exists for the
+   ticket; `compute_velocity_mismatch` (Guard 1): when none does and the closing
+   agent logged a *different* ticket, die naming the mismatch (the #278
+   transposition). Runs before the land loop, so a block never touches origin.
 5. Guard 2 keyword check (skippable): closing subject vs `gh` issue title;
    degrades gracefully offline.
 6. Marker-deleted guard (skippable): `git grep` for `@todo/@inprogress #N` over
@@ -250,18 +260,20 @@ any conflict is `blocking`), `body_closes_issue` (GitHub close-keyword matcher),
 `0` on success (close, recovery clean-close, dry-run, or `--keep`). `1` on any
 `die`: not a worktree branch / wrong issue, missing worktree under `--branch`,
 no `Closes #N` commit, blocking rebase conflict, `rejected-other` push,
-exhausted `--max` race retries, the on-origin-main gate failing, marker still
-present, or keyword mismatch.
+exhausted `--max` race retries, the on-origin-main gate failing, a missing/
+mismatched velocity row (guard enabled), marker still present, or keyword
+mismatch.
 
 ### Deferred / omitted (lccjs-specific, intentionally NOT ported)
 
-The velocity CSV/SQLite guards (`checkVelocityTicketMatch`,
-`checkVelocityRowExists`, the CSV-diff parsers, `better-sqlite3`), the
-learnings-README conflict resolver (`isReadmeLearningsConflict` /
-`resolveReadmeConflict`), union-file auto-resolve, and the parent-tracker scan
-(`scanParentTrackers`). Consequently `unionFiles` defaults EMPTY and **any**
-rebase conflict is `blocking`. The velocity-row guard re-integrates once
-`pmtools velocity` lands (tracked separately).
+The velocity-row guard **is** ported (DB-based + config-gated; see the guard
+sequence above and the §close pure seams) — what stays omitted is the lccjs
+*CSV*-specific machinery: the velocity-CSV diff parsers (`extractTicketFromCsvDiff`
+/ `extractRowsFromCsvDiff`) and CSV-conflict auto-resolve, the learnings-README
+conflict resolver (`isReadmeLearningsConflict` / `resolveReadmeConflict`),
+union-file auto-resolve, and the parent-tracker scan (`scanParentTrackers`).
+Consequently `unionFiles` defaults EMPTY and **any** rebase conflict is
+`blocking`.
 
 ---
 

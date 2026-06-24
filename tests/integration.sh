@@ -250,6 +250,91 @@ run_close_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"
 run_close_suite "js" node "$JS_CLAIM" node "$JS_CLOSE"
 
 # ---------------------------------------------------------------------------
+# close velocity-row guard (#5): config-gated. With storage.velocity ENABLED,
+# `close` refuses (exit 1) when the DB holds no velocity row for the ticket, and
+# proceeds once one is logged. With velocity DISABLED, the guard no-ops (no false
+# block). SQLite is the source of truth — the guard reads the DB, not the CSV.
+# ---------------------------------------------------------------------------
+run_close_velocity_suite() {
+  # args: <lang> <claim-i> <claim-s> <close-i> <close-s> <vel-i> <vel-s>
+  local lang="$1" ci="$2" cs="$3" oi="$4" os="$5" vi="$6" vs="$7"
+  local -a CLAIM=("$ci" "$cs") CLOSE=("$oi" "$os") VEL=("$vi" "$vs")
+  echo "-- [$lang] close velocity-row guard battery --"
+
+  local o="$TMPROOT/closevel.$RANDOM"
+  local gh; gh="$(make_fake_gh_titled OPEN 'Fix the widget renderer')"
+
+  # === Env 1: velocity ENABLED ===
+  local repo; repo="$(new_env)"
+  local N=31
+  local DB="$TMPROOT/vel.$lang.$N.db"
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" "$N" --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] vel-guard: claim $N exit 0"
+  local wt="$repo/.claude/worktrees/apple-issue-$N"
+
+  # Commit a tracked orchestrate.json that ENABLES velocity (DB outside the tree
+  # so the .db never dirties the worktree) + the keyword-sharing close commit.
+  (
+    cd "$wt"
+    git config user.email tester@example.com; git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p .claude
+    printf '{ "storage": { "dbPath": "%s", "velocity": { "enabled": true }, "errors": { "enabled": true } } }\n' "$DB" > .claude/orchestrate.json
+    printf 'widget impl\n' > widget.txt
+    git add .claude/orchestrate.json widget.txt
+    git commit -qm "feat: add widget renderer" -m "Closes #$N"
+  )
+
+  # Materialise the DB with an EMPTY velocity table (so the guard sees "no row",
+  # not "DB absent → skip"). `velocity export` seeds the schema via connect().
+  ( cd "$wt" && "${VEL[@]}" export --db-path "$DB" --csv "$DB.csv" ) >/dev/null 2>&1
+
+  # 1) ENABLED + no velocity row for N → close must die exit 1, NOT land.
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "apple/issue-$N" ) >"$o" 2>&1
+  assert_exit "$?" 1 "[$lang] vel-guard: enabled + no row → close exits 1"
+  assert_contains "$o" "velocity" "[$lang] vel-guard: blocks with a velocity-row message"
+  assert_dir "$wt" "[$lang] vel-guard: worktree left intact after block"
+  if git --git-dir="$(dirname "$repo")/origin.git" log main --format=%s 2>/dev/null | grep -q "add widget renderer"; then
+    fail "[$lang] vel-guard: blocked close did NOT land on origin/main"
+  else
+    pass "[$lang] vel-guard: blocked close did NOT land on origin/main"
+  fi
+
+  # 2) log a matching velocity row for N → close now proceeds, lands, tears down.
+  ( cd "$wt" && "${VEL[@]}" log \
+      "{\"ticket\":$N,\"role\":\"DEV\",\"agent\":\"apple\",\"started_iso\":\"2026-01-01T00:00:00-1000\"}" \
+      --db-path "$DB" --no-csv ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] vel-guard: velocity log (matching row) exit 0"
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "apple/issue-$N" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] vel-guard: matching row → close exits 0"
+  assert_contains "$o" "CLOSED" "[$lang] vel-guard: prints CLOSED banner"
+  if [ -d "$wt" ]; then fail "[$lang] vel-guard: worktree removed after success"; else pass "[$lang] vel-guard: worktree removed after success"; fi
+
+  # === Env 2: velocity DISABLED → guard skipped (no false block) ===
+  local repo2; repo2="$(new_env)"
+  local M=32
+  ( cd "$repo2" && PATH="$gh:$PATH" "${CLAIM[@]}" "$M" --as apple --allow-stale-main ) >"$o" 2>&1
+  local wt2="$repo2/.claude/worktrees/apple-issue-$M"
+  (
+    cd "$wt2"
+    git config user.email tester@example.com; git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p .claude
+    printf '{ "storage": { "velocity": { "enabled": false } } }\n' > .claude/orchestrate.json
+    printf 'widget impl\n' > widget.txt
+    git add .claude/orchestrate.json widget.txt
+    git commit -qm "feat: add widget renderer" -m "Closes #$M"
+  )
+  # No velocity row logged anywhere; disabled config must NOT block the close.
+  ( cd "$repo2" && PATH="$gh:$PATH" "${CLOSE[@]}" "$M" --branch "apple/issue-$M" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] vel-guard: disabled + no row → close exits 0 (skipped)"
+  assert_contains "$o" "CLOSED" "[$lang] vel-guard: disabled close prints CLOSED"
+}
+
+run_close_velocity_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE" python3 "$PY_VELOCITY"
+run_close_velocity_suite "js" node "$JS_CLAIM" node "$JS_CLOSE" node "$JS_VELOCITY"
+
+# ---------------------------------------------------------------------------
 # 6) Smoke: status --json valid JSON; preflight runs without crashing.
 # ---------------------------------------------------------------------------
 echo "-- smoke: status / preflight --"

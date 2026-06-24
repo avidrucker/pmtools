@@ -39,6 +39,9 @@ DISPATCH = {
     "keywords_overlap": close_core.keywords_overlap,
     "marker_still_present": close_core.marker_still_present,
     "scope_audit_diff_command": close_core.scope_audit_diff_command,
+    "velocity_row_present": close_core.velocity_row_present,
+    "velocity_ticket_mismatch": close_core.velocity_ticket_mismatch,
+    "compute_velocity_mismatch": close_core.compute_velocity_mismatch,
 }
 
 

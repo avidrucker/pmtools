@@ -12,9 +12,11 @@
  * marker deletion + `Closes #N` FIRST; close.js owns only the racy push + the
  * gated teardown.
  *
- * OMITTED from the lccjs original (lccjs-specific, out of scope): the velocity
- * CSV/SQLite guards, the learnings-README conflict resolver, union-file
- * auto-resolve, and the parent-tracker scan. Any rebase conflict is blocking.
+ * The velocity-row guard (#5) IS ported, but DB-based and config-gated: it reads
+ * SQLite (the source of truth), not the lccjs velocity CSV. Still OMITTED
+ * (lccjs-specific, out of scope): the velocity-CSV diff parsers + auto-resolve,
+ * the learnings-README conflict resolver, union-file auto-resolve, and the
+ * parent-tracker scan. Any rebase conflict is blocking.
  *
  * Usage (after committing `Closes #N`):
  *   node close.js <issue>                    # from inside the worktree
@@ -24,18 +26,22 @@
  *   node close.js <issue> --keep             # land but DON'T tear down
  *   node close.js <issue> --no-verify-issue  # skip the gh post-close check
  *   node close.js <issue> --skip-marker-check / --skip-keyword-check / --skip-scope-audit
+ *   node close.js <issue> --skip-velocity-check  # bypass the velocity-row guard
  *   node close.js <issue> --worktree-dir <dir>   # default .claude/worktrees
  */
 
 const { execSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const core = require('./close_core');
+const config = require('./config');
+const store = require('./store');
 const {
   DEFAULT_MAX_RETRIES, classifyPushError, shouldCleanup,
   claimRefDeleteCommand, classifyClaimRefDelete,
   bodyClosesIssue, extractKeywords, keywordsOverlap, markerStillPresent,
-  scopeAuditDiffCommand,
+  scopeAuditDiffCommand, velocityRowPresent, computeVelocityMismatch,
 } = core;
 
 function sh(cmd, allowFail = false) {
@@ -83,7 +89,7 @@ function parseArgs(argv) {
   const opts = {
     issue: null, max: DEFAULT_MAX_RETRIES, dryRun: false,
     keep: false, verifyIssue: true, skipKeywordCheck: false,
-    skipMarkerCheck: false, skipScopeAudit: false,
+    skipMarkerCheck: false, skipScopeAudit: false, skipVelocityCheck: false,
     branch: null, worktreeDir: '.claude/worktrees',
   };
   const positionals = [];
@@ -96,6 +102,7 @@ function parseArgs(argv) {
     else if (a === '--skip-keyword-check') opts.skipKeywordCheck = true;
     else if (a === '--skip-marker-check') opts.skipMarkerCheck = true;
     else if (a === '--skip-scope-audit') opts.skipScopeAudit = true;
+    else if (a === '--skip-velocity-check') opts.skipVelocityCheck = true;
     else if (a === '--branch') opts.branch = argv[++i];
     else if (a === '--worktree-dir') opts.worktreeDir = argv[++i];
     else if (a.startsWith('--')) die(`unknown flag: ${a}`);
@@ -203,6 +210,47 @@ function checkMarkerDeleted(issue) {
   }
 }
 
+// Velocity-row guard (#5; ported from lccjs scripts/close.js). Config-gated:
+// when storage.velocity is disabled — or the DB is absent (first run / CI) — it
+// no-ops. Otherwise SQLite is the source of truth: (Check A) refuse when no
+// velocity row exists for this ticket, or (Guard 1) when the closing agent
+// logged only a different ticket (the #278 digit-transposition). All blocking
+// decisions live in the pure close_core seams; this wrapper only does I/O.
+function checkVelocityGuard(issue, fruit) {
+  let cfg;
+  try {
+    cfg = config.loadStorageConfig();
+  } catch (_) {
+    return; // config unreadable — never block on it.
+  }
+  if (!cfg.velocity || !cfg.velocity.enabled) return; // disabled → skip.
+  const dbPath = cfg.dbPath;
+  if (!dbPath || !fs.existsSync(dbPath)) {
+    log(`warn: velocity store enabled but no DB at ${dbPath || '(unset)'} — skipping velocity-row check.`);
+    return;
+  }
+  let rows;
+  try {
+    rows = store.selectAll(dbPath, 'velocity');
+  } catch (e) {
+    const first = String((e && e.message) || e).split('\n')[0];
+    log(`warn: could not read velocity DB at ${dbPath} (${first}) — skipping velocity-row check.`);
+    return;
+  }
+  const n = Number(issue);
+  if (velocityRowPresent(rows.filter((r) => Number(r.ticket) === n))) return; // Check A.
+  const mismatch = computeVelocityMismatch(rows, issue, fruit);
+  if (mismatch.length) {
+    die(`velocity-row guard: agent "${fruit}" logged ticket(s) #${mismatch.join(', #')} ` +
+        `but is closing #${issue}. Align the velocity row's ticket (or the close) ` +
+        'first, then re-run. Pass --skip-velocity-check to bypass.');
+  }
+  die(`velocity-row guard: no velocity row for #${issue} in ${dbPath}. Log your ` +
+      `session first:\n  pmtools velocity log '{"ticket":${issue},"role":"DEV",` +
+      `"agent":"${fruit}","started_iso":"<ISO>","finished_iso":"<ISO>","actual_min":<A>}'\n` +
+      '  Then re-run close. Pass --skip-velocity-check to bypass (PM/triage closes).');
+}
+
 function deleteClaimRef(issue) {
   const out = sh(`${claimRefDeleteCommand(issue)} 2>&1 || true`, true) || '';
   const verdict = classifyClaimRefDelete(out);
@@ -270,7 +318,7 @@ function main() {
   if (!opts.issue || !/^\d+$/.test(opts.issue)) {
     die('usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] ' +
         '[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] ' +
-        '[--worktree-dir <dir>]');
+        '[--skip-velocity-check] [--worktree-dir <dir>]');
   }
   const issue = opts.issue;
 
@@ -339,7 +387,8 @@ function main() {
     }
   }
 
-  // velocity-row guard integrates once pmtools velocity lands (issue tracked separately)
+  // Velocity-row guard (#5, skippable): config-gated; SQLite is source of truth.
+  if (!opts.skipVelocityCheck) checkVelocityGuard(issue, fruit);
 
   // Guard 2 (keyword): closing commit subject vs issue title.
   if (!opts.skipKeywordCheck) checkKeywordMatch(issue, closingCommitSha);

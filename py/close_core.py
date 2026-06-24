@@ -195,3 +195,39 @@ def scope_audit_diff_command(base):
     available (offline / detached / unrelated histories)."""
     b = ("" if base is None else str(base)).strip()
     return "git diff --stat {} HEAD".format(b) if b else "git diff --stat origin/main"
+
+
+# --- velocity-row guard (ported from lccjs scripts/close.js; #5) --------------
+# pmtools is DB-only (no velocity-CSV commit), so the I/O wrapper in close.py
+# reads the rows from SQLite and feeds these PURE decisions. The guard is
+# config-gated upstream (skipped when storage.velocity is disabled).
+
+def velocity_row_present(rows):
+    """Check A decision (lccjs #359): does at least one velocity row exist for the
+    ticket? Pure: takes the rows the DB returned, returns bool."""
+    return isinstance(rows, list) and len(rows) > 0
+
+
+def velocity_ticket_mismatch(tickets, issue):
+    """Guard 1 helper (lccjs #310): which of the given ticket numbers disagree
+    with the issue being closed. Empty == consistent. Pure: tickets + issue."""
+    n = int(issue)
+    return [t for t in (tickets or []) if int(t) != n]
+
+
+def compute_velocity_mismatch(rows, issue, closing_agent):
+    """Guard 1 decision (lccjs #361): given the velocity rows {ticket, agent}, the
+    issue, and the closing agent, return the mismatching ticket numbers (empty =
+    pass). If ANY row records the correct ticket the close is consistent; only
+    when none do, filter to the closing agent's own rows to catch a wrong-ticket
+    log (#278 transposition) without false-blocking on a concurrent agent's row."""
+    n = int(issue)
+    all_rows = rows or []
+    if any(int(r["ticket"]) == n for r in all_rows):
+        return []
+    if closing_agent is not None:
+        mine = [r for r in all_rows
+                if str(r["agent"]).lower() == str(closing_agent).lower()]
+    else:
+        mine = all_rows
+    return velocity_ticket_mismatch([r["ticket"] for r in mine], issue)
