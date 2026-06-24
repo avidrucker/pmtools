@@ -279,6 +279,34 @@ exhausted `--max` race retries, the on-origin-main gate failing, a missing/
 mismatched velocity row (guard enabled), marker still present, or keyword
 mismatch.
 
+### Landing model — trunk-based direct push (and gated-repo workaround)
+
+`close` lands **trunk-based**: step 9 pushes the close commit straight to
+`origin/main` (`git push origin HEAD:main`), matching lccjs's `npm run close`.
+This assumes the agent may push directly to the default branch.
+
+In a repo whose `main` is **push-protected** — GitHub branch protection, a
+pre-receive hook, or an agent harness that gates direct pushes — that push is
+rejected. `close` classifies it as `rejected-other` and **dies with your work
+safe and local** (the worktree is left intact; nothing is torn down). It does
+**not** currently open a pull request.
+
+To land in a push-gated repo, drive the PR by hand (the steps `close` would
+otherwise automate):
+
+```bash
+# from inside the worktree, after committing `Closes #N`:
+git push origin HEAD                      # push the branch (not main)
+gh pr create --base main --head <branch> --fill
+gh pr merge <PR> --rebase --delete-branch
+git -C <main-root> checkout main && git -C <main-root> pull --ff-only
+```
+
+A first-class `--via-pr` landing path (push → open + merge a PR → reuse the
+existing on-origin-main gate + teardown) is tracked as a **possible** enhancement
+in #27; it is a superset of the trunk-based model, not required for lccjs parity
+(lccjs is itself trunk-based).
+
 ### Deferred / omitted (lccjs-specific, intentionally NOT ported)
 
 The velocity-row guard **is** ported (DB-based + config-gated; see the guard
