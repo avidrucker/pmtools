@@ -1,0 +1,10 @@
+[
+  { "name": "strips comments, blanks, and surrounding whitespace",
+    "args": ["# header comment\n\nnode_modules/**\n  docs/**  \n# inline section\n*.md\n"],
+    "expected": ["node_modules/**", "docs/**", "*.md"] },
+  { "name": "trims trailing CR (CRLF files)",
+    "args": ["docs/**\r\n*.md\r\n"], "expected": ["docs/**", "*.md"] },
+  { "name": "only comments → no patterns", "args": ["# a\n# b\n"], "expected": [] },
+  { "name": "empty text → no patterns", "args": [""], "expected": [] },
+  { "name": "null → empty", "args": [null], "expected": [] }
+]

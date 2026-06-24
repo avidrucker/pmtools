@@ -6,12 +6,13 @@
 'use strict';
 
 const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 const { reconcile } = require('./reconcile');
 const { getProvider } = require('./provider');
+const { parseCanonicalMarker, parsePddignore, isPddIgnored } = require('./status_core');
 
 const DEFAULT_BRANCH_PATTERN = '^(?<agent>[a-z]+)/issue-(?<issue>\\d+)';
-const MARKER_RE = /@(todo|inprogress)\b/i;
-const ISSUE_RE = /#(\d+)/;
 
 function run(cmd, args) {
   try {
@@ -21,7 +22,24 @@ function run(cmd, args) {
   }
 }
 
-function grepMarkers() {
+// Impure: read the repo-root .pddignore (gitignore-style globs) into a pattern
+// list. Absent file → []. #15 honors it unconditionally; the on/off toggle is
+// #16's job.
+function loadIgnorePatterns() {
+  const root = run('git', ['rev-parse', '--show-toplevel']).trim();
+  if (!root) return [];
+  try {
+    return parsePddignore(fs.readFileSync(path.join(root, '.pddignore'), 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+// Scan for canonical PDD markers, honoring .pddignore. A grep hit counts only
+// when (a) its file is not .pddignore-excluded and (b) its text is a canonical
+// `@(todo|inprogress) #N:<estimate>` marker — incidental prose and estimate-less
+// mentions are dropped (the #1458 flood fix).
+function grepMarkers(ignorePatterns = []) {
   const out = run('git', ['grep', '-nE', '@(todo|inprogress)']);
   const markers = [];
   for (const raw of out.split('\n')) {
@@ -30,16 +48,14 @@ function grepMarkers() {
     const idx2 = raw.indexOf(':', idx1 + 1);
     if (idx1 < 0 || idx2 < 0) continue;
     const file = raw.slice(0, idx1);
-    const line = raw.slice(idx1 + 1, idx2);
-    const content = raw.slice(idx2 + 1);
-    const km = MARKER_RE.exec(content);
-    const im = ISSUE_RE.exec(content);
-    if (!km || !im) continue; // only issue-linked markers
+    if (isPddIgnored(file, ignorePatterns)) continue;
+    const parsed = parseCanonicalMarker(raw.slice(idx2 + 1));
+    if (!parsed) continue;
     markers.push({
       file,
-      line: parseInt(line, 10),
-      keyword: '@' + km[1].toLowerCase(),
-      issue: parseInt(im[1], 10),
+      line: parseInt(raw.slice(idx1 + 1, idx2), 10),
+      keyword: parsed.keyword,
+      issue: parsed.issue,
     });
   }
   return markers;
@@ -88,7 +104,7 @@ function parseArgs(argv) {
 
 function main(argv) {
   const args = parseArgs(argv);
-  const grep = grepMarkers();
+  const grep = grepMarkers(loadIgnorePatterns());
   const worktrees = listWorktrees(args.branchPattern);
   const provider = getProvider(args.host);
   const numbers = [...new Set(grep.map((m) => m.issue))].sort((x, y) => x - y);
