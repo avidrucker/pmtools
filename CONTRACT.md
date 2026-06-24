@@ -137,13 +137,35 @@ orchestration in `claim.{py,js}`. The two language ports are faithful twins.
 ### Convention
 
 ```
-branch   = <fruit>/issue-<N>[-<slug>]
-worktree = <worktreeDir>/<fruit>-issue-<N>      (worktreeDir relative to main repo root)
+branch   = br-<agent>/<project>-<lang>-issue-<N>[-<theme>]
+worktree = <worktreeDir>/wt-<agent>-<project>-<lang>-issue-<N>   (worktreeDir relative to main repo root)
 ```
+
+The name is self-describing: agent, project, language, and issue are all
+readable at a glance, with the `br-`/`wt-` prefix marking the artifact type.
+`<project>` and `<lang>` come from `.claude/orchestrate.json` (`project` key →
+else repo basename, normalized to `[a-z0-9]`; `lang` = `langTag(languages[0])`,
+e.g. `javascript`→`js`). `<theme>` is an optional slug, branch-only.
+
+**Back-compat (no flag day):** parsing tolerates BOTH the new form and the
+legacy `<fruit>/issue-<N>[-<slug>]` / `<fruit>-issue-<N>` — the `br-`/`wt-`
+prefix and the `<project>-<lang>-` segment are optional in every parse regex,
+and the `issue-<N>` token is always present, so in-flight legacy worktrees still
+claim, reconcile, and close. The canonical regexes:
+
+```
+branch:   ^(?:br-)?(?<agent>[a-z0-9]+)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)(?:-(?<theme>.+))?$
+worktree: ^(?:wt-)?(?<agent>[a-z0-9]+)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
+```
+
+Pure helpers (graded by `fixtures/claim/*`): `langTag`, `buildBranch`,
+`buildWorktreeName`, `branchToWorktreeName` (the branch→worktree-dir bridge that
+close uses, handling both forms), plus the prefix-tolerant `inferFruitFromBranch`
+and `worktreesWithIssue`. Design + rationale: avidrucker/lccjs#1460.
 
 ### Identity precedence (highest first)
 
-`--as <name>` → `CLAUDE_AGENT_NAME` env → branch-inferred (`<fruit>/issue-N`) →
+`--as <name>` → `CLAUDE_AGENT_NAME` env → branch-inferred (`[br-]<agent>/…issue-N`) →
 auto. **Auto (no identity) is a hard error** — agents must be named by the human
 orchestrator. A forced identity is a single candidate; auto walks the roster
 minus already-taken names, falling back to `<roster[0]>-2` when all are taken.
@@ -207,7 +229,7 @@ the gated teardown — so it can never fabricate a close.
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--branch <name>` | current branch | Supply the `<fruit>/issue-N` branch when invoking from the main checkout; `close` then chdirs into `<root>/<worktreeDir>/<fruit>-issue-N`. |
+| `--branch <name>` | current branch | Supply the branch (e.g. `br-<agent>/<project>-<lang>-issue-N`, or legacy `<fruit>/issue-N`) when invoking from the main checkout; `close` chdirs into the worktree dir resolved by `branchToWorktreeName` (new `wt-…` or legacy `<fruit>-issue-N`). |
 | `--max N` | `5` | Push-race retry budget (invalid → default). |
 | `--dry-run` | off | Print the `WOULD CLOSE` plan, change nothing, exit 0. |
 | `--keep` | off | Land the commit but do NOT tear down the worktree/branch. |
@@ -235,7 +257,7 @@ rows never false-block).
 
 ### Guard / flow sequence (in `main()` order)
 
-1. `parseArgs`; pre-flight: branch must match `/issue-<N>` AND the given issue;
+1. `parseArgs`; pre-flight: branch must match `[-/]issue-<N>` AND the given issue;
    with `--branch`, chdir into the worktree.
 2. `findClosingCommitSha`: scan `origin/main..HEAD` for a `Closes #N` body.
    Recovery path: if none, fetch + scan `origin/main -100` for an already-pushed
