@@ -1,0 +1,7 @@
+[
+  { "name": "--force bypasses every guard", "args": [3, true, true], "expected": "ok" },
+  { "name": "unpushed commits block (checked first)", "args": [2, true, false], "expected": "unpushed" },
+  { "name": "dirty worktree blocks when nothing is ahead", "args": [0, true, false], "expected": "dirty" },
+  { "name": "clean + nothing ahead → ok", "args": [0, false, false], "expected": "ok" },
+  { "name": "unpushed takes precedence over dirty", "args": [1, false, false], "expected": "unpushed" }
+]
