@@ -1,0 +1,16 @@
+[
+  { "name": "a correct-ticket row exists → pass (empty)",
+    "args": [[{ "ticket": 5, "agent": "apple" }], "5", "apple"], "expected": [] },
+  { "name": "correct ticket logged by ANY agent → pass (Check A satisfied)",
+    "args": [[{ "ticket": 5, "agent": "banana" }], "5", "apple"], "expected": [] },
+  { "name": "closer logged only a wrong ticket → mismatch (#278 transposition)",
+    "args": [[{ "ticket": 6, "agent": "apple" }], "5", "apple"], "expected": [6] },
+  { "name": "only a concurrent agent's off-ticket row → not the closer's, no false block (#361)",
+    "args": [[{ "ticket": 6, "agent": "banana" }], "5", "apple"], "expected": [] },
+  { "name": "agent match is case-insensitive",
+    "args": [[{ "ticket": 7, "agent": "APPLE" }], "5", "apple"], "expected": [7] },
+  { "name": "no closing agent → every off-ticket row counts",
+    "args": [[{ "ticket": 6, "agent": "apple" }], "5", null], "expected": [6] },
+  { "name": "empty rows → pass",
+    "args": [[], "5", "apple"], "expected": [] }
+]

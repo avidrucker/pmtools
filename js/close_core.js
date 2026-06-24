@@ -138,6 +138,40 @@ function scopeAuditDiffCommand(base) {
   return b ? `git diff --stat ${b} HEAD` : 'git diff --stat origin/main';
 }
 
+// --- velocity-row guard (ported from lccjs scripts/close.js; #5) --------------
+// pmtools is DB-only (no velocity-CSV commit), so the I/O wrapper in close.js
+// reads the rows from SQLite and feeds these PURE decisions. The guard is
+// config-gated upstream (skipped when storage.velocity is disabled).
+
+// Check A decision (lccjs #359): does at least one velocity row exist for the
+// ticket? Pure: takes the rows the DB returned, returns boolean.
+function velocityRowPresent(rows) {
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+// Guard 1 helper (lccjs #310): which of the given ticket numbers disagree with
+// the issue being closed. Empty == consistent. Pure: tickets + issue → number[].
+function velocityTicketMismatch(tickets, issue) {
+  const n = Number(issue);
+  return (tickets || []).filter((t) => Number(t) !== n);
+}
+
+// Guard 1 decision (lccjs #361): given the velocity rows {ticket, agent}, the
+// issue, and the closing agent, return the mismatching ticket numbers (empty =
+// pass). If ANY row records the correct ticket the close is consistent; only
+// when none do, filter to the closing agent's own rows to catch a wrong-ticket
+// log (the #278 digit-transposition) without false-blocking on a concurrent
+// agent's unrelated row.
+function computeVelocityMismatch(rows, issue, closingAgent) {
+  const n = Number(issue);
+  const all = rows || [];
+  if (all.some((r) => Number(r.ticket) === n)) return [];
+  const mine = closingAgent
+    ? all.filter((r) => String(r.agent).toLowerCase() === String(closingAgent).toLowerCase())
+    : all;
+  return velocityTicketMismatch(mine.map((r) => r.ticket), issue);
+}
+
 module.exports = {
   DEFAULT_MAX_RETRIES, UNION_FILES, KEYWORD_STOP_SET, SHORT_TECH_WORDS,
   classifyPushError, shouldCleanup,
@@ -145,4 +179,5 @@ module.exports = {
   classifyRebaseConflict, bodyClosesIssue,
   extractKeywords, keywordsOverlap,
   markerStillPresent, scopeAuditDiffCommand,
+  velocityRowPresent, velocityTicketMismatch, computeVelocityMismatch,
 };
