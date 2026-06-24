@@ -351,6 +351,40 @@ assert_exit "$?" 0 "[js] status --json exit 0"
 if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$o" 2>/dev/null; then
   pass "[js] status --json emits valid JSON"; else fail "[js] status --json emits valid JSON"; fi
 
+# ---------------------------------------------------------------------------
+# 6b) status canonical-grammar + .pddignore (#15): only a canonical, non-ignored
+# `@(todo|inprogress) #N:<estimate>` marker is actionable. Proves BOTH layers:
+# estimate-less prose is dropped by grammar; a canonical marker in a .pddignore'd
+# spec file is dropped by the ignore layer; the one real code-site marker stays.
+# ---------------------------------------------------------------------------
+run_status_pdd_suite() {
+  local lang="$1"; shift; local -a RUN=("$@")
+  echo "-- [$lang] status canonical + .pddignore battery --"
+  local repo; repo="$(new_env)"
+  (
+    cd "$repo"
+    mkdir -p src tests docs
+    printf '// @todo #252:30m implement the real thing\n' > src/real.js
+    printf 'prose: @todo #208 see comments for context\n' > CLAUDE.md
+    printf "it('scans', () => expect(run('@todo #9102:15m')).toBe(1));\n" > tests/x.spec.js
+    printf '@inprogress #143 doc note about markers\n' > docs/note.md
+    printf 'tests/**/*.spec.js\ndocs/**\n*.md\n' > .pddignore
+    git add -A && git commit -qm "seed markers + .pddignore"
+  )
+  local oo="$TMPROOT/statuspdd.$lang.$RANDOM"
+  ( cd "$repo" && "${RUN[@]}" --json ) >"$oo" 2>&1
+  assert_exit "$?" 0 "[$lang] status (pdd) --json exit 0"
+  local issues
+  issues="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" ".join(str(m["issue"]) for m in d["markers"]))' "$oo" 2>/dev/null)"
+  if [ "$issues" = "252" ]; then
+    pass "[$lang] status: only the canonical, non-ignored marker #252 survives (got: $issues)"
+  else
+    fail "[$lang] status: expected only #252, got: [$issues]"; sed 's/^/      /' "$oo"
+  fi
+}
+run_status_pdd_suite "py" python3 "$PY_STATUS"
+run_status_pdd_suite "js" node "$JS_STATUS"
+
 # preflight: offline gh (no fake) -> warn-and-proceed (exit 0). Confine scratch
 # to the temp tree so we don't touch ~/.pmtools.
 ( cd "$smoke_repo" && python3 "$PY_PREFLIGHT" 5 --scratch-dir "$TMPROOT/scratch-py" ) >"$o" 2>&1
