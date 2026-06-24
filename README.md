@@ -64,6 +64,12 @@ pmtools close 42                  # from inside the worktree, after committing `
 pmtools status --port js          # force the Node port (default: py)
 ```
 
+> `close` lands **trunk-based** — it pushes the close commit straight to
+> `origin/main` (like lccjs's `npm run close`). If your `main` is push-protected
+> (branch protection / a push-gating harness), that push is rejected and `close`
+> exits with your work safe and local; land via a PR by hand instead. See
+> CONTRACT.md §close "Landing model" for the recipe.
+
 - Clone root: `$PMTOOLS_HOME` if set, else self-resolved from the dispatcher's location.
 - Port: `--port py|js` > `$PMTOOLS_PORT` > `py`.
 
