@@ -44,6 +44,9 @@ const DISPATCH = {
   claim_push_action: claim.claimPushAction,
   claim_ref_is_stale: claim.claimRefIsStale,
   build_banner_lines: claim.buildBannerLines,
+  lang_tag: claim.langTag,
+  build_branch: claim.buildBranch,
+  build_worktree_name: claim.buildWorktreeName,
 };
 
 test('every claim fixture file has a dispatch entry (1:1)', () => {

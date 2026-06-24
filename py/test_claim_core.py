@@ -47,6 +47,9 @@ DISPATCH = {
     "claim_push_action": claim_core.claim_push_action,
     "claim_ref_is_stale": claim_core.claim_ref_is_stale,
     "build_banner_lines": claim_core.build_banner_lines,
+    "lang_tag": claim_core.lang_tag,
+    "build_branch": claim_core.build_branch,
+    "build_worktree_name": claim_core.build_worktree_name,
 }
 
 

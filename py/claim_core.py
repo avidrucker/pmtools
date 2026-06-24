@@ -178,6 +178,41 @@ def assess_base_staleness(base, behind):
     return {"checksRemote": checks_remote, "behind": n, "stale": bool(checks_remote and n > 0)}
 
 
+# --- self-describing naming scheme (br-/wt- prefixes) -----------------------
+# Short language tags for the <lang> field. Sensible default map; unknown
+# languages pass through lowercased + alnum-only; empty/null -> 'unk'. Extend freely.
+LANG_TAGS = {
+    "javascript": "js", "typescript": "ts", "python": "py", "clojure": "clj",
+    "java": "java", "ruby": "rb", "go": "go", "rust": "rs", "c": "c", "c++": "cpp",
+    "cpp": "cpp", "csharp": "cs", "php": "php", "shell": "sh", "bash": "sh",
+}
+
+
+def lang_tag(language):
+    """Short <lang> tag. Known map, else lowercased alnum-only, else 'unk'."""
+    key = str(language or "").strip().lower()
+    if not key:
+        return "unk"
+    if key in LANG_TAGS:
+        return LANG_TAGS[key]
+    slug = re.sub(r"[^a-z0-9]", "", key)
+    return slug or "unk"
+
+
+def build_branch(parts):
+    """branch = br-<agent>/<project>-<lang>-issue-<N>[-<slug>]."""
+    slug = parts.get("slug")
+    tail = "-{}".format(slug) if slug else ""
+    return "br-{}/{}-{}-issue-{}{}".format(
+        parts["agent"], parts["project"], parts["lang"], parts["issue"], tail)
+
+
+def build_worktree_name(parts):
+    """worktree dir = wt-<agent>-<project>-<lang>-issue-<N> (slug never in dir name)."""
+    return "wt-{}-{}-{}-issue-{}".format(
+        parts["agent"], parts["project"], parts["lang"], parts["issue"])
+
+
 def sentinel_branch(fruit):
     """Return the <fruit>/session sentinel branch name."""
     return "{}/session".format(fruit)
