@@ -114,7 +114,9 @@ Seeded from lccjs `scripts/preflight.js`, with the two lccjs-specific paths
 parameterized:
 
 - scratch timestamps: `<scratchDir>/preflight-<issue>.iso`
-  (default `~/.pmtools/<repo>/`, where `<repo>` = basename of the git toplevel).
+  (default `~/.pmtools/<repo>/`, where `<repo>` = basename of the **main
+  checkout** — `git --git-common-dir`'s parent, so all worktrees of one repo
+  share one scratch dir, #26).
 - evidence scan dirs: `<evidenceDirs>` (default `["docs/logs","docs/research"]`).
 
 Steps: (1) stamp `started_iso` to the scratch file; (2) start-of-task reads
@@ -319,8 +321,9 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
 }
 ```
 
-- `dbPath: null` → `~/.pmtools/<repo>/pmtools.db` (`<repo>` = basename of the git
-  toplevel — the same convention as `preflight`'s scratch dir).
+- `dbPath: null` → `~/.pmtools/<repo>/pmtools.db` (`<repo>` = basename of the
+  **main checkout**, not the worktree — so every worktree of one repo logs to one
+  DB; same convention as `preflight`'s scratch dir and the `repo` data column, #26).
 - `enabled: false` → the store's `log`/`export` refuses with
   `"<store> store disabled for this project"` and **exits 0** (a disabled store is
   not an error). **errors defaults enabled; velocity defaults disabled (opt-in).**

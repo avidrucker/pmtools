@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 
+import config
 from preflight_core import preflight_issue_gate, preflight_evidence, DEFAULT_EVIDENCE_DIRS
 
 
@@ -59,8 +60,10 @@ def list_evidence_files(evidence_dirs):
 
 
 def default_scratch_dir():
-    top = (sh(["git", "rev-parse", "--show-toplevel"]) or "").strip()
-    repo = os.path.basename(top) if top else "repo"
+    # Key the scratch dir off the MAIN checkout so worktrees don't scatter
+    # ~/.pmtools/<worktree>/ dirs (#26).
+    root = config.main_repo_root()
+    repo = os.path.basename(root) if root else "repo"
     return os.path.join(os.path.expanduser("~"), ".pmtools", repo)
 
 

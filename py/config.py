@@ -42,12 +42,35 @@ def _sh(cmd):
 
 
 def repo_root(cwd=None):
-    """Absolute git toplevel for `cwd` (default os.getcwd()), or None."""
+    """Absolute git toplevel for `cwd` (default os.getcwd()), or None.
+
+    NOTE: in a worktree this is the WORKTREE, not the main checkout. Correct for
+    finding the (committed) `.claude/orchestrate.json`; for per-project STATE
+    identity use main_repo_root() instead (#26)."""
     args = ["git", "rev-parse", "--show-toplevel"]
     if cwd:
         args = ["git", "-C", cwd, "rev-parse", "--show-toplevel"]
     top = (_sh(args) or "").strip()
     return top or None
+
+
+def main_repo_root(cwd=None):
+    """Absolute path of the MAIN checkout's root (NOT a worktree), or None.
+
+    Per-project STATE (DB path, scratch dir, the `repo` data column) keys off this
+    so every worktree of one repo shares one identity. Uses --git-common-dir
+    (which, from a worktree, points at the main repo's .git) and takes its parent;
+    mirrors close.py's main_root(). Falls back to a relative --git-common-dir
+    resolved against cwd for older git without --path-format."""
+    base = ["git"] + (["-C", cwd] if cwd else [])
+    common = (_sh(base + ["rev-parse", "--path-format=absolute",
+                          "--git-common-dir"]) or "").strip()
+    if not common:
+        rel = (_sh(base + ["rev-parse", "--git-common-dir"]) or "").strip()
+        if not rel:
+            return None
+        common = os.path.abspath(os.path.join(cwd or os.getcwd(), rel))
+    return os.path.dirname(common)
 
 
 def default_db_path(root=None):
@@ -56,7 +79,7 @@ def default_db_path(root=None):
     Mirrors preflight.default_scratch_dir()'s ~/.pmtools/<repo>/ pattern.
     """
     if root is None:
-        root = repo_root()
+        root = main_repo_root()
     repo = os.path.basename(root) if root else "repo"
     return os.path.join(os.path.expanduser("~"), ".pmtools", repo, "pmtools.db")
 
@@ -92,7 +115,8 @@ def load_storage_config(cwd=None):
 
     db_path = raw_storage.get("dbPath")
     if not db_path:
-        db_path = default_db_path(root)
+        # State identity = MAIN checkout, so all worktrees share one DB (#26).
+        db_path = default_db_path(main_repo_root(cwd))
     else:
         db_path = os.path.expanduser(db_path)
 
