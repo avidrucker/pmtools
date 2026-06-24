@@ -39,8 +39,16 @@ worktrees:  [ { "branch": str, "issue": int, "agent": str } ]
 issues:     [ { "number": int, "state": "OPEN" | "CLOSED" } ]
 ```
 
-- `grep` rows come from scanning tracked files for `@todo`/`@inprogress` markers
-  that reference an issue number (`#<N>`).
+- `grep` rows come from scanning tracked files for **canonical** PDD markers —
+  `@(todo|inprogress) #N:<estimate>` (the estimate after the colon is required,
+  e.g. `#252:30m`). Estimate-less mentions (`@todo #208`) and incidental prose
+  are **not** actionable. Files matched by the repo-root `.pddignore` (gitignore-
+  style globs) are skipped. This keeps pmtools generic — a consumer expresses its
+  own exclusions (e.g. `tests/**/*.spec.js`, `docs/**`) in **its** `.pddignore`;
+  no consumer path is hard-coded. The two pure decisions live in the `status_core`
+  seams (`parse_canonical_marker`, `parse_pddignore`, `is_pdd_ignored`), graded
+  against `fixtures/status/*`; `status.{js,py}` do the `git grep` + `.pddignore`
+  read. (The on/off toggle for PDD scanning is tracked separately in #16.)
 - `worktrees` rows come from `git worktree list --porcelain`, with `issue`/`agent`
   parsed from the branch via the caller's `worktreeBranchPattern`.
 - `issues` rows come from the host provider adapter (`gh`/`glab`). When the

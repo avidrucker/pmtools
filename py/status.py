@@ -11,16 +11,16 @@ JSON. Exit 0 always, except --strict with >=1 STALE marker -> exit 1.
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 
 from reconcile import reconcile
 from provider import get_provider
+from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored
 
 DEFAULT_BRANCH_PATTERN = r"^(?P<agent>[a-z]+)/issue-(?P<issue>\d+)"
-_MARKER_RE = re.compile(r"@(todo|inprogress)\b", re.IGNORECASE)
-_ISSUE_RE = re.compile(r"#(\d+)")
 
 
 def _js_to_py_named_groups(pattern):
@@ -35,8 +35,27 @@ def _run(cmd):
         return ""
 
 
-def grep_markers():
-    """[{file,line,keyword,issue}] for issue-linked @todo/@inprogress markers."""
+def load_ignore_patterns():
+    """Impure: read the repo-root .pddignore (gitignore-style globs) into a
+    pattern list. Absent file -> []. #15 honors it unconditionally; the on/off
+    toggle is #16's job."""
+    root = _run(["git", "rev-parse", "--show-toplevel"]).strip()
+    if not root:
+        return []
+    try:
+        with open(os.path.join(root, ".pddignore"), encoding="utf-8") as fh:
+            return parse_pddignore(fh.read())
+    except OSError:
+        return []
+
+
+def grep_markers(ignore_patterns=None):
+    """[{file,line,keyword,issue}] for canonical PDD markers, honoring .pddignore.
+
+    A grep hit counts only when (a) its file is not .pddignore-excluded and
+    (b) its text is a canonical `@(todo|inprogress) #N:<estimate>` marker —
+    incidental prose and estimate-less mentions are dropped (the #1458 flood)."""
+    ignore_patterns = ignore_patterns or []
     out = _run(["git", "grep", "-nE", r"@(todo|inprogress)"])
     markers = []
     for raw in out.splitlines():
@@ -45,15 +64,16 @@ def grep_markers():
         if len(parts) < 3:
             continue
         file, line, content = parts
-        km = _MARKER_RE.search(content)
-        im = _ISSUE_RE.search(content)
-        if not km or not im:
-            continue  # only issue-linked markers participate in status
+        if is_pdd_ignored(file, ignore_patterns):
+            continue
+        parsed = parse_canonical_marker(content)
+        if not parsed:
+            continue
         markers.append({
             "file": file,
             "line": int(line),
-            "keyword": "@" + km.group(1).lower(),
-            "issue": int(im.group(1)),
+            "keyword": parsed["keyword"],
+            "issue": parsed["issue"],
         })
     return markers
 
@@ -102,7 +122,7 @@ def main(argv=None):
     ap.add_argument("--limit", type=int, default=50)
     args = ap.parse_args(argv)
 
-    grep = grep_markers()
+    grep = grep_markers(load_ignore_patterns())
     worktrees = list_worktrees(args.branch_pattern)
     provider = get_provider(args.host)
     issue_numbers = sorted({m["issue"] for m in grep})
