@@ -19,6 +19,7 @@ import sys
 from reconcile import reconcile
 from provider import get_provider
 from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored
+from config import load_pdd_config
 
 DEFAULT_BRANCH_PATTERN = r"^(?P<agent>[a-z]+)/issue-(?P<issue>\d+)"
 
@@ -35,17 +36,21 @@ def _run(cmd):
         return ""
 
 
-def load_ignore_patterns():
-    """Impure: read the repo-root .pddignore (gitignore-style globs) into a
-    pattern list. Absent file -> []. #15 honors it unconditionally; the on/off
-    toggle is #16's job."""
+def load_ignore_patterns(ignore_file=".pddignore", warn_if_absent=False):
+    """Impure: read the repo-root <ignore_file> (gitignore-style globs) into a
+    pattern list. Absent file -> [] (+ a one-line stderr warn when
+    warn_if_absent, so an enabled-but-unconfigured repo knows it is scanning
+    everything). #15 honors the ignore file; #16 makes the scan toggle-able."""
     root = _run(["git", "rev-parse", "--show-toplevel"]).strip()
     if not root:
         return []
     try:
-        with open(os.path.join(root, ".pddignore"), encoding="utf-8") as fh:
+        with open(os.path.join(root, ignore_file), encoding="utf-8") as fh:
             return parse_pddignore(fh.read())
     except OSError:
+        if warn_if_absent:
+            sys.stderr.write(
+                "[status] pdd enabled but no {} — scanning all tracked files.\n".format(ignore_file))
         return []
 
 
@@ -122,7 +127,14 @@ def main(argv=None):
     ap.add_argument("--limit", type=int, default=50)
     args = ap.parse_args(argv)
 
-    grep = grep_markers(load_ignore_patterns())
+    # PDD marker scanning is config-gated (#16). When disabled, skip the scan
+    # entirely; worktree + issue reconciliation still run.
+    pdd = load_pdd_config()
+    if pdd["enabled"]:
+        grep = grep_markers(load_ignore_patterns(pdd["ignoreFile"], warn_if_absent=True))
+    else:
+        sys.stderr.write("[status] pdd disabled — skipping marker scan.\n")
+        grep = []
     worktrees = list_worktrees(args.branch_pattern)
     provider = get_provider(args.host)
     issue_numbers = sorted({m["issue"] for m in grep})

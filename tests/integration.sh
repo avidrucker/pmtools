@@ -341,12 +341,14 @@ echo "-- smoke: status / preflight --"
 smoke_repo="$(new_env)"
 o="$TMPROOT/out.smoke"
 
-( cd "$smoke_repo" && python3 "$PY_STATUS" --json ) >"$o" 2>&1
+# stdout-only capture: status may emit a one-line pdd warning to stderr (no
+# .pddignore here), and --json output on stdout must stay pure JSON.
+( cd "$smoke_repo" && python3 "$PY_STATUS" --json ) >"$o" 2>/dev/null
 assert_exit "$?" 0 "[py] status --json exit 0"
 if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$o" 2>/dev/null; then
   pass "[py] status --json emits valid JSON"; else fail "[py] status --json emits valid JSON"; fi
 
-( cd "$smoke_repo" && node "$JS_STATUS" --json ) >"$o" 2>&1
+( cd "$smoke_repo" && node "$JS_STATUS" --json ) >"$o" 2>/dev/null
 assert_exit "$?" 0 "[js] status --json exit 0"
 if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$o" 2>/dev/null; then
   pass "[js] status --json emits valid JSON"; else fail "[js] status --json emits valid JSON"; fi
@@ -372,14 +374,42 @@ run_status_pdd_suite() {
     git add -A && git commit -qm "seed markers + .pddignore"
   )
   local oo="$TMPROOT/statuspdd.$lang.$RANDOM"
-  ( cd "$repo" && "${RUN[@]}" --json ) >"$oo" 2>&1
-  assert_exit "$?" 0 "[$lang] status (pdd) --json exit 0"
-  local issues
-  issues="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" ".join(str(m["issue"]) for m in d["markers"]))' "$oo" 2>/dev/null)"
+  # stdout-only (status may warn to stderr); --json must stay pure JSON.
+  local extract='import json,sys; d=json.load(open(sys.argv[1])); print(" ".join(str(m["issue"]) for m in d["markers"]))'
+
+  # (1) pdd defaults ON (no orchestrate.json): only the canonical, non-ignored #252.
+  ( cd "$repo" && "${RUN[@]}" --json ) >"$oo" 2>/dev/null
+  assert_exit "$?" 0 "[$lang] status (pdd default-on) --json exit 0"
+  local issues; issues="$(python3 -c "$extract" "$oo" 2>/dev/null)"
   if [ "$issues" = "252" ]; then
-    pass "[$lang] status: only the canonical, non-ignored marker #252 survives (got: $issues)"
+    pass "[$lang] status: default-on → only canonical non-ignored #252 (got: $issues)"
   else
-    fail "[$lang] status: expected only #252, got: [$issues]"; sed 's/^/      /' "$oo"
+    fail "[$lang] status: default-on expected #252, got: [$issues]"; sed 's/^/      /' "$oo"
+  fi
+
+  # (2) pdd.enabled=false → marker scan suppressed entirely (0 markers).
+  ( cd "$repo" && mkdir -p .claude
+    printf '{ "pdd": { "enabled": false } }\n' > .claude/orchestrate.json
+    git add -A && git commit -qm "disable pdd" ) >/dev/null 2>&1
+  ( cd "$repo" && "${RUN[@]}" --json ) >"$oo" 2>/dev/null
+  assert_exit "$?" 0 "[$lang] status (pdd off) --json exit 0"
+  issues="$(python3 -c "$extract" "$oo" 2>/dev/null)"
+  if [ -z "$issues" ]; then
+    pass "[$lang] status: pdd.enabled=false → no markers scanned (skipped)"
+  else
+    fail "[$lang] status: pdd off expected 0 markers, got: [$issues]"; sed 's/^/      /' "$oo"
+  fi
+
+  # (3) flip pdd.enabled=true → marker scan returns (#252 again).
+  ( cd "$repo"
+    printf '{ "pdd": { "enabled": true } }\n' > .claude/orchestrate.json
+    git add -A && git commit -qm "enable pdd" ) >/dev/null 2>&1
+  ( cd "$repo" && "${RUN[@]}" --json ) >"$oo" 2>/dev/null
+  issues="$(python3 -c "$extract" "$oo" 2>/dev/null)"
+  if [ "$issues" = "252" ]; then
+    pass "[$lang] status: pdd.enabled=true → marker scan restored (got: $issues)"
+  else
+    fail "[$lang] status: pdd on expected #252, got: [$issues]"; sed 's/^/      /' "$oo"
   fi
 }
 run_status_pdd_suite "py" python3 "$PY_STATUS"

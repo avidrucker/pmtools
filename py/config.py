@@ -26,6 +26,11 @@ _DEFAULTS = {
     "velocity": {"enabled": False, "csvMirror": None, "logCommand": None},
 }
 
+# PDD marker scanning defaults ON (preserves status's historical behavior); a
+# repo opts out with `"pdd": {"enabled": false}`. ignoreFile names the
+# gitignore-style exclude list (default .pddignore).
+_DEFAULTS_PDD = {"enabled": True, "ignoreFile": ".pddignore"}
+
 
 def _sh(cmd):
     try:
@@ -96,3 +101,27 @@ def load_storage_config(cwd=None):
         "errors": _merge_store(_DEFAULTS["errors"], raw_storage.get("errors")),
         "velocity": _merge_store(_DEFAULTS["velocity"], raw_storage.get("velocity")),
     }
+
+
+def load_pdd_config(cwd=None):
+    """Return the merged `pdd` config: {enabled, ignoreFile}. Reads the top-level
+    `pdd` block of orchestrate.json (sibling to `storage`); tolerant of a missing
+    repo / file / key (falls back to _DEFAULTS_PDD → scanning ON)."""
+    root = repo_root(cwd)
+    raw_pdd = {}
+    if root:
+        cfg_path = os.path.join(root, ".claude", "orchestrate.json")
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and isinstance(data.get("pdd"), dict):
+                    raw_pdd = data["pdd"]
+            except (ValueError, OSError):
+                raw_pdd = {}
+
+    merged = dict(_DEFAULTS_PDD)
+    for k in ("enabled", "ignoreFile"):
+        if k in raw_pdd:
+            merged[k] = raw_pdd[k]
+    return merged
