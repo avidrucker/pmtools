@@ -38,6 +38,9 @@ const DISPATCH = {
   velocity_row_present: close.velocityRowPresent,
   velocity_ticket_mismatch: close.velocityTicketMismatch,
   compute_velocity_mismatch: close.computeVelocityMismatch,
+  parse_worktree_porcelain: close.parseWorktreePorcelain,
+  find_worktree_for_issue: close.findWorktreeForIssue,
+  release_guard_verdict: close.releaseGuardVerdict,
 };
 
 test('every close fixture file has a dispatch entry (1:1)', () => {

@@ -231,3 +231,46 @@ def compute_velocity_mismatch(rows, issue, closing_agent):
     else:
         mine = all_rows
     return velocity_ticket_mismatch([r["ticket"] for r in mine], issue)
+
+
+# --- release-command seams (#22; the cleanup half of close, shared core) ------
+
+def parse_worktree_porcelain(porcelain):
+    """Parse `git worktree list --porcelain` into [{path, branch}] (branch short
+    name, refs/heads/ stripped; detached entries keep branch None). Pure."""
+    rows = []
+    cur = None
+    for line in str(porcelain or "").split("\n"):
+        if line.startswith("worktree "):
+            cur = {"path": line[len("worktree "):].strip(), "branch": None}
+            rows.append(cur)
+        elif line.startswith("branch ") and cur is not None:
+            cur["branch"] = line[len("branch "):].strip().replace("refs/heads/", "")
+    return rows
+
+
+def find_worktree_for_issue(rows, issue):
+    """The worktree staked for issue N: branch `<agent>/issue-<N>` (optional
+    trailing slug) or path basename ending `-issue-<N>`. Skips the main entry
+    (rows[0]). The `(?:[^0-9]|$)` boundary keeps `issue-9` from matching
+    `issue-99`. Pure: rows + issue → {path, branch} | None."""
+    re_branch = re.compile(r"/issue-{}(?:[^0-9]|$)".format(issue))
+    re_path = re.compile(r"-issue-{}$".format(issue))
+    for r in (rows or [])[1:]:
+        base = str(r["path"]).split("/")[-1]
+        if (r.get("branch") and re_branch.search(r["branch"])) or re_path.search(base):
+            return r
+    return None
+
+
+def release_guard_verdict(ahead, dirty, force):
+    """The release data-loss guard decision (#22). ahead = commits on the branch
+    not on origin/main; dirty = worktree has uncommitted changes; force = --force.
+    Returns 'unpushed' | 'dirty' | 'ok' (ahead checked first). Pure."""
+    if force:
+        return "ok"
+    if int(ahead) > 0:
+        return "unpushed"
+    if dirty:
+        return "dirty"
+    return "ok"

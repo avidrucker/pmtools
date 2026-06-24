@@ -17,6 +17,7 @@ Centralized, project-agnostic project-management helpers for the
 | `preflight` | fleet-only | py + js |
 | `claim` | fleet-only | py + js (lccjs-isms parameterized: `--worktree-dir`, `--roster`, `--lane-check` (off by default), `--copy-env`) |
 | `close` | fleet-only | py + js (racy push loop + gated teardown; `--worktree-dir` parameterized; **config-gated velocity-row guard** (#5); learnings/tracker guards omitted) |
+| `release` | fleet-only | py + js (abandon a claim + tear down its worktree, issue stays OPEN; data-loss guard refuses unpushed/dirty without `--force`) |
 | `error` | storage | **py** (js pending — follow-on via the `sqlite3` CLI) |
 | `velocity` | storage | **py** (js pending — follow-on via the `sqlite3` CLI) |
 

@@ -1,0 +1,118 @@
+#!/usr/bin/env node
+'use strict';
+/*
+ * release.js — abandon a claim + tear down its worktree WITHOUT closing the
+ * issue (#22; "unclaim"). The cleanup half of close.js, minus land-on-main +
+ * provider-close. Faithful twin of py/release.py; all pure decisions live in
+ * ./close_core. Ported from lccjs scripts/release.js.
+ *
+ *   1. Delete the cross-clone claim ref (reuses close_core's refspec + classifier;
+ *      best-effort + idempotent; --no-verify so a messy tree can't block its own
+ *      cleanup — pmtools ships no hooks, but the flag keeps it portable).
+ *   2. Remove the worktree + branch + prune (close.js's SYNCHRONOUS teardown —
+ *      no npm getcwd footgun here). Reverts any uncommitted @inprogress flip free.
+ *   3. Leave the issue OPEN — no commit, no push, no provider close.
+ *   4. Data-loss guard FIRST: refuse if the branch has commits not on origin/main
+ *      OR the worktree is dirty — unless --force — printing what would be lost.
+ *
+ * Usage:  pmtools release <issue> [--force]
+ * Exit:   0 on success / nothing-to-do; 1 on bad args or a guard refusal.
+ */
+
+const { execSync } = require('node:child_process');
+const {
+  claimRefDeleteCommand, classifyClaimRefDelete,
+  parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
+} = require('./close_core');
+
+function sh(cmd, allowFail = false) {
+  try {
+    return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    if (allowFail) return null;
+    throw e;
+  }
+}
+function shCapture(cmd) {
+  try {
+    return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch {
+    return '';
+  }
+}
+function log(m) { console.log(`[release] ${m}`); }
+function die(m) { console.error(`[release] ✗ ${m}`); process.exit(1); }
+
+function parseArgs(argv) {
+  const a = { issue: null, force: false };
+  for (const t of argv) {
+    if (t === '--force') a.force = true;
+    else if (t === '--') continue;
+    else if (/^\d+$/.test(t)) {
+      if (a.issue !== null) die(`unexpected extra arg: ${t} (usage: release <N> [--force])`);
+      a.issue = t;
+    } else die(`unknown arg: ${t} (usage: release <N> [--force])`);
+  }
+  if (a.issue === null) die('usage: release <issue-number> [--force]');
+  return a;
+}
+
+function deleteClaimRef(issue) {
+  const out = sh(`${claimRefDeleteCommand(issue)} --no-verify 2>&1 || true`, true) || '';
+  const verdict = classifyClaimRefDelete(out);
+  if (verdict === 'DELETED') log(`claim ref refs/claims/issue-${issue} deleted.`);
+  else if (verdict === 'ABSENT') log(`claim ref refs/claims/issue-${issue} already absent — no-op.`);
+  else log(`warn: could not delete claim ref refs/claims/issue-${issue} (best-effort; continuing).`);
+}
+
+function main() {
+  const { issue, force } = parseArgs(process.argv.slice(2));
+  const rows = parseWorktreePorcelain(shCapture('git worktree list --porcelain'));
+  const root = rows.length ? rows[0].path : shCapture('git rev-parse --show-toplevel');
+  const wt = findWorktreeForIssue(rows, issue);
+
+  if (!wt) {
+    // Orphan claim ref (no worktree — e.g. a dead session): free the ref so the
+    // issue is re-claimable. Nothing to guard or tear down.
+    deleteClaimRef(issue);
+    log(`no worktree found for #${issue} — nothing to tear down.`);
+    log(`#${issue} left as-is (OPEN unless already closed elsewhere).`);
+    return;
+  }
+  const { path: wtPath, branch } = wt;
+
+  // --- data-loss guard FIRST — a refused release leaves the claim + worktree intact.
+  if (!force) {
+    sh('git fetch origin -q', true);
+    const ahead = parseInt(shCapture(`git rev-list --count origin/main..${branch}`), 10) || 0;
+    const dirty = shCapture(`git -C "${wtPath}" status --porcelain`);
+    const verdict = releaseGuardVerdict(ahead, !!dirty, false);
+    if (verdict === 'unpushed') {
+      die(`#${issue} branch ${branch} has ${ahead} commit(s) NOT on origin/main — release would discard them:\n`
+        + shCapture(`git log origin/main..${branch} --oneline`)
+        + '\n  Land them on the right ticket first, or re-run with --force to discard.');
+    }
+    if (verdict === 'dirty') {
+      die(`worktree ${wtPath} has uncommitted changes — release would discard them:\n`
+        + dirty + '\n  Commit/stash what you want to keep, or re-run with --force to discard.');
+    }
+  }
+
+  // --- claim ref (only now that the guard passed / --force) ---
+  deleteClaimRef(issue);
+
+  // --- teardown: synchronous from the main root (mirrors close.js; reverts any
+  //     uncommitted @inprogress flip for free; leaves the issue OPEN). ---
+  log(`releasing #${issue}: worktree ${wtPath} + branch ${branch} — issue stays OPEN.`);
+  try { process.chdir(root); } catch (_) { /* best-effort */ }
+  const rmBranch = branch ? ` && git branch -D ${branch}` : '';
+  const res = shCapture(`git worktree remove --force "${wtPath}"${rmBranch} && git worktree prune`);
+  if (res === '' && shCapture(`git worktree list --porcelain`).includes(wtPath)) {
+    console.error('[release] warning: teardown may have failed — check: git worktree list');
+  }
+  log(`Shell re-root: cd "${root}"`);
+}
+
+if (require.main === module) main();
+
+module.exports = { parseArgs };
