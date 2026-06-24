@@ -48,7 +48,12 @@ issues:     [ { "number": int, "state": "OPEN" | "CLOSED" } ]
   no consumer path is hard-coded. The two pure decisions live in the `status_core`
   seams (`parse_canonical_marker`, `parse_pddignore`, `is_pdd_ignored`), graded
   against `fixtures/status/*`; `status.{js,py}` do the `git grep` + `.pddignore`
-  read. (The on/off toggle for PDD scanning is tracked separately in #16.)
+  read. Marker scanning is **config-gated** (#16): the `pdd` block of
+  orchestrate.json toggles it (`pdd.enabled`, default **true**). When disabled,
+  `status` skips the marker scan entirely (worktree + issue reconciliation still
+  run); `pdd.ignoreFile` (default `.pddignore`) names the exclude list, and when
+  scanning is enabled but the file is absent, `status` warns once to stderr and
+  scans everything. See `.pddignore.example` for a starter exclude list.
 - `worktrees` rows come from `git worktree list --porcelain`, with `issue`/`agent`
   parsed from the branch via the caller's `worktreeBranchPattern`.
 - `issues` rows come from the host provider adapter (`gh`/`glab`). When the
@@ -307,6 +312,10 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
   "dbPath": null,                  // null => ~/.pmtools/<repo>/pmtools.db
   "velocity": { "enabled": false, "csvMirror": null, "logCommand": null },
   "errors":   { "enabled": true,  "csvMirror": null, "logCommand": null }
+},
+"pdd": {                           // sibling block; gates `status`'s marker scan
+  "enabled": true,                 // default true — false skips the PDD scan
+  "ignoreFile": ".pddignore"       // gitignore-style exclude list at repo root
 }
 ```
 
@@ -317,8 +326,13 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
   not an error). **errors defaults enabled; velocity defaults disabled (opt-in).**
 - `csvMirror: "path"` → after each write (and on `export`) the full table is
   re-exported to that path (relative to cwd). `csvMirror: null` → DB only.
-- A missing file / missing `storage` key / partial per-store block all fall back
-  to the defaults above.
+- `pdd.enabled` (**default true**) gates only `status`'s marker scan; `false`
+  skips it (worktree + issue reconciliation still run). `pdd.ignoreFile` (default
+  `.pddignore`) names the exclude list; enabled-but-absent → one-line stderr warn
+  + scan everything. Loaded by `config.load_pdd_config` (twin). See `§status` and
+  `.pddignore.example`.
+- A missing file / missing `storage`/`pdd` key / partial block all fall back to
+  the defaults above.
 
 ### Commands
 

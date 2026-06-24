@@ -24,6 +24,11 @@ Centralized, project-agnostic project-management helpers for the
 the source of truth; CSV is a derived mirror). Per-store, per-project config via
 the `.claude/orchestrate.json` `storage` block — see CONTRACT.md §storage.
 
+`status` only flags **canonical** PDD markers (`@(todo|inprogress) #N:<estimate>`)
+and honors a repo-root `.pddignore` (gitignore-style globs; copy
+`.pddignore.example`). Scanning is toggled by the `pdd` block (`pdd.enabled`,
+default true) — see CONTRACT.md §status.
+
 ```bash
 pmtools error log '{"occurred_iso":"2026-06-23T10:00:00-1000","error_type":"CLAIM_FAIL","message":"could not claim","ticket":3}'
 pmtools velocity log '{"role":"DEV","agent":"apple","ticket":3,"h_min":30,"actual_min":25}'
