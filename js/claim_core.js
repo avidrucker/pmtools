@@ -56,7 +56,7 @@ function normalizeIdentity(s) {
 
 function inferFruitFromBranch(branch) {
   if (!branch) return null;
-  const m = branch.match(/^([a-z]+)\/issue-\d+/);
+  const m = branch.match(/^(?:br-)?([a-z0-9]+)\/(?:[a-z0-9]+-[a-z0-9]+-)?issue-\d+/);
   return m ? m[1] : null;
 }
 
@@ -140,7 +140,7 @@ function worktreesWithIssue(branches) {
   for (const entry of (branches || [])) {
     const branch = entry.branch;
     const fruit = entry.fruit;
-    const m = branch && branch.match(/\/issue-(\d+)/);
+    const m = branch && branch.match(/[-/]issue-(\d+)/);
     if (m) result.push({ branch, fruit, issue: Number(m[1]) });
   }
   return result;

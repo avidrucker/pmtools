@@ -5,5 +5,7 @@
   { "name": "returns null for a feature branch without issue-N", "args": ["feature/some-thing"], "expected": null },
   { "name": "returns null for null", "args": [null], "expected": null },
   { "name": "returns null for empty string", "args": [""], "expected": null },
-  { "name": "rejects an uppercase fruit prefix (regex is [a-z]+)", "args": ["Cherry/issue-1"], "expected": null }
+  { "name": "rejects an uppercase fruit prefix (regex is [a-z]+)", "args": ["Cherry/issue-1"], "expected": null },
+  { "name": "extracts agent from a new-scheme branch with br- prefix + project-lang", "args": ["br-banana/lccjs-js-issue-1461-naming-scheme"], "expected": "banana" },
+  { "name": "extracts agent from a new-scheme branch with br- prefix, no project-lang", "args": ["br-apple/issue-99"], "expected": "apple" }
 ]
