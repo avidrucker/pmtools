@@ -1,0 +1,10 @@
+[
+  { "name": "javascript -> js", "args": ["javascript"], "expected": "js" },
+  { "name": "python -> py", "args": ["python"], "expected": "py" },
+  { "name": "typescript -> ts", "args": ["typescript"], "expected": "ts" },
+  { "name": "clojure -> clj", "args": ["clojure"], "expected": "clj" },
+  { "name": "case/whitespace-insensitive", "args": ["  JavaScript "], "expected": "js" },
+  { "name": "unknown language passes through lowercased + alnum-only", "args": ["Haskell"], "expected": "haskell" },
+  { "name": "empty string -> unk", "args": [""], "expected": "unk" },
+  { "name": "null -> unk", "args": [null], "expected": "unk" }
+]

@@ -263,9 +263,38 @@ function buildBannerLines(fruit, branch, wtPath, base, mode, dry, commentCount, 
   return lines;
 }
 
+// --- self-describing naming scheme (br-/wt- prefixes) -----------------------
+// Short language tags for the <lang> field. Sensible default map; unknown
+// languages pass through lowercased + alnum-only; empty/null -> 'unk'. Extend freely.
+const LANG_TAGS = {
+  javascript: 'js', typescript: 'ts', python: 'py', clojure: 'clj',
+  java: 'java', ruby: 'rb', go: 'go', rust: 'rs', c: 'c', 'c++': 'cpp',
+  cpp: 'cpp', csharp: 'cs', php: 'php', shell: 'sh', bash: 'sh',
+};
+
+function langTag(language) {
+  const key = String(language || '').trim().toLowerCase();
+  if (!key) return 'unk';
+  if (LANG_TAGS[key]) return LANG_TAGS[key];
+  const slug = key.replace(/[^a-z0-9]/g, '');
+  return slug || 'unk';
+}
+
+// branch       = br-<agent>/<project>-<lang>-issue-<N>[-<slug>]
+function buildBranch({ agent, project, lang, issue, slug }) {
+  const tail = slug ? `-${slug}` : '';
+  return `br-${agent}/${project}-${lang}-issue-${issue}${tail}`;
+}
+
+// worktree dir = wt-<agent>-<project>-<lang>-issue-<N>  (slug never in the dir name)
+function buildWorktreeName({ agent, project, lang, issue }) {
+  return `wt-${agent}-${project}-${lang}-issue-${issue}`;
+}
+
 module.exports = {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, CLAIM_REF_MAX_AGE_S,
   isSafeRef,
+  langTag, buildBranch, buildWorktreeName,
   slugify, normalizeIdentity, inferFruitFromBranch, resolveIdentity, parseArgs,
   checkIdentityName, assessBaseStaleness, sentinelBranch, isSentinelStaleByAge,
   applyMarkerFlip, worktreesWithIssue, findLiveWorktreeForIssue, findSameIssueCollision,
