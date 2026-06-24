@@ -69,10 +69,10 @@ def normalize_identity(s):
 
 
 def infer_fruit_from_branch(branch):
-    """Extract <fruit> from a <fruit>/issue-N[...] branch name, else None."""
+    """Extract <agent> from a [br-]<agent>/[<project>-<lang>-]issue-N[...] branch, else None."""
     if not branch:
         return None
-    m = re.match(r"^([a-z]+)/issue-\d+", branch)
+    m = re.match(r"^(?:br-)?([a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-\d+", branch)
     return m.group(1) if m else None
 
 
@@ -220,12 +220,12 @@ def apply_marker_flip(content, issue):
 # ---------------------------------------------------------------------------
 
 def worktrees_with_issue(branches):
-    """Filter worktree-branch entries to those with a parseable /issue-<N>."""
+    """Filter worktree-branch entries to those with a parseable issue-<N> (new -issue- or legacy /issue-)."""
     result = []
     for entry in (branches or []):
         branch = entry.get("branch")
         fruit = entry.get("fruit")
-        m = re.search(r"/issue-(\d+)", branch) if branch else None
+        m = re.search(r"[-/]issue-(\d+)", branch) if branch else None
         if m:
             result.append({"branch": branch, "fruit": fruit, "issue": int(m.group(1))})
     return result

@@ -17,6 +17,9 @@
       { "branch": "banana/issue-123-some-work", "fruit": "banana", "issue": 123 },
       { "branch": "apple/issue-42-fix-thing", "fruit": "apple", "issue": 42 }
     ] },
+  { "name": "extracts issue from a new-scheme branch (-issue- after project-lang, not /issue-)",
+    "args": [[{ "branch": "br-banana/lccjs-js-issue-1461-naming-scheme", "fruit": "banana" }]],
+    "expected": [{ "branch": "br-banana/lccjs-js-issue-1461-naming-scheme", "fruit": "banana", "issue": 1461 }] },
   { "name": "returns empty array for empty input", "args": [[]], "expected": [] },
   { "name": "returns empty array for null input", "args": [null], "expected": [] }
 ]
