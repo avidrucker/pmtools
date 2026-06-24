@@ -172,6 +172,48 @@ function computeVelocityMismatch(rows, issue, closingAgent) {
   return velocityTicketMismatch(mine.map((r) => r.ticket), issue);
 }
 
+// --- release-command seams (#22; the cleanup half of close, shared core) -----
+
+// Parse `git worktree list --porcelain` into [{path, branch}] (branch short
+// name, refs/heads/ stripped; detached entries keep branch null). Pure.
+function parseWorktreePorcelain(porcelain) {
+  const rows = [];
+  let cur = null;
+  for (const line of String(porcelain || '').split('\n')) {
+    if (line.startsWith('worktree ')) {
+      cur = { path: line.slice('worktree '.length).trim(), branch: null };
+      rows.push(cur);
+    } else if (line.startsWith('branch ') && cur) {
+      cur.branch = line.slice('branch '.length).trim().replace('refs/heads/', '');
+    }
+  }
+  return rows;
+}
+
+// The worktree staked for issue N: branch `<agent>/issue-<N>` (optional trailing
+// slug) or path basename ending `-issue-<N>`. Skips the main entry (rows[0]).
+// The `(?:[^0-9]|$)` boundary keeps `issue-9` from matching `issue-99`. Pure:
+// rows + issue → {path, branch} | null.
+function findWorktreeForIssue(rows, issue) {
+  const reBranch = new RegExp(`/issue-${issue}(?:[^0-9]|$)`);
+  const rePath = new RegExp(`-issue-${issue}$`);
+  for (const r of (rows || []).slice(1)) {
+    const base = String(r.path).split('/').pop();
+    if ((r.branch && reBranch.test(r.branch)) || rePath.test(base)) return r;
+  }
+  return null;
+}
+
+// The release data-loss guard decision (#22). ahead = commits on the branch not
+// on origin/main; dirty = worktree has uncommitted changes; force = --force.
+// Returns 'unpushed' | 'dirty' | 'ok' (ahead checked first). Pure.
+function releaseGuardVerdict(ahead, dirty, force) {
+  if (force) return 'ok';
+  if (Number(ahead) > 0) return 'unpushed';
+  if (dirty) return 'dirty';
+  return 'ok';
+}
+
 module.exports = {
   DEFAULT_MAX_RETRIES, UNION_FILES, KEYWORD_STOP_SET, SHORT_TECH_WORDS,
   classifyPushError, shouldCleanup,
@@ -180,4 +222,5 @@ module.exports = {
   extractKeywords, keywordsOverlap,
   markerStillPresent, scopeAuditDiffCommand,
   velocityRowPresent, velocityTicketMismatch, computeVelocityMismatch,
+  parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
 };

@@ -16,6 +16,8 @@ PY_PREFLIGHT="$PMTOOLS_ROOT/py/preflight.py"
 JS_PREFLIGHT="$PMTOOLS_ROOT/js/preflight.js"
 PY_CLOSE="$PMTOOLS_ROOT/py/close.py"
 JS_CLOSE="$PMTOOLS_ROOT/js/close.js"
+PY_RELEASE="$PMTOOLS_ROOT/py/release.py"
+JS_RELEASE="$PMTOOLS_ROOT/js/release.js"
 PY_ERROR="$PMTOOLS_ROOT/py/error.py"
 PY_VELOCITY="$PMTOOLS_ROOT/py/velocity.py"
 JS_ERROR="$PMTOOLS_ROOT/js/error.js"
@@ -333,6 +335,60 @@ run_close_velocity_suite() {
 
 run_close_velocity_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE" python3 "$PY_VELOCITY"
 run_close_velocity_suite "js" node "$JS_CLAIM" node "$JS_CLOSE" node "$JS_VELOCITY"
+
+# ---------------------------------------------------------------------------
+# release battery (#22): claim → release frees the claim ref + worktree while the
+# issue stays OPEN. Data-loss guard refuses unpushed commits without --force; an
+# orphan claim (no worktree) is a clean no-op teardown.
+# ---------------------------------------------------------------------------
+run_release_suite() {
+  local lang="$1" ci="$2" cs="$3" ri="$4" rs="$5"
+  local -a CLAIM=("$ci" "$cs") RELEASE=("$ri" "$rs")
+  echo "-- [$lang] release battery --"
+  local repo; repo="$(new_env)"
+  local gh; gh="$(make_fake_gh OPEN '[]')"
+  local o="$TMPROOT/relout.$RANDOM"
+
+  # 1) claim 41 as apple → worktree staked + claim ref on origin.
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" 41 --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] release: claim 41 exit 0"
+  local wt="$repo/.claude/worktrees/apple-issue-41"
+  assert_dir "$wt" "[$lang] release: worktree staked"
+
+  # 2) clean release → tears down; issue stays OPEN (never calls provider close).
+  ( cd "$repo" && PATH="$gh:$PATH" "${RELEASE[@]}" 41 ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] release: clean release exit 0"
+  assert_contains "$o" "stays OPEN" "[$lang] release: says issue stays OPEN"
+  if [ -d "$wt" ]; then fail "[$lang] release: worktree removed"; else pass "[$lang] release: worktree removed"; fi
+  assert_no_branch "$repo" "apple/issue-41" "[$lang] release: branch deleted"
+  if git -C "$repo" ls-remote origin 'refs/claims/*' 2>/dev/null | grep -q "refs/claims/issue-41"; then
+    fail "[$lang] release: claim ref deleted on origin (still present)"
+  else
+    pass "[$lang] release: claim ref deleted on origin"
+  fi
+
+  # 3) data-loss guard: an UNPUSHED commit blocks release without --force.
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" 42 --as apple --allow-stale-main ) >"$o" 2>&1
+  local wt2="$repo/.claude/worktrees/apple-issue-42"
+  ( cd "$wt2"
+    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
+    printf 'work\n' > work.txt && git add work.txt && git commit -qm "wip: unpushed work" )
+  ( cd "$repo" && PATH="$gh:$PATH" "${RELEASE[@]}" 42 ) >"$o" 2>&1
+  assert_exit "$?" 1 "[$lang] release: unpushed commit blocks (exit 1)"
+  assert_contains "$o" "NOT on origin/main" "[$lang] release: explains the blocked commit"
+  assert_dir "$wt2" "[$lang] release: blocked release leaves worktree intact"
+  # 3b) --force discards + tears down.
+  ( cd "$repo" && PATH="$gh:$PATH" "${RELEASE[@]}" 42 --force ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] release: --force exit 0"
+  if [ -d "$wt2" ]; then fail "[$lang] release: --force tore down worktree"; else pass "[$lang] release: --force tore down worktree"; fi
+
+  # 4) orphan: release a number with no worktree → clean no-op.
+  ( cd "$repo" && PATH="$gh:$PATH" "${RELEASE[@]}" 777 ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] release: orphan (no worktree) exit 0"
+  assert_contains "$o" "nothing to tear down" "[$lang] release: orphan says nothing to tear down"
+}
+run_release_suite "py" python3 "$PY_CLAIM" python3 "$PY_RELEASE"
+run_release_suite "js" node "$JS_CLAIM" node "$JS_RELEASE"
 
 # ---------------------------------------------------------------------------
 # 6) Smoke: status --json valid JSON; preflight runs without crashing.

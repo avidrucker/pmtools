@@ -320,6 +320,52 @@ Consequently `unionFiles` defaults EMPTY and **any** rebase conflict is
 
 ---
 
+## `release` (fleet-only) — ported (py + js)
+
+`pmtools release <issue> [--force]` — **abandon** a claim and tear down its
+worktree **without closing the issue** (a.k.a. "unclaim"). The cleanup half of
+`close`, minus land-on-main + provider-close: it frees the claim ref and removes
+the worktree, leaving the issue **OPEN** so it is immediately re-claimable. Use
+when work is deferred, re-scoped to another ticket, or a mis-scoped commit must
+be discarded.
+
+### Flow (in `main()` order)
+
+1. `parseArgs`: a single issue number + optional `--force`.
+2. `parseWorktreePorcelain(git worktree list --porcelain)` → `[{path, branch}]`;
+   the main checkout is row 0. `findWorktreeForIssue(rows, issue)` matches a
+   non-main worktree by branch `/issue-<N>` (digit boundary — `issue-9` ≠
+   `issue-99`) or path basename `-issue-<N>`.
+3. **No worktree** → free the (possibly orphaned) claim ref and return `0`
+   ("nothing to tear down"); the issue is left as-is.
+4. **Data-loss guard FIRST** (skipped by `--force`), so a refusal leaves the
+   claim + worktree fully intact: `git fetch origin`; compute `ahead`
+   (`git rev-list --count origin/main..<branch>`) and `dirty`
+   (`git -C <wt> status --porcelain`); `releaseGuardVerdict(ahead, dirty, force)`
+   → `unpushed` (die, listing the commits) | `dirty` (die, listing the changes)
+   | `ok`.
+5. Delete the claim ref `refs/claims/issue-<N>` (reuses `close_core`'s
+   `claimRefDeleteCommand` + `classifyClaimRefDelete`; `--no-verify` +
+   best-effort + idempotent).
+6. Teardown **synchronously** from the main root: `git worktree remove --force
+   <wt>` + `git branch -D <branch>` + `git worktree prune`. This reverts any
+   uncommitted `@inprogress` flip for free (claim writes it uncommitted in the
+   worktree); the issue is never committed/pushed/closed.
+
+### Flags / exit codes
+
+`--force` bypasses the data-loss guard (discard unpushed commits / a dirty tree).
+Exit `0` on success or nothing-to-do; `1` on bad args or a guard refusal.
+
+### Pure seams (`close_core`, graded against `fixtures/close/*`)
+
+`parse_worktree_porcelain`, `find_worktree_for_issue`, `release_guard_verdict` —
+plus the shared `claim_ref_delete_command` / `classify_claim_ref_delete` from
+`close`. Host-agnostic: `release` never calls a provider, so github/gitlab work
+identically. (Port of lccjs#1437.)
+
+---
+
 ## storage (error + velocity stores) — ported (py; js a follow-on)
 
 A configurable SQLite-primary storage layer. **SQLite is the source of truth.**

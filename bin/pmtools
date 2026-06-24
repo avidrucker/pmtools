@@ -38,13 +38,13 @@ cmd="${args[0]:-}"
 rest=("${args[@]:1}")
 
 case "$cmd" in
-  status|claim|preflight|close|error|velocity) ;;
+  status|claim|preflight|close|release|error|velocity) ;;
   ""|-h|--help)
-    echo "usage: pmtools <status|claim|preflight|close|error|velocity> [--port py|js] [args...]"
+    echo "usage: pmtools <status|claim|preflight|close|release|error|velocity> [--port py|js] [args...]"
     echo "  clone root: \$PMTOOLS_HOME or self-resolved ($root)"
     echo "  port:       --port / \$PMTOOLS_PORT / py (current: $port)"
     exit 0 ;;
-  *) echo "pmtools: unknown command '$cmd' (expected status|claim|preflight|close|error|velocity)" >&2; exit 2 ;;
+  *) echo "pmtools: unknown command '$cmd' (expected status|claim|preflight|close|release|error|velocity)" >&2; exit 2 ;;
 esac
 
 case "$port" in

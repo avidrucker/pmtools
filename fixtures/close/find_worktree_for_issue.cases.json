@@ -1,0 +1,18 @@
+[
+  { "name": "matches grape/issue-22 by branch (skips main row 0)",
+    "args": [[{ "path": "/m", "branch": "main" }, { "path": "/wt/grape-issue-22", "branch": "grape/issue-22" }], 22],
+    "expected": { "path": "/wt/grape-issue-22", "branch": "grape/issue-22" } },
+  { "name": "issue-9 does NOT match issue-99 (digit boundary)",
+    "args": [[{ "path": "/m", "branch": "main" }, { "path": "/wt/x-issue-99", "branch": "x/issue-99" }], 9],
+    "expected": null },
+  { "name": "issue-99 matches issue-99",
+    "args": [[{ "path": "/m", "branch": "main" }, { "path": "/wt/x-issue-99", "branch": "x/issue-99" }], 99],
+    "expected": { "path": "/wt/x-issue-99", "branch": "x/issue-99" } },
+  { "name": "matches by path basename when branch is null (detached)",
+    "args": [[{ "path": "/m", "branch": "main" }, { "path": "/wt/banana-issue-22", "branch": null }], 22],
+    "expected": { "path": "/wt/banana-issue-22", "branch": null } },
+  { "name": "never matches the main row (index 0)",
+    "args": [[{ "path": "/wt-issue-22", "branch": "main" }], 22], "expected": null },
+  { "name": "no candidate → null",
+    "args": [[{ "path": "/m", "branch": "main" }], 22], "expected": null }
+]
