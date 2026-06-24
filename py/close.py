@@ -10,9 +10,11 @@ Boundary: this tool does NOT author the closing commit. The agent writes the
 marker deletion + `Closes #N` message and commits FIRST; close.py takes over
 after, owning only the racy push + the gated teardown.
 
-OMITTED from the lccjs original (lccjs-specific, out of scope): the velocity
-CSV/SQLite guards, the learnings-README conflict resolver, union-file
-auto-resolve, and the parent-tracker scan. Any rebase conflict is blocking.
+The velocity-row guard (#5) IS ported, but DB-based and config-gated: it reads
+SQLite (the source of truth), not the lccjs velocity CSV. Still OMITTED
+(lccjs-specific, out of scope): the velocity-CSV diff parsers + auto-resolve, the
+learnings-README conflict resolver, union-file auto-resolve, and the
+parent-tracker scan. Any rebase conflict is blocking.
 
 Usage (after committing `Closes #N`):
   close <issue>                    # from inside the worktree (statechart default)
@@ -24,6 +26,7 @@ Usage (after committing `Closes #N`):
   close <issue> --skip-marker-check
   close <issue> --skip-keyword-check
   close <issue> --skip-scope-audit
+  close <issue> --skip-velocity-check   # bypass the velocity-row guard
   close <issue> --worktree-dir <dir>   # default .claude/worktrees
 """
 import os
@@ -32,12 +35,14 @@ import subprocess
 import sys
 
 import close_core as core
+import config
+import store
 from close_core import (
     DEFAULT_MAX_RETRIES, classify_push_error, should_cleanup,
     claim_ref_delete_command, classify_claim_ref_delete,
     classify_rebase_conflict, body_closes_issue,
     extract_keywords, keywords_overlap, marker_still_present,
-    scope_audit_diff_command,
+    scope_audit_diff_command, velocity_row_present, compute_velocity_mismatch,
 )
 
 
@@ -88,7 +93,7 @@ def parse_args(argv):
     opts = {
         "issue": None, "max": DEFAULT_MAX_RETRIES, "dryRun": False,
         "keep": False, "verifyIssue": True, "skipKeywordCheck": False,
-        "skipMarkerCheck": False, "skipScopeAudit": False,
+        "skipMarkerCheck": False, "skipScopeAudit": False, "skipVelocityCheck": False,
         "branch": None, "worktreeDir": ".claude/worktrees",
     }
     positionals = []
@@ -115,6 +120,8 @@ def parse_args(argv):
             opts["skipMarkerCheck"] = True
         elif a == "--skip-scope-audit":
             opts["skipScopeAudit"] = True
+        elif a == "--skip-velocity-check":
+            opts["skipVelocityCheck"] = True
         elif a == "--branch":
             i += 1
             opts["branch"] = argv[i] if i < n else None
@@ -238,6 +245,46 @@ def check_marker_deleted(issue):
             + "  Pass --skip-marker-check to bypass (no source marker ever existed).")
 
 
+def check_velocity_guard(issue, fruit):
+    """Velocity-row guard (#5; ported from lccjs scripts/close.js). Config-gated:
+    when storage.velocity is disabled — or the DB is absent (first run / CI) — it
+    no-ops. Otherwise SQLite is the source of truth: (Check A) refuse when no
+    velocity row exists for this ticket, or (Guard 1) when the closing agent
+    logged only a different ticket (the #278 digit-transposition). All blocking
+    decisions live in the pure close_core seams; this wrapper only does I/O."""
+    try:
+        cfg = config.load_storage_config()
+    except Exception:
+        return  # config unreadable — never block on it.
+    if not cfg.get("velocity") or not cfg["velocity"].get("enabled"):
+        return  # disabled → skip.
+    db_path = cfg.get("dbPath")
+    if not db_path or not os.path.exists(db_path):
+        log("warn: velocity store enabled but no DB at {} — skipping velocity-row check.".format(
+            db_path or "(unset)"))
+        return
+    try:
+        rows = store.select_all(db_path, "velocity")
+    except Exception as e:
+        log("warn: could not read velocity DB at {} ({}) — skipping velocity-row check.".format(
+            db_path, str(e).split(chr(10))[0]))
+        return
+    n = int(issue)
+    if velocity_row_present([r for r in rows if int(r["ticket"]) == n]):
+        return  # Check A satisfied.
+    mismatch = compute_velocity_mismatch(rows, issue, fruit)
+    if mismatch:
+        die('velocity-row guard: agent "{}" logged ticket(s) #{} but is closing #{}. '
+            "Align the velocity row's ticket (or the close) first, then re-run. "
+            "Pass --skip-velocity-check to bypass.".format(
+                fruit, ", #".join(str(t) for t in mismatch), issue))
+    die("velocity-row guard: no velocity row for #{} in {}. Log your session first:\n"
+        "  pmtools velocity log '{{\"ticket\":{},\"role\":\"DEV\",\"agent\":\"{}\","
+        "\"started_iso\":\"<ISO>\",\"finished_iso\":\"<ISO>\",\"actual_min\":<A>}}'\n"
+        "  Then re-run close. Pass --skip-velocity-check to bypass (PM/triage closes).".format(
+            issue, db_path, issue, fruit))
+
+
 def delete_claim_ref(issue):
     """Best-effort, idempotent claim-ref delete so a closed issue can't falsely
     block a future re-claim. Never aborts the close."""
@@ -303,7 +350,7 @@ def main():
     if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
         die("usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] "
             "[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] "
-            "[--worktree-dir <dir>]")
+            "[--skip-velocity-check] [--worktree-dir <dir>]")
     issue = opts["issue"]
 
     # --- pre-flight: refuse to start unless the close is real and the tree sane.
@@ -365,7 +412,9 @@ def main():
             print("[close] scope audit (git diff --stat {}):".format(label))
             print(stat.rstrip())
 
-    # velocity-row guard integrates once pmtools velocity lands (issue tracked separately)
+    # Velocity-row guard (#5, skippable): config-gated; SQLite is source of truth.
+    if not opts["skipVelocityCheck"]:
+        check_velocity_guard(issue, fruit)
 
     # Guard 2 (keyword): closing commit subject vs issue title.
     if not opts["skipKeywordCheck"]:

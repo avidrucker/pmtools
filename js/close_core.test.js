@@ -35,6 +35,9 @@ const DISPATCH = {
   keywords_overlap: close.keywordsOverlap,
   marker_still_present: close.markerStillPresent,
   scope_audit_diff_command: close.scopeAuditDiffCommand,
+  velocity_row_present: close.velocityRowPresent,
+  velocity_ticket_mismatch: close.velocityTicketMismatch,
+  compute_velocity_mismatch: close.computeVelocityMismatch,
 };
 
 test('every close fixture file has a dispatch entry (1:1)', () => {
