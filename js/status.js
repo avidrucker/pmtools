@@ -11,6 +11,7 @@ const path = require('node:path');
 const { reconcile } = require('./reconcile');
 const { getProvider } = require('./provider');
 const { parseCanonicalMarker, parsePddignore, isPddIgnored } = require('./status_core');
+const { loadPddConfig } = require('./config');
 
 const DEFAULT_BRANCH_PATTERN = '^(?<agent>[a-z]+)/issue-(?<issue>\\d+)';
 
@@ -22,15 +23,19 @@ function run(cmd, args) {
   }
 }
 
-// Impure: read the repo-root .pddignore (gitignore-style globs) into a pattern
-// list. Absent file → []. #15 honors it unconditionally; the on/off toggle is
-// #16's job.
-function loadIgnorePatterns() {
+// Impure: read the repo-root <ignoreFile> (gitignore-style globs) into a pattern
+// list. Absent file → [] (+ a one-line stderr warn when warnIfAbsent, so an
+// enabled-but-unconfigured repo knows it is scanning everything). #15 honors the
+// ignore file; #16 makes the whole scan toggle-able via pdd.enabled.
+function loadIgnorePatterns(ignoreFile = '.pddignore', warnIfAbsent = false) {
   const root = run('git', ['rev-parse', '--show-toplevel']).trim();
   if (!root) return [];
   try {
-    return parsePddignore(fs.readFileSync(path.join(root, '.pddignore'), 'utf8'));
+    return parsePddignore(fs.readFileSync(path.join(root, ignoreFile), 'utf8'));
   } catch {
+    if (warnIfAbsent) {
+      process.stderr.write(`[status] pdd enabled but no ${ignoreFile} — scanning all tracked files.\n`);
+    }
     return [];
   }
 }
@@ -104,7 +109,15 @@ function parseArgs(argv) {
 
 function main(argv) {
   const args = parseArgs(argv);
-  const grep = grepMarkers(loadIgnorePatterns());
+  // PDD marker scanning is config-gated (#16). When disabled, skip the scan
+  // entirely; worktree + issue reconciliation still run.
+  const pdd = loadPddConfig();
+  let grep = [];
+  if (pdd.enabled) {
+    grep = grepMarkers(loadIgnorePatterns(pdd.ignoreFile, true));
+  } else {
+    process.stderr.write('[status] pdd disabled — skipping marker scan.\n');
+  }
   const worktrees = listWorktrees(args.branchPattern);
   const provider = getProvider(args.host);
   const numbers = [...new Set(grep.map((m) => m.issue))].sort((x, y) => x - y);

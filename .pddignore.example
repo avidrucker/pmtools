@@ -1,0 +1,30 @@
+# .pddignore.example — copy to `.pddignore` and edit for your repo.
+#
+#   cp .pddignore.example .pddignore
+#
+# Paths listed here are skipped by `pmtools status`'s PDD marker scan
+# (active when storage `pdd.enabled` is true — the default). One gitignore-style
+# glob per line; blank lines and lines starting with `#` are ignored.
+#
+# Only CANONICAL markers are actionable to begin with — the todo/inprogress
+# keyword followed by `#<issue>:<estimate>` (estimate in minutes, e.g. `:60m`).
+# List paths that contain marker-like text but no real puzzles, so they never
+# show up as work. (This file deliberately avoids a real `#<digits>:<digits>`
+# example so the scanner can't trip on its own documentation.)
+#
+# Glob subset: `**` matches across directories; `*` matches within one path
+# segment; a pattern containing `/` is rooted at the repo top, otherwise it
+# matches a basename at any depth. Negation (`!`) is not supported.
+
+# --- dependencies / generated ---
+node_modules/**
+
+# --- test fixtures: spec files legitimately contain marker-like strings ---
+tests/**/*.spec.js
+
+# --- docs & data: prose / CSV that mentions markers without owning puzzles ---
+docs/**
+*.md
+
+# --- the agent harness's own working dirs ---
+.claude/**

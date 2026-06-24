@@ -26,6 +26,11 @@ const DEFAULTS = {
   velocity: { enabled: false, csvMirror: null, logCommand: null },
 };
 
+// PDD marker scanning defaults ON (preserves status's historical behavior); a
+// repo opts out with `"pdd": { "enabled": false }`. ignoreFile names the
+// gitignore-style exclude list (default .pddignore).
+const DEFAULTS_PDD = { enabled: true, ignoreFile: '.pddignore' };
+
 function sh(cmd, args) {
   try {
     return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -103,6 +108,33 @@ function loadStorageConfig(cwd = null) {
   };
 }
 
+// Return the merged `pdd` config: { enabled, ignoreFile }. Reads the top-level
+// `pdd` block of orchestrate.json (sibling to `storage`); tolerant of a missing
+// repo / file / key (falls back to DEFAULTS_PDD → scanning ON).
+function loadPddConfig(cwd = null) {
+  const root = repoRoot(cwd);
+  let rawPdd = {};
+  if (root) {
+    const cfgPath = path.join(root, '.claude', 'orchestrate.json');
+    if (fs.existsSync(cfgPath) && fs.statSync(cfgPath).isFile()) {
+      try {
+        const data = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+        if (data && typeof data === 'object' && !Array.isArray(data)
+            && data.pdd && typeof data.pdd === 'object' && !Array.isArray(data.pdd)) {
+          rawPdd = data.pdd;
+        }
+      } catch {
+        rawPdd = {};
+      }
+    }
+  }
+  const merged = { ...DEFAULTS_PDD };
+  for (const k of ['enabled', 'ignoreFile']) {
+    if (Object.prototype.hasOwnProperty.call(rawPdd, k)) merged[k] = rawPdd[k];
+  }
+  return merged;
+}
+
 module.exports = {
-  repoRoot, defaultDbPath, loadStorageConfig, expanduser,
+  repoRoot, defaultDbPath, loadStorageConfig, loadPddConfig, expanduser,
 };
