@@ -291,10 +291,21 @@ function buildWorktreeName({ agent, project, lang, issue }) {
   return `wt-${agent}-${project}-${lang}-issue-${issue}`;
 }
 
+// Map a branch (new OR legacy) to its worktree dir name — the back-compat bridge
+// close uses to find the worktree it must tear down. New `br-…/…` -> `wt-…`;
+// legacy `<fruit>/issue-N…` -> `<fruit>-issue-N` (no prefix). Drops the theme tail.
+function branchToWorktreeName(branch) {
+  if (!branch) return null;
+  const isNew = branch.startsWith('br-');
+  const core = isNew ? branch.slice(3) : branch;
+  const flat = core.replace('/', '-').replace(/(issue-\d+).*$/, '$1');
+  return isNew ? `wt-${flat}` : flat;
+}
+
 module.exports = {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, CLAIM_REF_MAX_AGE_S,
   isSafeRef,
-  langTag, buildBranch, buildWorktreeName,
+  langTag, buildBranch, buildWorktreeName, branchToWorktreeName,
   slugify, normalizeIdentity, inferFruitFromBranch, resolveIdentity, parseArgs,
   checkIdentityName, assessBaseStaleness, sentinelBranch, isSentinelStaleByAge,
   applyMarkerFlip, worktreesWithIssue, findLiveWorktreeForIssue, findSameIssueCollision,

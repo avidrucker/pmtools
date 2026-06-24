@@ -37,6 +37,7 @@ const path = require('node:path');
 const core = require('./close_core');
 const config = require('./config');
 const store = require('./store');
+const claimCore = require('./claim_core');
 const {
   DEFAULT_MAX_RETRIES, isSafeRef, classifyPushError, shouldCleanup,
   claimRefDeleteCommand, classifyClaimRefDelete,
@@ -336,24 +337,27 @@ function main() {
   // --- pre-flight: refuse to start unless the close is real and the tree sane.
   const branch = opts.branch || currentBranch();
   // Injection guard (#37): --branch is interpolated into teardown's `git branch
-  // -D <branch>`. Reject shell metacharacters, then require an ANCHORED
-  // <fruit>/issue-<N>[-slug] shape (the old guards were unanchored substring
-  // .test()s, so `x/issue-17; touch …` slipped through both).
+  // -D <branch>`. Reject shell metacharacters, then require an ANCHORED branch
+  // shape bound to the issue token (the old guards were unanchored substring
+  // .test()s, so `x/issue-17; touch …` slipped through). The anchored shape
+  // tolerates the br-/<project>-<lang>- self-describing scheme (#17) as well as
+  // legacy <fruit>/issue-N names — and, by anchoring, refuses a slug-embedded
+  // `-issue-M` from masquerading as the issue token.
   if (!branch || !isSafeRef(branch)) {
     die(`branch "${branch || '?'}" contains unsafe characters — ` +
         'only letters, digits, and . _ / - are allowed.');
   }
-  if (!/^[A-Za-z0-9._-]+\/issue-\d+(?:-[A-Za-z0-9._-]+)?$/.test(branch)) {
-    die(`current branch "${branch}" is not a <fruit>/issue-<N> worktree branch. ` +
+  if (!/^(?:br-)?[A-Za-z0-9._-]+\/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-\d+(?:-[A-Za-z0-9._-]+)?$/.test(branch)) {
+    die(`current branch "${branch}" is not a [br-]<agent>/[<project>-<lang>-]issue-<N> worktree branch. ` +
         'Run this from inside the puzzle\'s worktree, not the main checkout.');
   }
-  if (!new RegExp(`^[A-Za-z0-9._-]+/issue-${issue}(?:-[A-Za-z0-9._-]+)?$`).test(branch)) {
+  if (!new RegExp(`^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-${issue}(?:-[A-Za-z0-9._-]+)?$`).test(branch)) {
     die(`branch "${branch}" does not match issue #${issue}. Wrong worktree?`);
   }
 
   const root = mainRoot();
-  const fruit = branch.split('/')[0];
-  const wtPath = path.join(root, opts.worktreeDir, `${fruit}-issue-${issue}`);
+  const fruit = claimCore.inferFruitFromBranch(branch) || branch.split('/')[0];
+  const wtPath = path.join(root, opts.worktreeDir, claimCore.branchToWorktreeName(branch));
   if (opts.branch) {
     try {
       process.chdir(wtPath);

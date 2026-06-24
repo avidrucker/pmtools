@@ -21,7 +21,7 @@ from provider import get_provider
 from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored
 from config import load_pdd_config
 
-DEFAULT_BRANCH_PATTERN = r"^(?P<agent>[a-z]+)/issue-(?P<issue>\d+)"
+DEFAULT_BRANCH_PATTERN = r"^(?:br-)?(?P<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?P<issue>\d+)"
 
 
 def _js_to_py_named_groups(pattern):

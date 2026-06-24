@@ -88,6 +88,22 @@ function mainRoot() {
   return path.dirname(dir.trim());
 }
 
+// Resolve {project, lang} for the naming scheme from .claude/orchestrate.json,
+// falling back to the repo basename + 'unk'. Both normalize to a single
+// [a-z0-9] token (the scheme delimiter is '-'). Sensible default; override via
+// an explicit "project" key and the existing "languages" array in the config.
+function resolveNameParts(root) {
+  let cfg = {};
+  try {
+    const p = path.join(root, '.claude', 'orchestrate.json');
+    if (fs.existsSync(p)) cfg = JSON.parse(fs.readFileSync(p, 'utf8')) || {};
+  } catch (_) { cfg = {}; }
+  const rawProject = (cfg.project != null ? String(cfg.project) : path.basename(root)) || 'repo';
+  const project = rawProject.toLowerCase().replace(/[^a-z0-9]/g, '') || 'repo';
+  const langs = Array.isArray(cfg.languages) ? cfg.languages : [];
+  return { project, lang: core.langTag(langs[0]) };
+}
+
 function listWorktreeBranches() {
   const out = sh('git worktree list --porcelain', true) || '';
   const branches = [];
@@ -194,7 +210,7 @@ function warnOrphanedWorktrees(worktreeDir) {
     const state = sh(`gh issue view ${issue} --json state -q .state`, true);
     if (!state || !state.trim()) continue;
     if (state.trim().toUpperCase() !== 'CLOSED') continue;
-    const wtPath = path.join(root, worktreeDir, `${fruit}-issue-${issue}`);
+    const wtPath = path.join(root, worktreeDir, core.branchToWorktreeName(branch));
     console.error(
       `[claim] ⚠ stale worktree: "${branch}" references CLOSED issue #${issue}.\n` +
       `         Deferred teardown may have failed. To clean up:\n` +
@@ -336,8 +352,9 @@ function main() {
   }
 
   const root = mainRoot();
-  const mkBranch = (fruit) => `${fruit}/issue-${issue}${slug ? '-' + slug : ''}`;
-  const mkPath = (fruit) => path.join(root, opts.worktreeDir, `${fruit}-issue-${issue}`);
+  const { project, lang } = resolveNameParts(root);
+  const mkBranch = (fruit) => core.buildBranch({ agent: fruit, project, lang, issue, slug });
+  const mkPath = (fruit) => path.join(root, opts.worktreeDir, core.buildWorktreeName({ agent: fruit, project, lang, issue }));
 
   // Candidate order: forced identity = single candidate; auto walks the roster
   // minus takenFruits, with a `${roster[0]}-2` fallback when all are taken.

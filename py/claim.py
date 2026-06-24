@@ -21,6 +21,7 @@ Convention:
 Identity precedence: --as > CLAUDE_AGENT_NAME > branch-inferred > auto.
 Auto (no identity) is a hard error — agents must be named (lccjs #386).
 """
+import json
 import os
 import re
 import subprocess
@@ -101,6 +102,25 @@ def main_root():
             die("not inside a git repository.")
         d = os.path.abspath(os.path.join(os.getcwd(), rel.strip()))
     return os.path.dirname(d.strip())
+
+
+def resolve_name_parts(root):
+    """{project, lang} for the naming scheme from .claude/orchestrate.json,
+    fallback repo basename + 'unk'. Both normalized to a single [a-z0-9] token
+    (the scheme delimiter is '-'). Sensible default; override via a "project"
+    key and the existing "languages" array."""
+    cfg = {}
+    try:
+        p = os.path.join(root, ".claude", "orchestrate.json")
+        if os.path.exists(p):
+            with open(p) as f:
+                cfg = json.load(f) or {}
+    except Exception:
+        cfg = {}
+    raw = str(cfg.get("project")) if cfg.get("project") is not None else os.path.basename(root)
+    project = re.sub(r"[^a-z0-9]", "", (raw or "repo").lower()) or "repo"
+    langs = cfg.get("languages") if isinstance(cfg.get("languages"), list) else []
+    return {"project": project, "lang": core.lang_tag(langs[0] if langs else None)}
 
 
 def list_worktree_branches():
@@ -222,7 +242,7 @@ def warn_orphaned_worktrees(worktree_dir):
             continue
         if state.strip().upper() != "CLOSED":
             continue
-        wt_path = os.path.join(root, worktree_dir, "{}-issue-{}".format(fruit, iss))
+        wt_path = os.path.join(root, worktree_dir, core.branch_to_worktree_name(branch))
         sys.stderr.write(
             '[claim] ⚠ stale worktree: "{}" references CLOSED issue #{}.\n'
             "         Deferred teardown may have failed. To clean up:\n"
@@ -376,12 +396,15 @@ def main():
         sys.stderr.write("[claim] ⚠ live worktree detected: {}\n".format(detail))
 
     root = main_root()
+    parts = resolve_name_parts(root)
 
     def mk_branch(fruit):
-        return "{}/issue-{}{}".format(fruit, issue, "-" + slug if slug else "")
+        return core.build_branch({"agent": fruit, "project": parts["project"],
+                                  "lang": parts["lang"], "issue": issue, "slug": slug})
 
     def mk_path(fruit):
-        return os.path.join(root, opts["worktreeDir"], "{}-issue-{}".format(fruit, issue))
+        return os.path.join(root, opts["worktreeDir"], core.build_worktree_name(
+            {"agent": fruit, "project": parts["project"], "lang": parts["lang"], "issue": issue}))
 
     if identity["name"]:
         candidates = [identity["name"]]

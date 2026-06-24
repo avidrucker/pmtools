@@ -1,0 +1,12 @@
+[
+  { "name": "new-scheme branch -> wt- dir, dropping the theme tail",
+    "args": ["br-banana/lccjs-js-issue-1461-naming-scheme"], "expected": "wt-banana-lccjs-js-issue-1461" },
+  { "name": "new-scheme branch without theme",
+    "args": ["br-apple/pmtools-js-issue-17"], "expected": "wt-apple-pmtools-js-issue-17" },
+  { "name": "legacy branch -> legacy dir (no wt- prefix, drops slug)",
+    "args": ["banana/issue-1461-some-slug"], "expected": "banana-issue-1461" },
+  { "name": "legacy branch without slug",
+    "args": ["cherry/issue-9"], "expected": "cherry-issue-9" },
+  { "name": "null branch -> null",
+    "args": [null], "expected": null }
+]

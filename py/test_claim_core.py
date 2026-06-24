@@ -50,6 +50,7 @@ DISPATCH = {
     "lang_tag": claim_core.lang_tag,
     "build_branch": claim_core.build_branch,
     "build_worktree_name": claim_core.build_worktree_name,
+    "branch_to_worktree_name": claim_core.branch_to_worktree_name,
 }
 
 
