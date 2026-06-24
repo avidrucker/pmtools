@@ -109,19 +109,42 @@ function sqlLiteral(v) {
   return "'" + s.replace(/'/g, "''") + "'";
 }
 
-const DDL_PREAMBLE = [
+// Base preamble — everything EXCEPT the velocity unique index. Always safe to
+// run against any DB (CREATE ... IF NOT EXISTS is genuinely idempotent here).
+const DDL_BASE = [
   'PRAGMA journal_mode = WAL;',
   CREATE_ERRORS,
   ...ERRORS_INDEXES,
   CREATE_VELOCITY,
-  ...VELOCITY_INDEXES,
 ].join('\n');
 
+// True iff the velocity table already holds duplicate (ticket, agent,
+// started_iso) groups that would block the partial unique index.
+const VELOCITY_DUP_CHECK = 'SELECT 1 FROM velocity WHERE started_iso IS NOT NULL '
+  + 'GROUP BY ticket, agent, started_iso HAVING COUNT(*) > 1 LIMIT 1;';
+
 // Idempotently seed both tables (creating parent dirs). Returns the resolved path.
+//
+// The velocity unique index is DEDUP-GATED: a legacy DB whose velocity table
+// already holds duplicate sessions can't host uq_velocity_session, and
+// `IF NOT EXISTS` does NOT suppress a uniqueness violation over existing data —
+// it only suppresses "index already exists". Creating it unconditionally would
+// throw here and abort ALL logging (errors included), since connect() runs on
+// every write to either store (#10). So: detect dups first, and skip + warn
+// instead of aborting. A fresh/clean DB has no dups, so it still gets the index
+// and full constraint enforcement.
 function connect(dbPath) {
   const resolved = resolveDb(dbPath);
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  runSql(resolved, DDL_PREAMBLE);
+  runSql(resolved, DDL_BASE);
+  if (runSql(resolved, VELOCITY_DUP_CHECK).trim()) {
+    console.warn(
+      'pmtools: velocity has duplicate (ticket, agent, started_iso) rows; '
+      + 'skipping the uq_velocity_session unique index (logging continues). '
+      + 'Resolve the duplicates and re-run to add it.');
+  } else {
+    for (const idx of VELOCITY_INDEXES) runSql(resolved, idx);
+  }
   return resolved;
 }
 

@@ -11,6 +11,7 @@ pure store_core layer; this file only does I/O.
 
 import os
 import sqlite3
+import sys
 
 import store_core as core
 
@@ -65,6 +66,13 @@ VELOCITY_INDEXES = [
     "ON velocity(ticket, agent, started_iso) WHERE started_iso IS NOT NULL;",
 ]
 
+# True iff velocity already holds duplicate (ticket, agent, started_iso) groups
+# that would block the partial unique index above.
+VELOCITY_DUP_CHECK = (
+    "SELECT 1 FROM velocity WHERE started_iso IS NOT NULL "
+    "GROUP BY ticket, agent, started_iso HAVING COUNT(*) > 1 LIMIT 1"
+)
+
 # Non-id columns, in schema order, per table — what insert() binds.
 _INSERT_COLS = {
     "errors": [c for c in core.ERROR_COLS if c != "id"],
@@ -93,8 +101,23 @@ def connect(db_path):
     for idx in ERRORS_INDEXES:
         conn.execute(idx)
     conn.execute(CREATE_VELOCITY)
-    for idx in VELOCITY_INDEXES:
-        conn.execute(idx)
+    # Dedup-gate the velocity unique index (twin of js/store.js; #10): a legacy
+    # velocity table holding duplicate (ticket, agent, started_iso) sessions
+    # can't host uq_velocity_session. `IF NOT EXISTS` does NOT suppress a
+    # uniqueness violation over existing data, so creating it unconditionally
+    # would raise here and abort ALL logging (errors included) — connect() runs
+    # on every write to either store. Detect dups first; skip + warn instead of
+    # aborting. A fresh/clean DB has no dups, so it still gets the index.
+    if conn.execute(VELOCITY_DUP_CHECK).fetchone() is not None:
+        print(
+            "pmtools: velocity has duplicate (ticket, agent, started_iso) rows; "
+            "skipping the uq_velocity_session unique index (logging continues). "
+            "Resolve the duplicates and re-run to add it.",
+            file=sys.stderr,
+        )
+    else:
+        for idx in VELOCITY_INDEXES:
+            conn.execute(idx)
     conn.commit()
     return conn
 
