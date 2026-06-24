@@ -64,6 +64,13 @@ new_env() {
     git commit -qm "initial commit"
     git push -q origin HEAD:main
     git checkout -q -B main
+    # Seed a deterministic naming config so claim emits br-apple/demo-js-issue-N
+    # and wt-apple-demo-js-issue-N (exercises resolveNameParts: project from the
+    # "project" key, lang from languages[0]). Uncommitted on purpose — claim reads
+    # it from mainRoot on disk, and leaving it untracked avoids any rebase contention
+    # with the per-test orchestrate.json overwrites below.
+    mkdir -p .claude
+    printf '{ "project": "demo", "languages": ["javascript"] }\n' > .claude/orchestrate.json
   )
   echo "$d/work"
 }
@@ -129,30 +136,30 @@ run_claim_suite() {
   assert_exit "$?" 0 "[$lang] dry-run exit 0"
   assert_contains "$o" "WOULD CLAIM" "[$lang] dry-run says WOULD CLAIM"
   assert_contains "$o" "agent: apple" "[$lang] dry-run names agent apple"
-  if [ -d "$repo/.claude/worktrees/apple-issue-5" ]; then
+  if [ -d "$repo/.claude/worktrees/wt-apple-demo-js-issue-5" ]; then
     fail "[$lang] dry-run created no worktree"; else pass "[$lang] dry-run created no worktree"; fi
 
-  # 3) real claim: branch apple/issue-5, worktree under default dir, refs/claims/issue-5
+  # 3) real claim: branch br-apple/demo-js-issue-5, worktree under default dir, refs/claims/issue-5
   ( cd "$repo" && "${RUN[@]}" 5 --as apple --allow-stale-main ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] real claim exit 0"
   assert_contains "$o" "CLAIMED" "[$lang] real claim says CLAIMED"
-  if git -C "$repo" show-ref --verify --quiet "refs/heads/apple/issue-5"; then
-    pass "[$lang] branch apple/issue-5 created"; else fail "[$lang] branch apple/issue-5 created"; fi
-  assert_dir "$repo/.claude/worktrees/apple-issue-5" "[$lang] worktree under default .claude/worktrees"
+  if git -C "$repo" show-ref --verify --quiet "refs/heads/br-apple/demo-js-issue-5"; then
+    pass "[$lang] branch br-apple/demo-js-issue-5 created"; else fail "[$lang] branch br-apple/demo-js-issue-5 created"; fi
+  assert_dir "$repo/.claude/worktrees/wt-apple-demo-js-issue-5" "[$lang] worktree under default .claude/worktrees"
   if git -C "$repo" ls-remote origin 'refs/claims/*' | grep -q "refs/claims/issue-5"; then
     pass "[$lang] refs/claims/issue-5 staked on origin"; else fail "[$lang] refs/claims/issue-5 staked on origin"; fi
 
   # 4) second claim same issue, different agent -> exit 1, rolled back (no banana branch)
   ( cd "$repo" && "${RUN[@]}" 5 --as banana --allow-stale-main ) >"$o" 2>&1
   assert_exit "$?" 1 "[$lang] same-issue second claim exits 1"
-  assert_no_branch "$repo" "banana/issue-5" "[$lang] banana/issue-5 rolled back / never left"
+  assert_no_branch "$repo" "br-banana/demo-js-issue-5" "[$lang] br-banana/demo-js-issue-5 rolled back / never left"
 
-  # 5) --worktree-dir parameterization: lands under wt/apple-issue-8
+  # 5) --worktree-dir parameterization: lands under wt/wt-apple-demo-js-issue-8
   local repo2; repo2="$(new_env)"
   ( cd "$repo2" && "${RUN[@]}" 8 --as apple --worktree-dir wt --allow-stale-main ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] --worktree-dir claim exit 0"
-  assert_dir "$repo2/wt/apple-issue-8" "[$lang] worktree landed under wt/apple-issue-8"
-  if [ -d "$repo2/.claude/worktrees/apple-issue-8" ]; then
+  assert_dir "$repo2/wt/wt-apple-demo-js-issue-8" "[$lang] worktree landed under wt/wt-apple-demo-js-issue-8"
+  if [ -d "$repo2/.claude/worktrees/wt-apple-demo-js-issue-8" ]; then
     fail "[$lang] default worktree dir NOT used"; else pass "[$lang] default worktree dir NOT used"; fi
 
   # Lane gate OFF by default: with a fake gh reporting an issue that has NO
@@ -168,7 +175,7 @@ run_claim_suite() {
   ( cd "$repo4" && PATH="$ghdir:$PATH" "${RUN[@]}" 12 --as apple --lane-check --allow-stale-main ) >"$o" 2>&1
   assert_exit "$?" 1 "[$lang] --lane-check ON: unlabeled issue blocked"
   assert_contains "$o" "area:" "[$lang] --lane-check ON: blocks with area-label hint"
-  assert_no_branch "$repo4" "apple/issue-12" "[$lang] --lane-check ON: no branch staked"
+  assert_no_branch "$repo4" "br-apple/demo-js-issue-12" "[$lang] --lane-check ON: no branch staked"
 
   # Lane gate ON but issue HAS a real area label -> proceeds.
   local repo5; repo5="$(new_env)"
@@ -209,7 +216,7 @@ run_close_suite() {
   # 1) claim the issue as apple (fake gh OPEN; share keyword via the title).
   ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" "$N" --as apple --allow-stale-main ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] close: claim $N as apple exit 0"
-  local wt="$repo/.claude/worktrees/apple-issue-$N"
+  local wt="$repo/.claude/worktrees/wt-apple-demo-js-issue-$N"
   assert_dir "$wt" "[$lang] close: worktree staked"
 
   # 2) in the worktree, make a trivial source change + commit with a subject that
@@ -225,7 +232,7 @@ run_close_suite() {
   )
 
   # 3) close it. From the main checkout, pass --branch so close chdirs into the wt.
-  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "apple/issue-$N" ) >"$o" 2>&1
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] close: exit 0"
   assert_contains "$o" "CLOSED" "[$lang] close: prints CLOSED banner"
 
@@ -238,7 +245,7 @@ run_close_suite() {
 
   # 5) the worktree dir is gone and the branch is deleted.
   if [ -d "$wt" ]; then fail "[$lang] close: worktree removed"; else pass "[$lang] close: worktree removed"; fi
-  assert_no_branch "$repo" "apple/issue-$N" "[$lang] close: branch apple/issue-$N deleted"
+  assert_no_branch "$repo" "br-apple/demo-js-issue-$N" "[$lang] close: branch br-apple/demo-js-issue-$N deleted"
 
   # 6) refs/claims/issue-N was deleted on origin.
   if git -C "$repo" ls-remote origin 'refs/claims/*' 2>/dev/null | grep -q "refs/claims/issue-$N"; then
@@ -272,7 +279,7 @@ run_close_velocity_suite() {
   local DB="$TMPROOT/vel.$lang.$N.db"
   ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" "$N" --as apple --allow-stale-main ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] vel-guard: claim $N exit 0"
-  local wt="$repo/.claude/worktrees/apple-issue-$N"
+  local wt="$repo/.claude/worktrees/wt-apple-demo-js-issue-$N"
 
   # Commit a tracked orchestrate.json that ENABLES velocity (DB outside the tree
   # so the .db never dirties the worktree) + the keyword-sharing close commit.
@@ -292,7 +299,7 @@ run_close_velocity_suite() {
   ( cd "$wt" && "${VEL[@]}" export --db-path "$DB" --csv "$DB.csv" ) >/dev/null 2>&1
 
   # 1) ENABLED + no velocity row for N → close must die exit 1, NOT land.
-  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "apple/issue-$N" ) >"$o" 2>&1
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" ) >"$o" 2>&1
   assert_exit "$?" 1 "[$lang] vel-guard: enabled + no row → close exits 1"
   assert_contains "$o" "velocity" "[$lang] vel-guard: blocks with a velocity-row message"
   assert_dir "$wt" "[$lang] vel-guard: worktree left intact after block"
@@ -307,7 +314,7 @@ run_close_velocity_suite() {
       "{\"ticket\":$N,\"role\":\"DEV\",\"agent\":\"apple\",\"started_iso\":\"2026-01-01T00:00:00-1000\"}" \
       --db-path "$DB" --no-csv ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] vel-guard: velocity log (matching row) exit 0"
-  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "apple/issue-$N" ) >"$o" 2>&1
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] vel-guard: matching row → close exits 0"
   assert_contains "$o" "CLOSED" "[$lang] vel-guard: prints CLOSED banner"
   if [ -d "$wt" ]; then fail "[$lang] vel-guard: worktree removed after success"; else pass "[$lang] vel-guard: worktree removed after success"; fi
@@ -316,7 +323,7 @@ run_close_velocity_suite() {
   local repo2; repo2="$(new_env)"
   local M=32
   ( cd "$repo2" && PATH="$gh:$PATH" "${CLAIM[@]}" "$M" --as apple --allow-stale-main ) >"$o" 2>&1
-  local wt2="$repo2/.claude/worktrees/apple-issue-$M"
+  local wt2="$repo2/.claude/worktrees/wt-apple-demo-js-issue-$M"
   (
     cd "$wt2"
     git config user.email tester@example.com; git config user.name tester
@@ -328,7 +335,7 @@ run_close_velocity_suite() {
     git commit -qm "feat: add widget renderer" -m "Closes #$M"
   )
   # No velocity row logged anywhere; disabled config must NOT block the close.
-  ( cd "$repo2" && PATH="$gh:$PATH" "${CLOSE[@]}" "$M" --branch "apple/issue-$M" ) >"$o" 2>&1
+  ( cd "$repo2" && PATH="$gh:$PATH" "${CLOSE[@]}" "$M" --branch "br-apple/demo-js-issue-$M" ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] vel-guard: disabled + no row → close exits 0 (skipped)"
   assert_contains "$o" "CLOSED" "[$lang] vel-guard: disabled close prints CLOSED"
 }
