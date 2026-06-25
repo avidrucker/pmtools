@@ -74,9 +74,9 @@ function gitCapture(args) {
   return { ok: r.status === 0, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 
-function die(msg) {
+function die(msg, code = 1) {
   console.error(`[close] ✗ ${msg}`);
-  process.exit(1);
+  process.exit(code);
 }
 
 function log(msg) {
@@ -115,7 +115,7 @@ function parseArgs(argv) {
     else if (a === '--skip-velocity-check') opts.skipVelocityCheck = true;
     else if (a === '--branch') opts.branch = argv[++i];
     else if (a === '--worktree-dir') opts.worktreeDir = argv[++i];
-    else if (a.startsWith('--')) die(`unknown flag: ${a}`);
+    else if (a.startsWith('--')) die(`unknown flag: ${a}`, 2);
     else positionals.push(a);
   }
   opts.issue = positionals[0];
@@ -372,7 +372,7 @@ function main() {
   if (!opts.issue || !/^\d+$/.test(opts.issue)) {
     die('usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] ' +
         '[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] ' +
-        '[--skip-velocity-check] [--worktree-dir <dir>]');
+        '[--skip-velocity-check] [--worktree-dir <dir>]', 2);
   }
   const issue = opts.issue;
 

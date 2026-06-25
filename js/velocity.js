@@ -12,8 +12,9 @@
 // non-canonical model is NOTICED, not rejected. When title is omitted and a
 // ticket is present, the title is fetched best-effort via the GitHub provider.
 //
-// Exit codes: 0 success / disabled-store; 1 missing arg, invalid JSON,
-// validation failure, or DB error.
+// Exit codes: 0 success / disabled-store; 2 usage error (missing/unknown
+// subcommand, unknown flag, missing payload arg); 1 operational (invalid JSON,
+// validation failure, or DB error). See CONTRACT.md "Output conventions" (#44).
 'use strict';
 
 const config = require('./config');
@@ -24,9 +25,9 @@ const { getProvider } = require('./provider');
 const TABLE = 'velocity';
 const COLS = core.VELOCITY_COLS;
 
-function die(msg) {
+function die(msg, code = 1) {
   process.stderr.write(`[velocity] ✗ ${msg}\n`);
-  process.exit(1);
+  process.exit(code);
 }
 
 function note(msg) {
@@ -50,7 +51,7 @@ function parseArgs(argv) {
     if (t === '--db-path') { a.dbPath = (i + 1 < argv.length) ? argv[++i] : null; }
     else if (t === '--csv') { a.csv = (i + 1 < argv.length) ? argv[++i] : null; }
     else if (t === '--no-csv') { a.noCsv = true; }
-    else if (t.startsWith('--')) { die('unknown flag: ' + t); }
+    else if (t.startsWith('--')) { die('unknown flag: ' + t, 2); }
     else { positionals.push(t); }
   }
   a.cmd = positionals.length ? positionals[0] : null;
@@ -73,7 +74,7 @@ function cmdLog(args, cfg) {
 
   if (!args.json) {
     die('usage: velocity log \'{"role":"DEV","agent":"apple",...}\' '
-      + '[--db-path P] [--csv P|--no-csv]');
+      + '[--db-path P] [--csv P|--no-csv]', 2);
   }
   let raw;
   try {
@@ -147,7 +148,7 @@ function main(argv) {
   const cfg = config.loadStorageConfig();
   if (args.cmd === 'log') return cmdLog(args, cfg);
   if (args.cmd === 'export') return cmdExport(args, cfg);
-  die(`usage: velocity <log|export> [...]  (got ${JSON.stringify(args.cmd)})`);
+  die(`usage: velocity <log|export> [...]  (got ${JSON.stringify(args.cmd)})`, 2);
   return 1;
 }
 

@@ -13,8 +13,9 @@ disabled store is not an error).
 Ported from lccjs scripts/error-log.js + scripts/errors-seed.js. The pure
 validation/encoding lives in store_core; the sqlite engine in store.
 
-Exit codes: 0 success / disabled-store; 1 missing arg, invalid JSON, validation
-failure, or DB error.
+Exit codes: 0 success / disabled-store; 2 usage error (missing/unknown subcommand,
+unknown flag, missing payload arg); 1 operational (invalid JSON, validation
+failure, or DB error). See CONTRACT.md "Output conventions" (#44).
 """
 import json
 import os
@@ -28,9 +29,9 @@ TABLE = "errors"
 COLS = core.ERROR_COLS
 
 
-def die(msg):
+def die(msg, code=1):
     sys.stderr.write("[error] ✗ {}\n".format(msg))
-    sys.exit(1)
+    sys.exit(code)
 
 
 def _repo_basename(cwd=None):
@@ -54,7 +55,7 @@ def parse_args(argv):
         elif t == "--no-csv":
             a["noCsv"] = True
         elif t.startswith("--"):
-            die("unknown flag: " + t)
+            die("unknown flag: " + t, 2)
         else:
             positionals.append(t)
         i += 1
@@ -81,7 +82,7 @@ def cmd_log(args, cfg):
 
     if not args["json"]:
         die("usage: error log '{\"occurred_iso\":\"<ISO8601>\",\"message\":\"...\"}' "
-            "[--db-path P] [--csv P|--no-csv]")
+            "[--db-path P] [--csv P|--no-csv]", 2)
     try:
         raw = json.loads(args["json"])
     except (ValueError, TypeError) as e:
@@ -137,7 +138,7 @@ def main(argv):
     if args["cmd"] == "export":
         return cmd_export(args, cfg)
     die("usage: error <log|export> [...]  (got {})".format(
-        json.dumps(args["cmd"], ensure_ascii=False)))
+        json.dumps(args["cmd"], ensure_ascii=False)), 2)
 
 
 if __name__ == "__main__":

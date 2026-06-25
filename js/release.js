@@ -48,7 +48,7 @@ function gitCapture(args) {
   return r.status === 0 ? (r.stdout || '').trim() : '';
 }
 function log(m) { console.log(`[release] ${m}`); }
-function die(m) { console.error(`[release] ✗ ${m}`); process.exit(1); }
+function die(m, code = 1) { console.error(`[release] ✗ ${m}`); process.exit(code); }
 
 function parseArgs(argv) {
   const a = { issue: null, force: false };
@@ -56,11 +56,11 @@ function parseArgs(argv) {
     if (t === '--force') a.force = true;
     else if (t === '--') continue;
     else if (/^\d+$/.test(t)) {
-      if (a.issue !== null) die(`unexpected extra arg: ${t} (usage: release <N> [--force])`);
+      if (a.issue !== null) die(`unexpected extra arg: ${t} (usage: release <N> [--force])`, 2);
       a.issue = t;
-    } else die(`unknown arg: ${t} (usage: release <N> [--force])`);
+    } else die(`unknown arg: ${t} (usage: release <N> [--force])`, 2);
   }
-  if (a.issue === null) die('usage: release <issue-number> [--force]');
+  if (a.issue === null) die('usage: release <issue-number> [--force]', 2);
   return a;
 }
 

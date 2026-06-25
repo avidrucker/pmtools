@@ -23,12 +23,12 @@ from config import load_pdd_config
 DEFAULT_BRANCH_PATTERN = r"^(?:br-)?(?P<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?P<issue>\d+)"
 
 
-def die(msg):
+def die(msg, code=1):
     """Match the other fleet CLIs (claim/close/error/velocity): a bad flag is a
-    loud failure, not a silent no-op. exit 1 (the shared bad-arg code; #44 may
-    later move all usage errors to 2 — keep both ports identical here, #39)."""
+    loud failure, not a silent no-op. Default exit 1 (operational); usage/argument
+    errors pass code=2 (the dispatcher's convention, adopted repo-wide in #44)."""
     sys.stderr.write("[status] ✗ {}\n".format(msg))
-    sys.exit(1)
+    sys.exit(code)
 
 
 def parse_args(argv):
@@ -55,7 +55,7 @@ def parse_args(argv):
             except (TypeError, ValueError):
                 a["limit"] = 50
         elif t.startswith("--"):
-            die("unknown flag: " + t)
+            die("unknown flag: " + t, 2)
         i += 1
     return a
 

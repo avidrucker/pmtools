@@ -70,9 +70,9 @@ function gitCapture(args) {
   return `${r.stdout || ''}${r.stderr || ''}`;
 }
 
-function die(msg) {
+function die(msg, code = 1) {
   console.error(`[claim] ✗ ${msg}`);
-  process.exit(1);
+  process.exit(code);
 }
 
 // The MAIN checkout's root, NOT cwd. An agent reusing its identity runs from
@@ -261,7 +261,7 @@ function parseArgs(argv) {
     else if (a === '--copy-env') opts.copyEnv = true;
     else if (a === '--worktree-dir') opts.worktreeDir = argv[++i];
     else if (a === '--roster') opts.roster = String(argv[++i] || '').split(',').map((s) => s.trim()).filter(Boolean);
-    else if (a.startsWith('--')) die(`unknown flag: ${a}`);
+    else if (a.startsWith('--')) die(`unknown flag: ${a}`, 2);
     else positionals.push(a);
   }
   opts.issue = positionals[0];
@@ -278,7 +278,7 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.issue || !/^\d+$/.test(opts.issue)) {
     die('usage: claim <issue-number> [slug] [--as <fruit>] [--base <ref>] [--dry-run] [--force] ' +
-        '[--custom] [--lane-check] [--copy-env] [--worktree-dir <dir>] [--roster a,b,c] [--allow-stale-main]');
+        '[--custom] [--lane-check] [--copy-env] [--worktree-dir <dir>] [--roster a,b,c] [--allow-stale-main]', 2);
   }
   const issue = opts.issue;
   const roster = (opts.roster && opts.roster.length) ? opts.roster : FRUITS;
