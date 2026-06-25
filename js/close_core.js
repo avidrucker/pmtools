@@ -16,6 +16,17 @@
 
 const DEFAULT_MAX_RETRIES = 5;
 
+// --- injection safety (#37) ------------------------------------------------
+// A branch/ref is safe to interpolate into a git command iff it is a non-empty
+// string of ref-legal characters only (letters, digits, dot, underscore, slash,
+// dash). Every shell metacharacter is rejected. close/release pass `--branch`
+// (or a porcelain-parsed branch) through this before any interpolation; the
+// arg-array exec migration is defense-in-depth on top. Twin of claim_core's.
+const SAFE_REF_RE = /^[A-Za-z0-9._/-]+$/;
+function isSafeRef(s) {
+  return typeof s === 'string' && SAFE_REF_RE.test(s);
+}
+
 // lccjs's merge=union auto-resolve set is OUT of scope for the pmtools port: any
 // rebase conflict is treated as human-resolvable ('blocking'). Kept as an empty
 // default so the signature matches the Python twin and callers may pass their own.
@@ -216,6 +227,7 @@ function releaseGuardVerdict(ahead, dirty, force) {
 
 module.exports = {
   DEFAULT_MAX_RETRIES, UNION_FILES, KEYWORD_STOP_SET, SHORT_TECH_WORDS,
+  isSafeRef,
   classifyPushError, shouldCleanup,
   claimRefDeleteCommand, classifyClaimRefDelete,
   classifyRebaseConflict, bodyClosesIssue,

@@ -23,13 +23,13 @@
  * Auto (no identity) is a hard error — agents must be named (lccjs #386).
  */
 
-const { execSync } = require('node:child_process');
+const { execSync, execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const core = require('./claim_core');
 const {
-  FRUITS, SESSION_SENTINEL_MAX_AGE_S,
+  FRUITS, SESSION_SENTINEL_MAX_AGE_S, isSafeRef,
   slugify, resolveIdentity, checkIdentityName,
   shouldBlockClaim, shouldBlockUncategorized, assessBaseStaleness,
   worktreesWithIssue, findLiveWorktreeForIssue, findSameIssueCollision,
@@ -48,6 +48,26 @@ function sh(cmd, allowFail = false) {
     if (allowFail) return null;
     throw e;
   }
+}
+
+// arg-array git exec (#37): values are passed as argv and never re-parsed by a
+// shell, so an interpolated `;touch` can never execute. Used for every git call
+// that interpolates a branch/base/path; constant-command calls stay on sh().
+// Returns stdout on success, null on a non-zero exit (mirrors sh(..., true)).
+function git(args, allowFail = false) {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch (e) {
+    if (allowFail) return null;
+    throw e;
+  }
+}
+
+// Like git() but returns combined stdout+stderr regardless of exit, never throws
+// (for the claim-ref push, whose output the push-result classifier inspects).
+function gitCapture(args) {
+  const r = spawnSync('git', args, { encoding: 'utf8' });
+  return `${r.stdout || ''}${r.stderr || ''}`;
 }
 
 function die(msg) {
@@ -82,20 +102,20 @@ function listWorktreeBranches() {
 }
 
 function isSentinelStale(fruit) {
-  const raw = sh(`git log -1 --format="%ct" refs/heads/${sentinelBranch(fruit)}`, true);
+  const raw = git(['log', '-1', '--format=%ct', `refs/heads/${sentinelBranch(fruit)}`], true);
   if (!raw || !raw.trim()) return false;
   const ts = parseInt(raw.trim(), 10);
   return isSentinelStaleByAge(ts, Math.floor(Date.now() / 1000));
 }
 
 function branchExists(branch) {
-  return sh(`git show-ref --verify --quiet refs/heads/${branch} && echo yes`, true);
+  return git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], true) !== null;
 }
 
 function createSessionSentinel(fruit) {
   const b = sentinelBranch(fruit);
   if (branchExists(b)) return;
-  sh(`git branch "${b}" HEAD`, true);
+  git(['branch', b, 'HEAD'], true);
 }
 
 function takenFruits() {
@@ -136,12 +156,12 @@ function readIssue(issue) {
 }
 
 function flipMarker(issue, wtPath) {
-  const inprogress = sh(`git -C "${wtPath}" grep -lE "${inprogressKw} #${issue}:[0-9]"`, true);
+  const inprogress = git(['-C', wtPath, 'grep', '-lE', `${inprogressKw} #${issue}:[0-9]`], true);
   if (inprogress && inprogress.trim()) {
     console.log(`[claim] ${inprogressKw} #${issue} already present — skipping flip`);
     return;
   }
-  const grep = sh(`git -C "${wtPath}" grep -nIE "${todoKw} #${issue}:[0-9]"`, true);
+  const grep = git(['-C', wtPath, 'grep', '-nIE', `${todoKw} #${issue}:[0-9]`], true);
   if (!grep || !grep.trim()) {
     console.log(`[claim] no ${todoKw} #${issue} marker found — skipping flip`);
     return;
@@ -258,6 +278,13 @@ function main() {
     );
   }
 
+  // Injection guard (#37): the identity becomes the branch/worktree name and is
+  // interpolated into git commands — reject anything but ref-legal characters.
+  if (identity.name && !isSafeRef(identity.name)) {
+    die(`agent identity "${identity.name}" contains unsafe characters — ` +
+        'only letters, digits, and . _ / - are allowed.');
+  }
+
   const nameCheck = checkIdentityName(identity, opts, roster);
   if (nameCheck) console.error(`[claim] note: ${nameCheck.warn}`);
 
@@ -279,7 +306,12 @@ function main() {
   if (!slug && info && info.title) slug = slugify(info.title);
 
   const base = opts.base;
-  if (!sh(`git rev-parse --verify --quiet ${base}^{commit} && echo ok`, true)) {
+  // Injection guard (#37): base is interpolated into git rev-parse / worktree add.
+  if (!isSafeRef(base)) {
+    die(`base ref "${base}" contains unsafe characters — ` +
+        'only letters, digits, and . _ / - are allowed.');
+  }
+  if (git(['rev-parse', '--verify', '--quiet', `${base}^{commit}`], true) === null) {
     die(`base ref "${base}" does not resolve — pass --base <ref> (e.g. origin/main).`);
   }
 
@@ -342,7 +374,7 @@ function main() {
       continue; // auto: lost the (fruit,issue) race, try next
     }
 
-    const ok = sh(`git worktree add ${wtPath} -b ${branch} ${base} 2>&1`, true);
+    const ok = git(['worktree', 'add', wtPath, '-b', branch, base], true);
     if (ok === null) {
       if (identity.name) die(`git worktree add failed for ${branch} (see git output).`);
       continue;
@@ -353,8 +385,8 @@ function main() {
       const sameFruit = listWorktreeBranches().filter((b) => b.fruit === fruit);
       if (sameFruit.length > 1) {
         console.error(`[claim] race: "${fruit}" was taken by another agent — rolling back and retrying.`);
-        sh(`git worktree remove ${wtPath} --force`, true);
-        sh(`git branch -D ${branch}`, true);
+        git(['worktree', 'remove', wtPath, '--force'], true);
+        git(['branch', '-D', branch], true);
         continue;
       }
     }
@@ -364,8 +396,8 @@ function main() {
       const collision = findSameIssueCollision(
         worktreesWithIssue(listWorktreeBranches()), Number(issue), branch);
       if (collision) {
-        sh(`git worktree remove ${wtPath} --force`, true);
-        sh(`git branch -D ${branch}`, true);
+        git(['worktree', 'remove', wtPath, '--force'], true);
+        git(['branch', '-D', branch], true);
         die(`issue #${issue} was claimed concurrently in worktree "${collision.branch}" ` +
             `(agent: ${collision.fruit || 'unknown'}) — rolled back "${branch}". ` +
             `cd into the existing worktree, or claim a different issue (pass --force to override).`);
@@ -375,17 +407,17 @@ function main() {
     // Cross-clone claim ref: fabricate a per-agent-unique commit off the base
     // tree and push it to refs/claims/issue-<N>. classifyClaimPushResult →
     // claimPushAction decides CONFLICT(rollback+die) / TRANSIENT(warn) / OK.
-    const baseTree = (sh(`git rev-parse ${base}^{tree}`, true) || '').trim();
+    const baseTree = (git(['rev-parse', `${base}^{tree}`], true) || '').trim();
     if (baseTree) {
       const stamp = `${new Date().toISOString()}.${process.hrtime.bigint()}`;
       const claimMsg = buildClaimMessage(issue, branch, process.pid, stamp);
-      const claimSha = (sh(`git commit-tree ${baseTree} -m ${JSON.stringify(claimMsg)}`, true) || '').trim();
+      const claimSha = (git(['commit-tree', baseTree, '-m', claimMsg], true) || '').trim();
       if (claimSha) {
-        const pushOut = sh(`git push origin ${claimSha}:refs/claims/issue-${issue} 2>&1 || true`, true) || '';
+        const pushOut = gitCapture(['push', 'origin', `${claimSha}:refs/claims/issue-${issue}`]);
         const action = claimPushAction(classifyClaimPushResult(pushOut), opts.force);
         if (action === 'ROLLBACK_DIE') {
-          sh(`git worktree remove ${wtPath} --force`, true);
-          sh(`git branch -D ${branch}`, true);
+          git(['worktree', 'remove', wtPath, '--force'], true);
+          git(['branch', '-D', branch], true);
           die(`issue #${issue} is already claimed in another clone ` +
               `(cross-clone collision on refs/claims/issue-${issue}) — rolled back "${branch}". ` +
               `cd into that clone's worktree, claim a different issue, or pass --force to override.`);

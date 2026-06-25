@@ -1,0 +1,18 @@
+[
+  { "name": "plain branch/ref name is safe", "args": ["main"], "expected": true },
+  { "name": "remote-qualified ref is safe (slash)", "args": ["origin/main"], "expected": true },
+  { "name": "fruit/issue branch is safe", "args": ["grape/issue-37"], "expected": true },
+  { "name": "fallback fruit with digit+dash is safe", "args": ["apple-2"], "expected": true },
+  { "name": "dotted tag is safe", "args": ["v1.2.3"], "expected": true },
+  { "name": "HEAD is safe", "args": ["HEAD"], "expected": true },
+  { "name": "semicolon command-chain is rejected", "args": ["main;touch f"], "expected": false },
+  { "name": "identity injection payload is rejected", "args": ["apple;touch /tmp/x;true"], "expected": false },
+  { "name": "whitespace is rejected", "args": ["x y"], "expected": false },
+  { "name": "command substitution is rejected", "args": ["$(touch f)"], "expected": false },
+  { "name": "backtick substitution is rejected", "args": ["`touch f`"], "expected": false },
+  { "name": "logical-and is rejected", "args": ["a&&b"], "expected": false },
+  { "name": "pipe is rejected", "args": ["a|b"], "expected": false },
+  { "name": "redirect is rejected", "args": ["a>b"], "expected": false },
+  { "name": "newline is rejected", "args": ["x\nrm -rf"], "expected": false },
+  { "name": "empty string is rejected", "args": [""], "expected": false }
+]

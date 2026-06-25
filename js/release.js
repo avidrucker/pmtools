@@ -19,9 +19,9 @@
  * Exit:   0 on success / nothing-to-do; 1 on bad args or a guard refusal.
  */
 
-const { execSync } = require('node:child_process');
+const { execSync, spawnSync } = require('node:child_process');
 const {
-  claimRefDeleteCommand, classifyClaimRefDelete,
+  isSafeRef, claimRefDeleteCommand, classifyClaimRefDelete,
   parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
 } = require('./close_core');
 
@@ -39,6 +39,13 @@ function shCapture(cmd) {
   } catch {
     return '';
   }
+}
+// arg-array git exec (#37): values are argv, never re-parsed by a shell. Returns
+// trimmed stdout on success, '' otherwise (mirrors shCapture). Used for every
+// git call that interpolates the porcelain-parsed branch / worktree path.
+function gitCapture(args) {
+  const r = spawnSync('git', args, { encoding: 'utf8' });
+  return r.status === 0 ? (r.stdout || '').trim() : '';
 }
 function log(m) { console.log(`[release] ${m}`); }
 function die(m) { console.error(`[release] ✗ ${m}`); process.exit(1); }
@@ -80,16 +87,21 @@ function main() {
     return;
   }
   const { path: wtPath, branch } = wt;
+  // Injection guard (#37): the branch (parsed from `git worktree list`) is
+  // interpolated into git rev-list / log / branch -D — refuse unsafe characters.
+  if (branch && !isSafeRef(branch)) {
+    die(`worktree branch "${branch}" contains unsafe characters — refusing to operate on it.`);
+  }
 
   // --- data-loss guard FIRST — a refused release leaves the claim + worktree intact.
   if (!force) {
     sh('git fetch origin -q', true);
-    const ahead = parseInt(shCapture(`git rev-list --count origin/main..${branch}`), 10) || 0;
-    const dirty = shCapture(`git -C "${wtPath}" status --porcelain`);
+    const ahead = parseInt(gitCapture(['rev-list', '--count', `origin/main..${branch}`]), 10) || 0;
+    const dirty = gitCapture(['-C', wtPath, 'status', '--porcelain']);
     const verdict = releaseGuardVerdict(ahead, !!dirty, false);
     if (verdict === 'unpushed') {
       die(`#${issue} branch ${branch} has ${ahead} commit(s) NOT on origin/main — release would discard them:\n`
-        + shCapture(`git log origin/main..${branch} --oneline`)
+        + gitCapture(['log', `origin/main..${branch}`, '--oneline'])
         + '\n  Land them on the right ticket first, or re-run with --force to discard.');
     }
     if (verdict === 'dirty') {
@@ -105,9 +117,11 @@ function main() {
   //     uncommitted @inprogress flip for free; leaves the issue OPEN). ---
   log(`releasing #${issue}: worktree ${wtPath} + branch ${branch} — issue stays OPEN.`);
   try { process.chdir(root); } catch (_) { /* best-effort */ }
-  const rmBranch = branch ? ` && git branch -D ${branch}` : '';
-  const res = shCapture(`git worktree remove --force "${wtPath}"${rmBranch} && git worktree prune`);
-  if (res === '' && shCapture(`git worktree list --porcelain`).includes(wtPath)) {
+  // arg-array exec (#37): the branch/path never reach a shell.
+  gitCapture(['worktree', 'remove', '--force', wtPath]);
+  if (branch) gitCapture(['branch', '-D', branch]);
+  gitCapture(['worktree', 'prune']);
+  if (gitCapture(['worktree', 'list', '--porcelain']).includes(wtPath)) {
     console.error('[release] warning: teardown may have failed — check: git worktree list');
   }
   log(`Shell re-root: cd "${root}"`);
