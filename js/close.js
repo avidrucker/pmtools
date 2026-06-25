@@ -247,7 +247,7 @@ function checkVelocityGuard(issue, fruit) {
     return;
   }
   const n = Number(issue);
-  if (velocityRowPresent(rows.filter((r) => Number(r.ticket) === n))) return; // Check A.
+  if (velocityRowPresent(rows.filter((r) => r.ticket != null && Number(r.ticket) === n))) return; // Check A (skip issueless null-ticket rows, #56).
   const mismatch = computeVelocityMismatch(rows, issue, fruit);
   if (mismatch.length) {
     die(`velocity-row guard: agent "${fruit}" logged ticket(s) #${mismatch.join(', #')} ` +

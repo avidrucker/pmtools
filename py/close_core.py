@@ -227,7 +227,9 @@ def velocity_ticket_mismatch(tickets, issue):
     """Guard 1 helper (lccjs #310): which of the given ticket numbers disagree
     with the issue being closed. Empty == consistent. Pure: tickets + issue."""
     n = int(issue)
-    return [t for t in (tickets or []) if int(t) != n]
+    # A null ticket is an issueless PM/triage row (#56) — it pertains to no issue,
+    # so it is neither a match nor a mismatch; skip it rather than report it.
+    return [t for t in (tickets or []) if t is not None and int(t) != n]
 
 
 def compute_velocity_mismatch(rows, issue, closing_agent):
@@ -238,7 +240,7 @@ def compute_velocity_mismatch(rows, issue, closing_agent):
     log (#278 transposition) without false-blocking on a concurrent agent's row."""
     n = int(issue)
     all_rows = rows or []
-    if any(int(r["ticket"]) == n for r in all_rows):
+    if any(r["ticket"] is not None and int(r["ticket"]) == n for r in all_rows):
         return []
     if closing_agent is not None:
         mine = [r for r in all_rows

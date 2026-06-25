@@ -164,7 +164,9 @@ function velocityRowPresent(rows) {
 // the issue being closed. Empty == consistent. Pure: tickets + issue → number[].
 function velocityTicketMismatch(tickets, issue) {
   const n = Number(issue);
-  return (tickets || []).filter((t) => Number(t) !== n);
+  // A null ticket is an issueless PM/triage row (#56) — it pertains to no issue,
+  // so it is neither a match nor a mismatch; skip it rather than report it.
+  return (tickets || []).filter((t) => t != null && Number(t) !== n);
 }
 
 // Guard 1 decision (lccjs #361): given the velocity rows {ticket, agent}, the
@@ -176,7 +178,7 @@ function velocityTicketMismatch(tickets, issue) {
 function computeVelocityMismatch(rows, issue, closingAgent) {
   const n = Number(issue);
   const all = rows || [];
-  if (all.some((r) => Number(r.ticket) === n)) return [];
+  if (all.some((r) => r.ticket != null && Number(r.ticket) === n)) return [];
   const mine = closingAgent
     ? all.filter((r) => String(r.agent).toLowerCase() === String(closingAgent).toLowerCase())
     : all;

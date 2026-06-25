@@ -309,7 +309,15 @@ run_close_velocity_suite() {
     pass "[$lang] vel-guard: blocked close did NOT land on origin/main"
   fi
 
+  # #56: seed a NULL-ticket (issueless PM) row first — the guard's Check A int()
+  # coercion must skip it, not crash, when it scans the table below.
+  ( cd "$wt" && "${VEL[@]}" log \
+      "{\"role\":\"PM\",\"agent\":\"apple\",\"started_iso\":\"2026-01-01T00:00:00-1000\"}" \
+      --db-path "$DB" --no-csv ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] vel-guard: null-ticket (issueless) velocity log exit 0 (#56)"
+
   # 2) log a matching velocity row for N → close now proceeds, lands, tears down.
+  #    (with the null-ticket row above also present, this proves #56: no int(None) crash.)
   ( cd "$wt" && "${VEL[@]}" log \
       "{\"ticket\":$N,\"role\":\"DEV\",\"agent\":\"apple\",\"started_iso\":\"2026-01-01T00:00:00-1000\"}" \
       --db-path "$DB" --no-csv ) >"$o" 2>&1
