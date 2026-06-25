@@ -25,6 +25,35 @@ specified in their own sections (all now ported to py + js). See §claim /
 
 ---
 
+## Output conventions (all commands, both ports)
+
+Diagnostics follow one cross-command dialect so a single `grep` catches every
+failure (and every warning) across all tiers and both ports (#44):
+
+- **Failure** → a stderr line `[<cmd>] ✗ <message>` (e.g.
+  `[error] ✗ usage: …`). Every command's `die()` stamps this, so
+  `grep -F '✗'` finds all failures — including the `error` / `velocity` store
+  commands, which previously stamped a bare `error:` / `velocity:` that the
+  glyph-grep missed.
+- **Warning / note** (non-fatal) → a stderr line `[<cmd>] note: <message>`
+  (e.g. `[velocity] note: model "x" is new or non-canonical …`). *Residual:*
+  `claim` still emits a few `[claim] warn:` and `close`/`release` a
+  `[<cmd>] warning:` line on best-effort I/O / teardown paths; migrating those
+  to `note:` is a tracked follow-up, not part of this change.
+- **Unknown-subcommand render** is byte-identical across ports: the offending
+  token is rendered as a **JSON literal** — `got "foo"`, `got null` (JS
+  `JSON.stringify`, Python `json.dumps`) — never a language-native repr
+  (`got 'foo'` / `got None`). New commands inherit this so the faithful-twin
+  parity check (`tests/integration.sh`) stays byte-exact.
+- **Usage strings** read `usage: <cmd> …` (the bare command name, no `pmtools`
+  prefix), uniformly across commands and ports.
+
+Exit-code conventions are documented per-command in each section below; a
+cross-command unification (usage/arg errors → 2, operational failures → 1) is
+proposed but not yet adopted (#44 thread 3).
+
+---
+
 ## `status`
 
 ### Inputs (three language-neutral sources)

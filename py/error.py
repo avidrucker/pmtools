@@ -29,7 +29,7 @@ COLS = core.ERROR_COLS
 
 
 def die(msg):
-    sys.stderr.write("error: {}\n".format(msg))
+    sys.stderr.write("[error] ✗ {}\n".format(msg))
     sys.exit(1)
 
 
@@ -136,7 +136,8 @@ def main(argv):
         return cmd_log(args, cfg)
     if args["cmd"] == "export":
         return cmd_export(args, cfg)
-    die("usage: error <log|export> [...]  (got {!r})".format(args["cmd"]))
+    die("usage: error <log|export> [...]  (got {})".format(
+        json.dumps(args["cmd"], ensure_ascii=False)))
 
 
 if __name__ == "__main__":

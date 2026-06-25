@@ -648,6 +648,29 @@ EOF
   ( cd "$store_repo" && "${ERR[@]}" export --db-path "$STORE_DB" --csv "$STORE_CSV" ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] error export exit 0"
   assert_contains "$o" "Exported 1 rows" "[$lang] error export re-exports the single row"
+
+  # 5) error-string convention (#44): store-cmd failures must use the fleet
+  #    `[cmd] ✗` prefix (were `error:` / `velocity:`), and the unknown-subcommand
+  #    render must be JSON-style (got "x") so it matches the JS port — not py repr
+  #    (got 'x'). grep -F so the literal brackets + glyph are matched verbatim.
+  ( cd "$store_repo" && "${ERR[@]}" bogus ) >"$o" 2>&1
+  assert_exit "$?" 1 "[$lang] error: unknown subcommand exits 1"
+  assert_contains "$o" "[error] ✗" "[$lang] error: failure uses the [error] ✗ prefix"
+  assert_contains "$o" 'got "bogus"' "[$lang] error: unknown subcommand renders JSON-style (got \"bogus\")"
+  ( cd "$store_repo" && "${VEL[@]}" bogus ) >"$o" 2>&1
+  assert_exit "$?" 1 "[$lang] velocity: unknown subcommand exits 1"
+  assert_contains "$o" "[velocity] ✗" "[$lang] velocity: failure uses the [velocity] ✗ prefix"
+  assert_contains "$o" 'got "bogus"' "[$lang] velocity: unknown subcommand renders JSON-style (got \"bogus\")"
+
+  # the velocity note/warn channel must use `[velocity] note:` (was `velocity: note:`).
+  # A non-canonical model trips core.modelNotice → a note line, deterministically.
+  local vn_repo; vn_repo="$(new_env)"; mkdir -p "$vn_repo/.claude"
+  echo '{ "storage": { "velocity": { "enabled": true } } }' > "$vn_repo/.claude/orchestrate.json"
+  ( cd "$vn_repo" && "${VEL[@]}" log \
+      '{"ticket":7,"title":"t","role":"DEV","agent":"apple","started_iso":"2026-06-23T10:00:00-1000","finished_iso":"2026-06-23T10:42:00-1000","actual_min":42,"model":"weird-model-x"}' \
+      --db-path "$vn_repo/vn.db" --no-csv ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] velocity: note-channel log still exits 0"
+  assert_contains "$o" "[velocity] note:" "[$lang] velocity: warn channel uses the [velocity] note: prefix"
 }
 
 run_storage_suite "py" python3 "$PY_ERROR" python3 "$PY_VELOCITY"
@@ -765,11 +788,24 @@ git -C "$PAR_REPO" add -A
 git -C "$PAR_REPO" commit -qm "seed marker" >/dev/null 2>&1
 parity_run status "status --json on a seeded marker repo" "" -- --json
 
-# preflight (read-only, happy path). NOTE: the usage-ERROR path still drifts
-# (`usage: preflight …` vs `usage: pmtools preflight …`) — that's the error-string
-# convention finding #44 owns, so parity here covers the OPEN-issue happy path.
+# preflight: both the happy path AND the usage-error path must match across ports.
+# (#44 folded in the usage-string drift: js emitted `usage: pmtools preflight …`
+# while py + every other cmd emit `usage: <cmd> …`; now aligned, so the usage-error
+# render is byte-identical too.)
 PAR_REPO="$(new_env)"
 parity_run preflight "preflight <issue> happy path (OPEN)" "$PAR_GH" -- 5
+parity_run preflight "preflight usage error (non-numeric issue) renders identically" "" -- notanumber
+
+# error/velocity unknown-subcommand: the render must be byte-identical across ports
+# (#44 thread 2 — js JSON.stringify `got "x"` vs py repr `got 'x'` drifted; the
+# store-cmd failure prefix `[cmd] ✗` must also match the fleet convention).
+PAR_REPO="$(new_env)"
+parity_run error    "unknown subcommand renders identically across ports" "" -- bogus
+parity_run velocity "unknown subcommand renders identically across ports" "" -- bogus
+# a non-ASCII token must render byte-identically too (json.dumps defaults to
+# ensure_ascii=True → `é`, which would drift from JS JSON.stringify's raw
+# UTF-8; ensure_ascii=False keeps the twins byte-exact).
+parity_run error    "unknown subcommand with a non-ASCII token renders identically" "" -- "café"
 
 # claim (--dry-run: no mutation, full banner).
 PAR_REPO="$(new_env)"

@@ -24,7 +24,7 @@ const TABLE = 'errors';
 const COLS = core.ERROR_COLS;
 
 function die(msg) {
-  process.stderr.write(`error: ${msg}\n`);
+  process.stderr.write(`[error] ✗ ${msg}\n`);
   process.exit(1);
 }
 
