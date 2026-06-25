@@ -37,6 +37,7 @@ import sys
 import close_core as core
 import config
 import store
+import store_core
 import claim_core
 from close_core import (
     DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
@@ -311,19 +312,59 @@ def delete_claim_ref(issue):
 
 # ---- land loop -------------------------------------------------------------
 
+def reexport_and_stage_velocity_csv(cfg):
+    """Re-export the velocity CSV mirror from SQLite (the source of truth, which
+    already holds both agents' rows) and stage it, to auto-resolve a
+    velocity-CSV-only rebase conflict. Resolved against the current worktree's
+    toplevel (where the rebase is happening). On any failure, abort the rebase and
+    die() — the commit stays safe and local. (#57; ported from lccjs #313)"""
+    top = (sh("git rev-parse --show-toplevel", True) or "").strip() or os.getcwd()
+    csv_abs = os.path.join(top, cfg["velocity"]["csvMirror"])
+    try:
+        store.export_csv(cfg["dbPath"], "velocity", csv_abs, store_core.VELOCITY_COLS)
+    except Exception as e:
+        sh("git rebase --abort", True)
+        die("velocity CSV conflict: re-export from the DB failed ({}). "
+            "Aborted the rebase; your commit is safe and local.".format(
+                str(e).split(chr(10))[0]))
+    staged = sh_capture('git add "{}"'.format(csv_abs))
+    if not staged["ok"]:
+        sh("git rebase --abort", True)
+        die("velocity CSV conflict: re-export succeeded but git add failed. "
+            "Aborted the rebase; your commit is safe and local.")
+
+
 def try_land():
     """One fetch/rebase/push round. Returns 'ok' | 'race' | 'rejected-other', or
-    die()s on a blocking rebase conflict (not retryable)."""
+    die()s on a blocking rebase conflict (not retryable). A conflict whose ONLY
+    path is the velocity CSV mirror auto-resolves via re-export (#57)."""
     sh("git fetch origin main", True)
     rebase = sh_capture("git rebase origin/main")
     if not rebase["ok"]:
         conflicted = conflicted_paths()
-        # velocity-row / learnings auto-resolve is OUT of scope here — any conflict
-        # is blocking. Abort the rebase (the commit is safe and local) and die.
-        sh("git rebase --abort", True)
-        die("rebase hit a real conflict in: {}. ".format(", ".join(conflicted) or rebase["out"].strip())
-            + "Aborted the rebase. Resolve manually, then re-run close. "
-            "Your commit is safe and local.")
+        try:
+            cfg = config.load_storage_config()
+        except Exception:
+            cfg = None
+        csv_mirror = (cfg["velocity"]["csvMirror"]
+                      if cfg and cfg.get("velocity") and cfg["velocity"].get("enabled")
+                      else None)
+        if csv_mirror and core.is_velocity_csv_only_conflict(conflicted, csv_mirror):
+            # Two agents committed divergent full-table CSV exports. Re-export from
+            # the DB (already holds both rows) and continue — the only resolvable one.
+            reexport_and_stage_velocity_csv(cfg)
+            cont = sh_capture("GIT_EDITOR=true git rebase --continue")
+            if not cont["ok"]:
+                sh("git rebase --abort", True)
+                die("velocity CSV conflict: re-export + stage succeeded but rebase "
+                    "--continue failed: {}. Your commit is safe and local.".format(
+                        cont["out"].strip()))
+            log("velocity CSV conflict auto-resolved (re-exported from the DB).")
+        else:
+            sh("git rebase --abort", True)
+            die("rebase hit a real conflict in: {}. ".format(", ".join(conflicted) or rebase["out"].strip())
+                + "Aborted the rebase. Resolve manually, then re-run close. "
+                "Your commit is safe and local.")
     push = sh_capture("git push origin HEAD:main")
     if push["ok"]:
         return "ok"

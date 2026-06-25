@@ -37,6 +37,7 @@ const path = require('node:path');
 const core = require('./close_core');
 const config = require('./config');
 const store = require('./store');
+const storeCore = require('./store_core');
 const claimCore = require('./claim_core');
 const {
   DEFAULT_MAX_RETRIES, isSafeRef, classifyPushError, shouldCleanup,
@@ -270,19 +271,60 @@ function deleteClaimRef(issue) {
 
 // ---- land loop -------------------------------------------------------------
 
+// Re-export the velocity CSV mirror from the SQLite store (the source of truth,
+// which already holds both agents' rows) and stage it, to auto-resolve a
+// velocity-CSV-only rebase conflict. The mirror is resolved against the current
+// worktree's toplevel (where the rebase is happening), not the main checkout.
+// On any failure, abort the rebase and die() — the caller's commit stays safe
+// and local. (#57; ported from lccjs close.js #313)
+function reexportAndStageVelocityCsv(cfg) {
+  const top = (sh('git rev-parse --show-toplevel', true) || '').trim() || process.cwd();
+  const csvAbs = path.join(top, cfg.velocity.csvMirror);
+  try {
+    store.exportCsv(cfg.dbPath, 'velocity', csvAbs, storeCore.VELOCITY_COLS);
+  } catch (e) {
+    sh('git rebase --abort', true);
+    const first = String((e && e.message) || e).split('\n')[0];
+    die(`velocity CSV conflict: re-export from the DB failed (${first}). ` +
+        'Aborted the rebase; your commit is safe and local.');
+  }
+  const staged = shCapture(`git add "${csvAbs}"`);
+  if (!staged.ok) {
+    sh('git rebase --abort', true);
+    die('velocity CSV conflict: re-export succeeded but git add failed. ' +
+        'Aborted the rebase; your commit is safe and local.');
+  }
+}
+
 // One fetch/rebase/push round. Returns 'ok' | 'race' | 'rejected-other', or
-// die()s on a blocking rebase conflict (not retryable).
+// die()s on a blocking rebase conflict (not retryable). A conflict whose ONLY
+// path is the velocity CSV mirror auto-resolves via re-export (#57).
 function tryLand() {
   sh('git fetch origin main', true);
   const rebase = shCapture('git rebase origin/main');
   if (!rebase.ok) {
     const conflicted = conflictedPaths();
-    // velocity/learnings auto-resolve is OUT of scope — any conflict is blocking.
-    sh('git rebase --abort', true);
-    die('rebase hit a real conflict in: ' +
-        `${conflicted.join(', ') || rebase.out.trim()}. ` +
-        'Aborted the rebase. Resolve manually, then re-run close. ' +
-        'Your commit is safe and local.');
+    let cfg = null;
+    try { cfg = config.loadStorageConfig(); } catch (_) { cfg = null; }
+    const csvMirror = cfg && cfg.velocity && cfg.velocity.enabled ? cfg.velocity.csvMirror : null;
+    if (csvMirror && core.isVelocityCsvOnlyConflict(conflicted, csvMirror)) {
+      // Two agents committed divergent full-table CSV exports. Re-export from the
+      // DB (already holds both rows) and continue — the only resolvable conflict.
+      reexportAndStageVelocityCsv(cfg);
+      const cont = shCapture('GIT_EDITOR=true git rebase --continue');
+      if (!cont.ok) {
+        sh('git rebase --abort', true);
+        die('velocity CSV conflict: re-export + stage succeeded but rebase ' +
+            `--continue failed: ${cont.out.trim()}. Your commit is safe and local.`);
+      }
+      log('velocity CSV conflict auto-resolved (re-exported from the DB).');
+    } else {
+      sh('git rebase --abort', true);
+      die('rebase hit a real conflict in: ' +
+          `${conflicted.join(', ') || rebase.out.trim()}. ` +
+          'Aborted the rebase. Resolve manually, then re-run close. ' +
+          'Your commit is safe and local.');
+    }
   }
   const push = shCapture('git push origin HEAD:main');
   if (push.ok) return 'ok';

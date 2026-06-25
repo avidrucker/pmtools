@@ -43,6 +43,7 @@ DISPATCH = {
     "velocity_row_present": close_core.velocity_row_present,
     "velocity_ticket_mismatch": close_core.velocity_ticket_mismatch,
     "compute_velocity_mismatch": close_core.compute_velocity_mismatch,
+    "is_velocity_csv_only_conflict": close_core.is_velocity_csv_only_conflict,
     "parse_worktree_porcelain": close_core.parse_worktree_porcelain,
     "find_worktree_for_issue": close_core.find_worktree_for_issue,
     "release_guard_verdict": close_core.release_guard_verdict,

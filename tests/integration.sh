@@ -346,6 +346,59 @@ run_close_velocity_suite() {
   ( cd "$repo2" && PATH="$gh:$PATH" "${CLOSE[@]}" "$M" --branch "br-apple/demo-js-issue-$M" ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] vel-guard: disabled + no row → close exits 0 (skipped)"
   assert_contains "$o" "CLOSED" "[$lang] vel-guard: disabled close prints CLOSED"
+
+  # === Env 3 (#57): a velocity-CSV-only rebase conflict auto-resolves via re-export ===
+  local repo3; repo3="$(new_env)"
+  local K=37
+  local DB3="$TMPROOT/vel.$lang.$K.db"
+  # Land a velocity-enabled config + a baseline CSV mirror on main FIRST, so the
+  # branch and the rebased-onto-main state share config and only the CSV diverges.
+  (
+    cd "$repo3"
+    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
+    mkdir -p .claude docs
+    printf '{ "project": "demo", "languages": ["javascript"], "storage": { "dbPath": "%s", "velocity": { "enabled": true, "csvMirror": "docs/vel.csv" }, "errors": { "enabled": true } } }\n' "$DB3" > .claude/orchestrate.json
+    printf 'id,ticket,agent\nBASE\n' > docs/vel.csv
+    git add .claude/orchestrate.json docs/vel.csv
+    git commit -qm "chore: enable velocity + baseline csv mirror"
+    git push -q origin HEAD:main
+  )
+  # Seed the DB (a row for K) so the velocity guard passes — this is the source of truth.
+  ( cd "$repo3" && "${VEL[@]}" log \
+      "{\"ticket\":$K,\"role\":\"DEV\",\"agent\":\"apple\",\"started_iso\":\"2026-02-02T00:00:00-1000\"}" \
+      --db-path "$DB3" --no-csv ) >/dev/null 2>&1
+  ( cd "$repo3" && PATH="$gh:$PATH" "${CLAIM[@]}" "$K" --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] csv-conflict: claim $K exit 0 (#57)"
+  local wt3="$repo3/.claude/worktrees/wt-apple-demo-js-issue-$K"
+  # Branch side: a divergent CSV snapshot + the keyword-sharing close commit.
+  (
+    cd "$wt3"
+    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
+    printf 'id,ticket,agent\nBRANCH-SIDE\n' > docs/vel.csv
+    printf 'widget impl\n' > widget.txt
+    git add docs/vel.csv widget.txt
+    git commit -qm "feat: add widget renderer" -m "Closes #$K"
+  )
+  # Concurrent agent on main: a DIFFERENT divergent CSV snapshot, pushed to origin.
+  (
+    cd "$repo3"
+    printf 'id,ticket,agent\nMAIN-SIDE\n' > docs/vel.csv
+    git add docs/vel.csv
+    git commit -qm "data: another agent's velocity row"
+    git push -q origin HEAD:main
+  )
+  # close: rebasing the branch onto origin/main conflicts ONLY on docs/vel.csv →
+  # auto-resolve by re-exporting from the DB, then land.
+  ( cd "$repo3" && PATH="$gh:$PATH" "${CLOSE[@]}" "$K" --branch "br-apple/demo-js-issue-$K" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] csv-conflict: close auto-resolves + exits 0 (#57)"
+  assert_contains "$o" "auto-resolved" "[$lang] csv-conflict: prints auto-resolved message (#57)"
+  assert_contains "$o" "CLOSED" "[$lang] csv-conflict: prints CLOSED banner (#57)"
+  if [ -d "$wt3" ]; then fail "[$lang] csv-conflict: worktree removed after success (#57)"; else pass "[$lang] csv-conflict: worktree removed (#57)"; fi
+  if git --git-dir="$(dirname "$repo3")/origin.git" log main --format=%s 2>/dev/null | grep -q "add widget renderer"; then
+    pass "[$lang] csv-conflict: close landed on origin/main (#57)"
+  else
+    fail "[$lang] csv-conflict: close landed on origin/main (#57)"
+  fi
 }
 
 run_close_velocity_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE" python3 "$PY_VELOCITY"

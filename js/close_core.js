@@ -169,6 +169,18 @@ function velocityTicketMismatch(tickets, issue) {
   return (tickets || []).filter((t) => t != null && Number(t) !== n);
 }
 
+// A rebase whose ONLY conflicted path is the velocity CSV mirror is
+// auto-resolvable: the mirror is a full-table SQLite export, and the DB (the
+// source of truth) already holds both agents' rows, so the conflict is resolved
+// by re-exporting rather than aborting. Pure: conflicted paths + the configured
+// mirror (repo-root-relative). False when the mirror is unset, no paths
+// conflicted, or any non-mirror file also conflicted. (#57; lccjs #313)
+function isVelocityCsvOnlyConflict(paths, csvMirror) {
+  if (!csvMirror) return false;
+  const list = (paths || []).map((p) => String(p).trim()).filter(Boolean);
+  return list.length > 0 && list.every((p) => p === csvMirror);
+}
+
 // Guard 1 decision (lccjs #361): given the velocity rows {ticket, agent}, the
 // issue, and the closing agent, return the mismatching ticket numbers (empty =
 // pass). If ANY row records the correct ticket the close is consistent; only
@@ -236,5 +248,6 @@ module.exports = {
   extractKeywords, keywordsOverlap,
   markerStillPresent, scopeAuditDiffCommand,
   velocityRowPresent, velocityTicketMismatch, computeVelocityMismatch,
+  isVelocityCsvOnlyConflict,
   parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
 };

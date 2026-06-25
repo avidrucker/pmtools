@@ -1,0 +1,20 @@
+[
+  { "name": "only the mirror conflicted → true",
+    "args": [["docs/pmtools-velocity.csv"], "docs/pmtools-velocity.csv"], "expected": true },
+  { "name": "mirror + another file → false (real conflict)",
+    "args": [["docs/pmtools-velocity.csv", "js/close.js"], "docs/pmtools-velocity.csv"], "expected": false },
+  { "name": "only a non-mirror file → false",
+    "args": [["js/close.js"], "docs/pmtools-velocity.csv"], "expected": false },
+  { "name": "no conflicted paths → false",
+    "args": [[], "docs/pmtools-velocity.csv"], "expected": false },
+  { "name": "null paths → false",
+    "args": [null, "docs/pmtools-velocity.csv"], "expected": false },
+  { "name": "null mirror (CSV mirror unconfigured) → false",
+    "args": [["docs/pmtools-velocity.csv"], null], "expected": false },
+  { "name": "whitespace around a path is tolerated → true",
+    "args": [[" docs/pmtools-velocity.csv "], "docs/pmtools-velocity.csv"], "expected": true },
+  { "name": "blank entries are ignored; lone mirror → true",
+    "args": [["", "docs/pmtools-velocity.csv", "  "], "docs/pmtools-velocity.csv"], "expected": true },
+  { "name": "a different mirror path → false",
+    "args": [["docs/velocity.csv"], "docs/pmtools-velocity.csv"], "expected": false }
+]
