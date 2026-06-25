@@ -3,9 +3,8 @@
 > Companion to [`CONTRACT.md`](../CONTRACT.md). `CONTRACT.md` is the per-command
 > behavioral spec graded by `fixtures/`; this doc is the higher-level **why +
 > shape + roadmap** that consumers (lccjs and future projects) migrate against.
-> Authored under avidrucker/pmtools#13. **§5 (naming scheme) is intentionally a
-> stub here — it lands with #25**, so the doc never describes an unlanded scheme
-> as live.
+> Authored under avidrucker/pmtools#13; §5 (naming scheme) was decomposed out and
+> finalized as part of the #17 landing (#25).
 
 ---
 
@@ -97,18 +96,59 @@ continues), and a fresh/clean DB still gets the index + full constraint
 enforcement. Hardening a self-seeding connect path means treating index creation
 as best-effort over dirty legacy data, never as a precondition for writes.
 
-## 5. Worktree/branch naming scheme — **stub (lands with #25)**
+## 5. Worktree/branch naming scheme
 
-The self-describing naming scheme — `br-<agent>/<project>-<lang>-issue-N[-theme]`
-branches and `wt-…` worktrees, with back-compatible parse regexes and config-
-sourced `project`/`lang` — is **designed and ratified** (avidrucker/lccjs#1460)
-and **implemented** (#17) but **not yet landed on `main`**. To avoid documenting
-an unlanded scheme as live, **this section is finalized as part of #25** (the #17
-landing), where it will specify: the branch/worktree forms, the canonical
-named-group parse regexes, the `langTag`/`buildBranch`/`buildWorktreeName`/
-`branchToWorktreeName` pure helpers, and the `orchestrate.json` `project` +
-`languages[0]` sourcing. Until then: branches are `<fruit>/issue-N[-slug]`,
-worktrees `<worktreeDir>/<fruit>-issue-N` (see `CONTRACT.md`).
+`claim` emits **self-describing** branch and worktree names so that an agent,
+its project, its language, and its issue are all readable at a glance from
+`git branch` / `git worktree list` across a fleet that shares one machine.
+Designed and ratified in avidrucker/lccjs#1460; implemented in #17; the
+canonical written convention (forms + regexes) lives in `CONTRACT.md`.
+
+### Forms
+
+```
+branch       = br-<agent>/<project>-<lang>-issue-<N>[-<theme>]
+worktree dir = <worktreeDir>/wt-<agent>-<project>-<lang>-issue-<N>
+```
+
+The `br-`/`wt-` prefix marks the artifact type; `<theme>` is an optional
+branch-only slug. `<agent>`, `<project>`, `<lang>` each normalize to a single
+`[a-z0-9]` token (the scheme delimiter is `-`).
+
+### Field sourcing (the consumer-owns-policy rule)
+
+`<project>` and `<lang>` come from the consumer's `.claude/orchestrate.json`,
+read from the **main checkout** (`mainRoot()` = `git --git-common-dir`'s parent),
+never the worktree dir — keying off the worktree basename is the pmtools#26 /
+lccjs#1454 trap. `project` = the explicit `"project"` key, else the main-repo
+basename; `lang` = `langTag(languages[0])` (a tag map: `javascript`→`js`,
+`python`→`py`, `clojure`→`clj`, …). Both fall back to a safe default when
+absent, so an unconfigured repo still produces a valid name.
+
+### Back-compatibility — no flag day
+
+Parsing tolerates **both** the new form and the legacy
+`<fruit>/issue-<N>[-<slug>]` / `<fruit>-issue-<N>`: in every parse regex the
+`br-`/`wt-` prefix and the `<project>-<lang>-` segment are optional, and the
+`issue-<N>` token is always present. So in-flight legacy worktrees still
+reconcile, claim, and close while new claims adopt the richer name — there is
+no migration step and no cutover. The canonical named-group regexes:
+
+```
+branch:   ^(?:br-)?(?<agent>[a-z0-9]+)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)(?:-(?<theme>.+))?$
+worktree: ^(?:wt-)?(?<agent>[a-z0-9]+)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
+```
+
+### Pure helpers (the testable seam)
+
+Name construction and the branch→worktree-dir bridge are pure functions in
+`claim_core.{js,py}`, graded byte-for-byte across both ports against shared
+`fixtures/claim/*` cases: `langTag`, `buildBranch`, `buildWorktreeName`, and
+`branchToWorktreeName` (used by `close` to find a worktree from a branch name,
+handling both new and legacy forms), plus the prefix-tolerant
+`inferFruitFromBranch` and `worktreesWithIssue`. Construction is exposed so
+consumers (lccjs) **call pmtools** rather than re-templating the scheme — keeping
+pmtools the single canonical definition. Consumer follow-on: avidrucker/lccjs#1461.
 
 ## 6. Configuration
 
@@ -160,7 +200,7 @@ consumer is still testing stale code.
 
 ## 8. Roadmap / open issues
 
-- **#17 / #25** — self-describing naming scheme (implemented; landing + §5 here).
+- **#17 / #25** — self-describing naming scheme (implemented + landed; specified in §5).
 - **#13** — this design doc.
 - **#20** — `tests/integration.sh` non-hermeticity (leaks commits into the cwd
   branch from a worktree); verify-in-clone until fixed.
