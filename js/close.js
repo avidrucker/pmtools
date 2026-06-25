@@ -30,7 +30,7 @@
  *   node close.js <issue> --worktree-dir <dir>   # default .claude/worktrees
  */
 
-const { execSync } = require('node:child_process');
+const { execSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -38,7 +38,7 @@ const core = require('./close_core');
 const config = require('./config');
 const store = require('./store');
 const {
-  DEFAULT_MAX_RETRIES, classifyPushError, shouldCleanup,
+  DEFAULT_MAX_RETRIES, isSafeRef, classifyPushError, shouldCleanup,
   claimRefDeleteCommand, classifyClaimRefDelete,
   bodyClosesIssue, extractKeywords, keywordsOverlap, markerStillPresent,
   scopeAuditDiffCommand, velocityRowPresent, computeVelocityMismatch,
@@ -62,6 +62,14 @@ function shCapture(cmd) {
     const out = `${e.stdout || ''}${e.stderr || ''}`;
     return { ok: false, out };
   }
+}
+
+// arg-array git exec (#37): values are passed as argv and never re-parsed by a
+// shell. Returns { ok, out } like shCapture; used for teardown's `branch -D
+// <branch>`, where --branch is attacker-influenced.
+function gitCapture(args) {
+  const r = spawnSync('git', args, { encoding: 'utf8' });
+  return { ok: r.status === 0, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 
 function die(msg) {
@@ -307,7 +315,10 @@ function logCommentPrompt(issue, closingSha) {
 // Remove the worktree + branch + prune. Run synchronously from root (the
 // detached-subprocess trick in close.js dodges an npm getcwd bug we don't have).
 function teardown(wtPath, branch, root) {
-  const res = shCapture(`git worktree remove "${wtPath}" && git branch -D ${branch} && git worktree prune`);
+  // arg-array exec, short-circuited to mirror the old `&&` chain (#37).
+  let res = gitCapture(['worktree', 'remove', wtPath]);
+  if (res.ok) res = gitCapture(['branch', '-D', branch]);
+  if (res.ok) gitCapture(['worktree', 'prune']);
   if (!res.ok) {
     console.error('[close] warning: teardown may have failed — check: git worktree list');
   }
@@ -324,11 +335,19 @@ function main() {
 
   // --- pre-flight: refuse to start unless the close is real and the tree sane.
   const branch = opts.branch || currentBranch();
-  if (!branch || !/\/issue-\d+/.test(branch)) {
-    die(`current branch "${branch || '?'}" is not a <fruit>/issue-<N> worktree branch. ` +
+  // Injection guard (#37): --branch is interpolated into teardown's `git branch
+  // -D <branch>`. Reject shell metacharacters, then require an ANCHORED
+  // <fruit>/issue-<N>[-slug] shape (the old guards were unanchored substring
+  // .test()s, so `x/issue-17; touch …` slipped through both).
+  if (!branch || !isSafeRef(branch)) {
+    die(`branch "${branch || '?'}" contains unsafe characters — ` +
+        'only letters, digits, and . _ / - are allowed.');
+  }
+  if (!/^[A-Za-z0-9._-]+\/issue-\d+(?:-[A-Za-z0-9._-]+)?$/.test(branch)) {
+    die(`current branch "${branch}" is not a <fruit>/issue-<N> worktree branch. ` +
         'Run this from inside the puzzle\'s worktree, not the main checkout.');
   }
-  if (!new RegExp(`/issue-${issue}\\b`).test(branch)) {
+  if (!new RegExp(`^[A-Za-z0-9._-]+/issue-${issue}(?:-[A-Za-z0-9._-]+)?$`).test(branch)) {
     die(`branch "${branch}" does not match issue #${issue}. Wrong worktree?`);
   }
 
@@ -456,7 +475,8 @@ function main() {
     if (st && st.trim().toUpperCase() === 'OPEN') {
       log(`#${issue} still shows OPEN — closing it explicitly.`);
       const comment = `Closed via pmtools close (commit ${landedSha.slice(0, 12)} on main).`;
-      sh(`gh issue close ${issue} -c "${comment}"`, true);
+      // arg-array exec (#37): the only gh WRITE call — argv, never shell-parsed.
+      spawnSync('gh', ['issue', 'close', String(issue), '-c', comment], { encoding: 'utf8' });
     } else if (st) {
       log(`#${issue} is ${st.trim()}.`);
     }

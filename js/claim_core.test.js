@@ -22,6 +22,7 @@ const load = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 // fixture stem (snake_case) -> pure callable (camelCase)
 const DISPATCH = {
   slugify: claim.slugify,
+  is_safe_ref: claim.isSafeRef,
   normalize_identity: claim.normalizeIdentity,
   infer_fruit_from_branch: claim.inferFruitFromBranch,
   resolve_identity: claim.resolveIdentity,

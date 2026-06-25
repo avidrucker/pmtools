@@ -23,7 +23,6 @@ Auto (no identity) is a hard error — agents must be named (lccjs #386).
 """
 import os
 import re
-import shlex
 import subprocess
 import sys
 import time
@@ -62,6 +61,31 @@ def sh(cmd, allow_fail=False):
         raise
 
 
+def git(args, allow_fail=False):
+    """arg-array git exec (#37): values are passed as argv and never re-parsed by
+    a shell, so an interpolated `;touch` can never execute. Used for every git
+    call that interpolates a branch/base/path; constant commands stay on sh().
+    Returns stdout on success, None on a non-zero exit (mirrors sh(..., True))."""
+    try:
+        out = subprocess.run(
+            ["git", *args], check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        )
+        return out.stdout
+    except subprocess.CalledProcessError:
+        if allow_fail:
+            return None
+        raise
+
+
+def git_capture(args):
+    """Combined stdout+stderr regardless of exit, never raises (for the claim-ref
+    push, whose output the push-result classifier inspects)."""
+    res = subprocess.run(
+        ["git", *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    return res.stdout or ""
+
+
 def die(msg):
     sys.stderr.write("[claim] ✗ {}\n".format(msg))
     sys.exit(1)
@@ -91,7 +115,7 @@ def list_worktree_branches():
 
 
 def is_sentinel_stale(fruit):
-    raw = sh('git log -1 --format="%ct" refs/heads/{}'.format(sentinel_branch(fruit)), True)
+    raw = git(["log", "-1", "--format=%ct", "refs/heads/{}".format(sentinel_branch(fruit))], True)
     if not raw or not raw.strip():
         return False
     try:
@@ -102,14 +126,14 @@ def is_sentinel_stale(fruit):
 
 
 def branch_exists(branch):
-    return sh("git show-ref --verify --quiet refs/heads/{} && echo yes".format(branch), True)
+    return git(["show-ref", "--verify", "--quiet", "refs/heads/{}".format(branch)], True) is not None
 
 
 def create_session_sentinel(fruit):
     b = sentinel_branch(fruit)
     if branch_exists(b):
         return
-    sh('git branch "{}" HEAD'.format(b), True)
+    git(["branch", b, "HEAD"], True)
 
 
 def taken_fruits():
@@ -155,11 +179,11 @@ def read_issue(issue):
 
 
 def flip_marker(issue, wt_path):
-    inprogress = sh('git -C "{}" grep -lE "{} #{}:[0-9]"'.format(wt_path, INPROGRESS_KW, issue), True)
+    inprogress = git(["-C", wt_path, "grep", "-lE", "{} #{}:[0-9]".format(INPROGRESS_KW, issue)], True)
     if inprogress and inprogress.strip():
         print("[claim] {} #{} already present — skipping flip".format(INPROGRESS_KW, issue))
         return
-    grep = sh('git -C "{}" grep -nIE "{} #{}:[0-9]"'.format(wt_path, TODO_KW, issue), True)
+    grep = git(["-C", wt_path, "grep", "-nIE", "{} #{}:[0-9]".format(TODO_KW, issue)], True)
     if not grep or not grep.strip():
         print("[claim] no {} #{} marker found — skipping flip".format(TODO_KW, issue))
         return
@@ -292,6 +316,12 @@ def main():
             "  or export CLAUDE_AGENT_NAME=<fruit> before running.\n"
             "  Auto-naming is disabled — agent names must be assigned by the human orchestrator.")
 
+    # Injection guard (#37): the identity becomes the branch/worktree name and is
+    # interpolated into git commands — reject anything but ref-legal characters.
+    if identity["name"] and not core.is_safe_ref(identity["name"]):
+        die('agent identity "{}" contains unsafe characters — '
+            "only letters, digits, and . _ / - are allowed.".format(identity["name"]))
+
     name_check = check_identity_name(identity, opts, roster)
     if name_check:
         sys.stderr.write("[claim] note: {}\n".format(name_check["warn"]))
@@ -313,7 +343,11 @@ def main():
         slug = slugify(info["title"])
 
     base = opts["base"]
-    if not sh("git rev-parse --verify --quiet {}^{{commit}} && echo ok".format(base), True):
+    # Injection guard (#37): base is interpolated into git rev-parse / worktree add.
+    if not core.is_safe_ref(base):
+        die('base ref "{}" contains unsafe characters — '
+            "only letters, digits, and . _ / - are allowed.".format(base))
+    if git(["rev-parse", "--verify", "--quiet", "{}^{{commit}}".format(base)], True) is None:
         die('base ref "{}" does not resolve — pass --base <ref> (e.g. origin/main).'.format(base))
 
     if not opts["allowStaleMain"]:
@@ -379,8 +413,7 @@ def main():
                     "cd into {}, or claim a different issue.".format(branch, issue, fruit, wt_path))
             continue
 
-        ok = sh("git worktree add {} -b {} {} 2>&1".format(
-            shlex.quote(wt_path), branch, base), True)
+        ok = git(["worktree", "add", wt_path, "-b", branch, base], True)
         if ok is None:
             if identity["name"]:
                 die("git worktree add failed for {} (see git output).".format(branch))
@@ -391,34 +424,33 @@ def main():
             if len(same_fruit) > 1:
                 sys.stderr.write(
                     '[claim] race: "{}" was taken by another agent — rolling back and retrying.\n'.format(fruit))
-                sh("git worktree remove {} --force".format(shlex.quote(wt_path)), True)
-                sh("git branch -D {}".format(branch), True)
+                git(["worktree", "remove", wt_path, "--force"], True)
+                git(["branch", "-D", branch], True)
                 continue
 
         if not opts["force"]:
             collision = find_same_issue_collision(
                 worktrees_with_issue(list_worktree_branches()), int(issue), branch)
             if collision:
-                sh("git worktree remove {} --force".format(shlex.quote(wt_path)), True)
-                sh("git branch -D {}".format(branch), True)
+                git(["worktree", "remove", wt_path, "--force"], True)
+                git(["branch", "-D", branch], True)
                 die('issue #{} was claimed concurrently in worktree "{}" (agent: {}) — '
                     'rolled back "{}". cd into the existing worktree, or claim a different '
                     "issue (pass --force to override).".format(
                         issue, collision["branch"], collision["fruit"] or "unknown", branch))
 
-        base_tree = (sh("git rev-parse {}^{{tree}}".format(base), True) or "").strip()
+        base_tree = (git(["rev-parse", "{}^{{tree}}".format(base)], True) or "").strip()
         if base_tree:
             stamp = "{}.{}".format(datetime.now(timezone.utc).isoformat(), time.monotonic_ns())
             claim_msg = build_claim_message(issue, branch, os.getpid(), stamp)
-            claim_sha = (sh("git commit-tree {} -m {}".format(
-                base_tree, shlex.quote(claim_msg)), True) or "").strip()
+            claim_sha = (git(["commit-tree", base_tree, "-m", claim_msg], True) or "").strip()
             if claim_sha:
-                push_out = sh("git push origin {}:refs/claims/issue-{} 2>&1 || true".format(
-                    claim_sha, issue), True) or ""
+                push_out = git_capture(
+                    ["push", "origin", "{}:refs/claims/issue-{}".format(claim_sha, issue)])
                 action = claim_push_action(classify_claim_push_result(push_out), opts["force"])
                 if action == "ROLLBACK_DIE":
-                    sh("git worktree remove {} --force".format(shlex.quote(wt_path)), True)
-                    sh("git branch -D {}".format(branch), True)
+                    git(["worktree", "remove", wt_path, "--force"], True)
+                    git(["branch", "-D", branch], True)
                     die("issue #{0} is already claimed in another clone "
                         "(cross-clone collision on refs/claims/issue-{0}) — rolled back \"{1}\". "
                         "cd into that clone's worktree, claim a different issue, or pass --force "

@@ -29,6 +29,7 @@ def _extract_keywords(*args):
 
 
 DISPATCH = {
+    "is_safe_ref": close_core.is_safe_ref,
     "classify_push_error": close_core.classify_push_error,
     "should_cleanup": close_core.should_cleanup,
     "claim_ref_delete_command": close_core.claim_ref_delete_command,

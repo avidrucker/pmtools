@@ -22,7 +22,7 @@ import subprocess
 import sys
 
 from close_core import (
-    claim_ref_delete_command, classify_claim_ref_delete,
+    is_safe_ref, claim_ref_delete_command, classify_claim_ref_delete,
     parse_worktree_porcelain, find_worktree_for_issue, release_guard_verdict,
 )
 
@@ -39,6 +39,15 @@ def sh(cmd, allow_fail=False):
 
 def sh_capture(cmd):
     res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True)
+    return (res.stdout or "").strip()
+
+
+def git_capture(args):
+    """arg-array git exec (#37): values are argv, never re-parsed by a shell.
+    Returns trimmed stdout (mirrors sh_capture). Used for every git call that
+    interpolates the porcelain-parsed branch / worktree path."""
+    res = subprocess.run(["git", *args], stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE, text=True)
     return (res.stdout or "").strip()
 
@@ -97,18 +106,22 @@ def main():
         return
 
     wt_path, branch = wt["path"], wt["branch"]
+    # Injection guard (#37): the branch (parsed from `git worktree list`) is
+    # interpolated into git rev-list / log / branch -D — refuse unsafe characters.
+    if branch and not is_safe_ref(branch):
+        die('worktree branch "{}" contains unsafe characters — refusing to operate on it.'.format(branch))
 
     # --- data-loss guard FIRST — a refused release leaves the claim + worktree intact.
     if not force:
         sh("git fetch origin -q", True)
-        ahead_raw = sh_capture("git rev-list --count origin/main..{}".format(branch))
+        ahead_raw = git_capture(["rev-list", "--count", "origin/main..{}".format(branch)])
         ahead = int(ahead_raw) if ahead_raw.isdigit() else 0
-        dirty = sh_capture('git -C "{}" status --porcelain'.format(wt_path))
+        dirty = git_capture(["-C", wt_path, "status", "--porcelain"])
         verdict = release_guard_verdict(ahead, bool(dirty), False)
         if verdict == "unpushed":
             die("#{} branch {} has {} commit(s) NOT on origin/main — release would discard them:\n".format(
                 issue, branch, ahead)
-                + sh_capture("git log origin/main..{} --oneline".format(branch))
+                + git_capture(["log", "origin/main..{}".format(branch), "--oneline"])
                 + "\n  Land them on the right ticket first, or re-run with --force to discard.")
         if verdict == "dirty":
             die("worktree {} has uncommitted changes — release would discard them:\n".format(wt_path)
@@ -124,9 +137,12 @@ def main():
         os.chdir(root)
     except OSError:
         pass
-    rm_branch = " && git branch -D {}".format(branch) if branch else ""
-    sh_capture('git worktree remove --force "{}"{} && git worktree prune'.format(wt_path, rm_branch))
-    if wt_path in sh_capture("git worktree list --porcelain"):
+    # arg-array exec (#37): the branch/path never reach a shell.
+    git_capture(["worktree", "remove", "--force", wt_path])
+    if branch:
+        git_capture(["branch", "-D", branch])
+    git_capture(["worktree", "prune"])
+    if wt_path in git_capture(["worktree", "list", "--porcelain"]):
         sys.stderr.write("[release] warning: teardown may have failed — check: git worktree list\n")
     log('Shell re-root: cd "{}"'.format(root))
 

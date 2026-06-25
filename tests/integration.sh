@@ -391,6 +391,60 @@ run_release_suite "py" python3 "$PY_CLAIM" python3 "$PY_RELEASE"
 run_release_suite "js" node "$JS_CLAIM" node "$JS_RELEASE"
 
 # ---------------------------------------------------------------------------
+# injection battery (#37): attacker-controlled --as / --base / --branch must
+# NEVER reach /bin/sh. claim/close build git commands; an interpolated `;touch`
+# previously achieved arbitrary command execution. The empirical proof: a
+# sentinel file the payload would `touch` must NOT exist afterwards.
+# ---------------------------------------------------------------------------
+run_injection_suite() {
+  local lang="$1" ci="$2" cs="$3" oi="$4" os="$5"
+  local -a CLAIM=("$ci" "$cs") CLOSE=("$oi" "$os")
+  echo "-- [$lang] injection battery (#37) --"
+  local gh; gh="$(make_fake_gh_titled OPEN 'Fix the widget renderer')"
+  local o="$TMPROOT/inj.$RANDOM"
+  # All-lowercase sentinel dir: the --as identity is lowercased before it reaches
+  # the shell, so an uppercase mktemp path (TMPROOT) would be mangled and mask the
+  # vuln. A lowercase path survives the .toLowerCase()/.lower() round-trip.
+  local injdir="${TMPDIR:-/tmp}/pmtools-inj.$$.$lang"
+  mkdir -p "$injdir"
+
+  # 1) claim --as injection: the agent identity flows into the branch name and is
+  #    interpolated into git show-ref / worktree add. A `;touch` must not fire.
+  local repo; repo="$(new_env)"
+  local s1="$injdir/pwned-as"
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" 51 --as "apple;touch $s1;true" --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 1 "[$lang] inj: claim --as injection rejected (exit 1)"
+  if [ -e "$s1" ]; then fail "[$lang] inj: claim --as did NOT execute a shell payload"; rm -f "$s1"
+  else pass "[$lang] inj: claim --as did NOT execute a shell payload"; fi
+
+  # 2) claim --base injection: base is interpolated into git rev-parse / worktree add.
+  local repo2; repo2="$(new_env)"
+  local s2="$TMPROOT/pwned.base.$lang.$RANDOM"
+  ( cd "$repo2" && PATH="$gh:$PATH" "${CLAIM[@]}" 52 --as apple --base "main;touch $s2;true" --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 1 "[$lang] inj: claim --base injection rejected (exit 1)"
+  if [ -e "$s2" ]; then fail "[$lang] inj: claim --base did NOT execute a shell payload"; rm -f "$s2"
+  else pass "[$lang] inj: claim --base did NOT execute a shell payload"; fi
+
+  # 3) close --branch injection: a malicious --branch passes the (unanchored) shape
+  #    guards and reaches teardown's `git branch -D <branch>`. Set up a real,
+  #    landable close on a benign worktree, then pass the payload as --branch.
+  local repo3; repo3="$(new_env)"
+  local N=53
+  ( cd "$repo3" && PATH="$gh:$PATH" "${CLAIM[@]}" "$N" --as apple --allow-stale-main ) >"$o" 2>&1
+  local wt3="$repo3/.claude/worktrees/apple-issue-$N"
+  ( cd "$wt3"
+    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
+    printf 'widget impl\n' > widget.txt && git add widget.txt
+    git commit -qm "feat: add widget renderer" -m "Closes #$N" ) >/dev/null 2>&1
+  local s3="$TMPROOT/pwned.branch.$lang.$RANDOM"
+  ( cd "$repo3" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "apple/issue-$N;touch $s3;true" ) >"$o" 2>&1
+  if [ -e "$s3" ]; then fail "[$lang] inj: close --branch did NOT execute a shell payload"; rm -f "$s3"
+  else pass "[$lang] inj: close --branch did NOT execute a shell payload"; fi
+}
+run_injection_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"
+run_injection_suite "js" node "$JS_CLAIM" node "$JS_CLOSE"
+
+# ---------------------------------------------------------------------------
 # 6) Smoke: status --json valid JSON; preflight runs without crashing.
 # ---------------------------------------------------------------------------
 echo "-- smoke: status / preflight --"

@@ -19,6 +19,21 @@ import re
 
 DEFAULT_MAX_RETRIES = 5
 
+
+# --- injection safety (#37) ------------------------------------------------
+# A branch/ref is safe to interpolate into a git command iff it is a non-empty
+# string of ref-legal characters only (letters, digits, dot, underscore, slash,
+# dash). Every shell metacharacter is rejected. close/release pass `--branch`
+# (or a porcelain-parsed branch) through this before any interpolation; the
+# arg-array exec migration is defense-in-depth on top. Twin of claim_core's.
+# fullmatch (not `$`) so a trailing newline is rejected, matching the JS twin.
+SAFE_REF_RE = re.compile(r"[A-Za-z0-9._/-]+")
+
+
+def is_safe_ref(s):
+    return isinstance(s, str) and SAFE_REF_RE.fullmatch(s) is not None
+
+
 # lccjs's merge=union auto-resolve set is OUT of scope for the pmtools port: any
 # rebase conflict is treated as human-resolvable ('blocking'). Kept as an empty
 # default so classify_rebase_conflict's signature matches the JS twin and callers
