@@ -724,6 +724,14 @@ EOF
       --db-path "$vn_repo/vn.db" --no-csv ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] velocity: note-channel log still exits 0"
   assert_contains "$o" "[velocity] note:" "[$lang] velocity: warn channel uses the [velocity] note: prefix"
+  # #61: the payload above omits `repo`; it must default to the git repo basename
+  # (the new_env clone dir is "work"), matching error log's behavior — not NULL.
+  local vnrepo; vnrepo="$(sqlite3 "$vn_repo/vn.db" 'SELECT repo FROM velocity WHERE ticket=7;' 2>/dev/null)"
+  if [ "$vnrepo" = "work" ]; then
+    pass "[$lang] velocity: repo defaults to git basename when omitted (#61)"
+  else
+    fail "[$lang] velocity: repo defaults to git basename when omitted (#61) — got '$vnrepo'"
+  fi
 }
 
 run_storage_suite "py" python3 "$PY_ERROR" python3 "$PY_VELOCITY"
