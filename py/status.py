@@ -9,7 +9,6 @@ Gathers the three reconcile inputs from the live repo (git grep, git worktree
 list, host provider), calls the pure reconcile core, and renders a table or
 JSON. Exit 0 always, except --strict with >=1 STALE marker -> exit 1.
 """
-import argparse
 import json
 import os
 import re
@@ -22,6 +21,43 @@ from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored
 from config import load_pdd_config
 
 DEFAULT_BRANCH_PATTERN = r"^(?:br-)?(?P<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?P<issue>\d+)"
+
+
+def die(msg):
+    """Match the other fleet CLIs (claim/close/error/velocity): a bad flag is a
+    loud failure, not a silent no-op. exit 1 (the shared bad-arg code; #44 may
+    later move all usage errors to 2 — keep both ports identical here, #39)."""
+    sys.stderr.write("[status] ✗ {}\n".format(msg))
+    sys.exit(1)
+
+
+def parse_args(argv):
+    """Hand-rolled, faithful twin of js/status.js parseArgs (was argparse, which
+    diverged from JS on unknown-flag handling + exit code). Unknown --flags die."""
+    a = {"strict": False, "json": False, "host": "github",
+         "branchPattern": DEFAULT_BRANCH_PATTERN, "limit": 50}
+    i = 0
+    n = len(argv)
+    while i < n:
+        t = argv[i]
+        if t == "--strict":
+            a["strict"] = True
+        elif t == "--json":
+            a["json"] = True
+        elif t == "--host":
+            i += 1; a["host"] = argv[i] if i < n else None
+        elif t == "--branch-pattern":
+            i += 1; a["branchPattern"] = argv[i] if i < n else DEFAULT_BRANCH_PATTERN
+        elif t == "--limit":
+            i += 1
+            try:
+                a["limit"] = int(argv[i]) if i < n else 50
+            except (TypeError, ValueError):
+                a["limit"] = 50
+        elif t.startswith("--"):
+            die("unknown flag: " + t)
+        i += 1
+    return a
 
 
 def _js_to_py_named_groups(pattern):
@@ -119,13 +155,9 @@ def render_table(report):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="pmtools status")
-    ap.add_argument("--strict", action="store_true")
-    ap.add_argument("--json", action="store_true")
-    ap.add_argument("--host", default="github")
-    ap.add_argument("--branch-pattern", default=DEFAULT_BRANCH_PATTERN)
-    ap.add_argument("--limit", type=int, default=50)
-    args = ap.parse_args(argv)
+    if argv is None:
+        argv = sys.argv[1:]
+    args = parse_args(argv)
 
     # PDD marker scanning is config-gated (#16). When disabled, skip the scan
     # entirely; worktree + issue reconciliation still run.
@@ -135,19 +167,19 @@ def main(argv=None):
     else:
         sys.stderr.write("[status] pdd disabled — skipping marker scan.\n")
         grep = []
-    worktrees = list_worktrees(args.branch_pattern)
-    provider = get_provider(args.host)
+    worktrees = list_worktrees(args["branchPattern"])
+    provider = get_provider(args["host"])
     issue_numbers = sorted({m["issue"] for m in grep})
     issues = provider.issue_states(issue_numbers)
 
     report = reconcile(grep, worktrees, issues)
 
-    if args.json:
+    if args["json"]:
         print(json.dumps(report, indent=2))
     else:
         print(render_table(report))
 
-    if args.strict and report["stale"]:
+    if args["strict"] and report["stale"]:
         return 1
     return 0
 
