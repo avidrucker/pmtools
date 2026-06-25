@@ -789,6 +789,21 @@ parity_run close "close --dry-run plan" "$PAR_GH" -- 61 --branch br-apple/demo-j
 PAR_REPO="$(new_env)"
 parity_run release "release of an unclaimed issue is a no-op" "$PAR_GH" -- 777
 
+# status unknown-flag rejection (#39): a mistyped flag (e.g. --strrict) must be
+# REJECTED loudly with the SAME exit code in both ports — not silently dropped.
+# (js used to ignore it and exit 0, masking a disabled --strict gate in CI; py
+# rejected via argparse but with exit 2.) parity_run proves byte-identical
+# stdout+stderr+exit; the explicit checks pin the absolute exit code to 1.
+PAR_REPO="$(new_env)"
+parity_run status "rejects an unknown flag identically" "" -- --strrict
+su_py="$TMPROOT/su.py.$RANDOM"; su_js="$TMPROOT/su.js.$RANDOM"
+( cd "$PAR_REPO" && python3 "$PY_STATUS" --strrict ) >"$su_py" 2>&1; su_pe=$?
+( cd "$PAR_REPO" && node    "$JS_STATUS" --strrict ) >"$su_js" 2>&1; su_je=$?
+assert_exit "$su_pe" 1 "[py] status: unknown flag exits 1"
+assert_exit "$su_je" 1 "[js] status: unknown flag exits 1"
+assert_contains "$su_py" "unknown flag" "[py] status: names the unknown flag"
+assert_contains "$su_js" "unknown flag" "[js] status: names the unknown flag"
+
 echo
 echo "== integration: $PASSES passed, $FAILS failed =="
 [ "$FAILS" -eq 0 ]
