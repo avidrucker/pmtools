@@ -359,7 +359,7 @@ run_release_suite() {
   # 1) claim 41 as apple → worktree staked + claim ref on origin.
   ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" 41 --as apple --allow-stale-main ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] release: claim 41 exit 0"
-  local wt="$repo/.claude/worktrees/apple-issue-41"
+  local wt="$repo/.claude/worktrees/wt-apple-demo-js-issue-41"
   assert_dir "$wt" "[$lang] release: worktree staked"
 
   # 2) clean release → tears down; issue stays OPEN (never calls provider close).
@@ -367,7 +367,7 @@ run_release_suite() {
   assert_exit "$?" 0 "[$lang] release: clean release exit 0"
   assert_contains "$o" "stays OPEN" "[$lang] release: says issue stays OPEN"
   if [ -d "$wt" ]; then fail "[$lang] release: worktree removed"; else pass "[$lang] release: worktree removed"; fi
-  assert_no_branch "$repo" "apple/issue-41" "[$lang] release: branch deleted"
+  assert_no_branch "$repo" "br-apple/demo-js-issue-41" "[$lang] release: branch deleted"
   if git -C "$repo" ls-remote origin 'refs/claims/*' 2>/dev/null | grep -q "refs/claims/issue-41"; then
     fail "[$lang] release: claim ref deleted on origin (still present)"
   else
@@ -376,7 +376,7 @@ run_release_suite() {
 
   # 3) data-loss guard: an UNPUSHED commit blocks release without --force.
   ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" 42 --as apple --allow-stale-main ) >"$o" 2>&1
-  local wt2="$repo/.claude/worktrees/apple-issue-42"
+  local wt2="$repo/.claude/worktrees/wt-apple-demo-js-issue-42"
   ( cd "$wt2"
     git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
     printf 'work\n' > work.txt && git add work.txt && git commit -qm "wip: unpushed work" )
