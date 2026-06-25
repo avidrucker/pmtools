@@ -25,6 +25,7 @@ function extractKeywords(...args) {
 }
 
 const DISPATCH = {
+  is_safe_ref: close.isSafeRef,
   classify_push_error: close.classifyPushError,
   should_cleanup: close.shouldCleanup,
   claim_ref_delete_command: close.claimRefDeleteCommand,

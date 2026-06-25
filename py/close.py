@@ -38,7 +38,7 @@ import close_core as core
 import config
 import store
 from close_core import (
-    DEFAULT_MAX_RETRIES, classify_push_error, should_cleanup,
+    DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
     claim_ref_delete_command, classify_claim_ref_delete,
     classify_rebase_conflict, body_closes_issue,
     extract_keywords, keywords_overlap, marker_still_present,
@@ -65,6 +65,15 @@ def sh_capture(cmd):
     res = subprocess.run(
         cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
+    return {"ok": res.returncode == 0, "out": (res.stdout or "") + (res.stderr or "")}
+
+
+def git_capture(args):
+    """arg-array git exec (#37): values are passed as argv and never re-parsed by
+    a shell. Returns {"ok", "out"} like sh_capture; used for teardown's
+    `branch -D <branch>`, where --branch is attacker-influenced."""
+    res = subprocess.run(
+        ["git", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return {"ok": res.returncode == 0, "out": (res.stdout or "") + (res.stderr or "")}
 
 
@@ -355,10 +364,17 @@ def main():
 
     # --- pre-flight: refuse to start unless the close is real and the tree sane.
     branch = opts["branch"] or current_branch()
-    if not branch or not re.search(r"/issue-\d+", branch):
+    # Injection guard (#37): --branch is interpolated into teardown's `git branch
+    # -D <branch>`. Reject shell metacharacters, then require an ANCHORED
+    # <fruit>/issue-<N>[-slug] shape (the old guards were unanchored substring
+    # searches, so `x/issue-17; touch ...` slipped through both).
+    if not branch or not is_safe_ref(branch):
+        die('branch "{}" contains unsafe characters — '
+            "only letters, digits, and . _ / - are allowed.".format(branch or "?"))
+    if not re.match(r"^[A-Za-z0-9._-]+/issue-\d+(?:-[A-Za-z0-9._-]+)?$", branch):
         die('current branch "{}" is not a <fruit>/issue-<N> worktree branch. '
-            "Run this from inside the puzzle's worktree, not the main checkout.".format(branch or "?"))
-    if not re.search(r"/issue-{}\b".format(issue), branch):
+            "Run this from inside the puzzle's worktree, not the main checkout.".format(branch))
+    if not re.match(r"^[A-Za-z0-9._-]+/issue-{}(?:-[A-Za-z0-9._-]+)?$".format(issue), branch):
         die('branch "{}" does not match issue #{}. Wrong worktree?'.format(branch, issue))
 
     root = main_root()
@@ -479,7 +495,9 @@ def main():
             log("#{} still shows OPEN — closing it explicitly.".format(issue))
             comment = "Closed via pmtools close (commit {} on main).".format(
                 landed_sha[:12] if landed_sha else "")
-            sh('gh issue close {} -c "{}"'.format(issue, comment), True)
+            # arg-array exec (#37): the only gh WRITE call — argv, never shell-parsed.
+            subprocess.run(["gh", "issue", "close", str(issue), "-c", comment],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif st:
             log("#{} is {}.".format(issue, st.strip()))
 
@@ -507,8 +525,12 @@ def main():
 def _teardown(wt_path, branch, root):
     """Remove the worktree + branch + prune. Run synchronously from root (the
     detached-subprocess trick in close.js dodges an npm getcwd bug we don't have)."""
-    res = sh_capture('git worktree remove "{}" && git branch -D {} && git worktree prune'.format(
-        wt_path, branch))
+    # arg-array exec, short-circuited to mirror the old `&&` chain (#37).
+    res = git_capture(["worktree", "remove", wt_path])
+    if res["ok"]:
+        res = git_capture(["branch", "-D", branch])
+    if res["ok"]:
+        git_capture(["worktree", "prune"])
     if not res["ok"]:
         sys.stderr.write("[close] warning: teardown may have failed — check: git worktree list\n")
 

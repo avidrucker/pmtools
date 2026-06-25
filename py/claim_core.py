@@ -33,6 +33,24 @@ INPROGRESS_KW = "@" + "inprogress"
 
 
 # ---------------------------------------------------------------------------
+# injection safety (#37)
+# ---------------------------------------------------------------------------
+
+# A value is safe to interpolate into a ref/identity position iff it is a
+# non-empty string of ref-legal characters only: letters, digits, dot,
+# underscore, slash, dash. Every shell metacharacter (`;`, whitespace, `$`,
+# backtick, `|`, `&`, `>`, `<`, newline, ...) is rejected. This is the
+# load-bearing guard behind `--base` + agent identity (claim) and `--branch`
+# (close/release); the arg-array exec migration is defense-in-depth on top.
+# fullmatch (not `$`) so a trailing newline is rejected, matching the JS twin.
+SAFE_REF_RE = re.compile(r"[A-Za-z0-9._/-]+")
+
+
+def is_safe_ref(s):
+    return isinstance(s, str) and SAFE_REF_RE.fullmatch(s) is not None
+
+
+# ---------------------------------------------------------------------------
 # slug / identity helpers
 # ---------------------------------------------------------------------------
 

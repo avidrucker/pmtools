@@ -24,6 +24,19 @@ const CLAIM_REF_MAX_AGE_S = 2 * 24 * 60 * 60;        // 2 days
 const todoKw = '@' + 'todo';
 const inprogressKw = '@' + 'inprogress';
 
+// --- injection safety (#37) ------------------------------------------------
+
+// A value is safe to interpolate into a ref/identity position iff it is a
+// non-empty string of ref-legal characters only: letters, digits, dot,
+// underscore, slash, dash. Every shell metacharacter (`;`, whitespace, `$`,
+// backtick, `|`, `&`, `>`, `<`, newline, …) is rejected. This is the
+// load-bearing guard behind `--base` + agent identity (claim) and `--branch`
+// (close/release); the arg-array exec migration is defense-in-depth on top.
+const SAFE_REF_RE = /^[A-Za-z0-9._/-]+$/;
+function isSafeRef(s) {
+  return typeof s === 'string' && SAFE_REF_RE.test(s);
+}
+
 // --- slug / identity -------------------------------------------------------
 
 function slugify(s) {
@@ -252,6 +265,7 @@ function buildBannerLines(fruit, branch, wtPath, base, mode, dry, commentCount, 
 
 module.exports = {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, CLAIM_REF_MAX_AGE_S,
+  isSafeRef,
   slugify, normalizeIdentity, inferFruitFromBranch, resolveIdentity, parseArgs,
   checkIdentityName, assessBaseStaleness, sentinelBranch, isSentinelStaleByAge,
   applyMarkerFlip, worktreesWithIssue, findLiveWorktreeForIssue, findSameIssueCollision,

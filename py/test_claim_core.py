@@ -25,6 +25,7 @@ def _load(path):
 # Map each fixture file stem -> the pure callable it grades.
 DISPATCH = {
     "slugify": claim_core.slugify,
+    "is_safe_ref": claim_core.is_safe_ref,
     "normalize_identity": claim_core.normalize_identity,
     "infer_fruit_from_branch": claim_core.infer_fruit_from_branch,
     "resolve_identity": claim_core.resolve_identity,
