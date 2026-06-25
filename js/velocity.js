@@ -17,6 +17,7 @@
 // validation failure, or DB error). See CONTRACT.md "Output conventions" (#44).
 'use strict';
 
+const path = require('node:path');
 const config = require('./config');
 const store = require('./store');
 const core = require('./store_core');
@@ -65,6 +66,13 @@ function resolveCsv(args, storeCfg) {
   return storeCfg.csvMirror;
 }
 
+function repoBasename(cwd = null) {
+  // The `repo` data column labels the PROJECT; from a worktree that is still the
+  // main repo, so key off mainRepoRoot (#26), not the worktree toplevel.
+  const root = config.mainRepoRoot(cwd);
+  return root ? path.basename(root) : 'repo';
+}
+
 function cmdLog(args, cfg) {
   const storeCfg = cfg.velocity;
   if (!storeCfg.enabled) {
@@ -97,6 +105,9 @@ function cmdLog(args, cfg) {
       raw.title = `#${raw.ticket} (title unavailable)`;
     }
   }
+
+  // repo defaults to the git repo basename when not supplied (lccjs parity, #61).
+  if (!raw.repo) raw.repo = repoBasename();
 
   let row;
   try {

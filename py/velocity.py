@@ -19,6 +19,7 @@ unknown flag, missing payload arg); 1 operational (invalid JSON, validation
 failure, or DB error). See CONTRACT.md "Output conventions" (#44).
 """
 import json
+import os
 import subprocess
 import sys
 
@@ -84,6 +85,13 @@ def _resolve_csv(args, store_cfg):
     return store_cfg["csvMirror"]
 
 
+def _repo_basename(cwd=None):
+    # The `repo` data column labels the PROJECT; from a worktree that is still
+    # the main repo, so key off main_repo_root (#26), not the worktree toplevel.
+    root = config.main_repo_root(cwd)
+    return os.path.basename(root) if root else "repo"
+
+
 def cmd_log(args, cfg):
     store_cfg = cfg["velocity"]
     if not store_cfg["enabled"]:
@@ -108,6 +116,10 @@ def cmd_log(args, cfg):
         else:
             note("could not fetch title for #{} via gh — using fallback".format(raw["ticket"]))
             raw["title"] = "#{} (title unavailable)".format(raw["ticket"])
+
+    # repo defaults to the git repo basename when not supplied (lccjs parity, #61).
+    if not raw.get("repo"):
+        raw["repo"] = _repo_basename()
 
     try:
         row = core.validate_velocity_row(raw)
