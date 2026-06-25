@@ -250,6 +250,19 @@ def compute_velocity_mismatch(rows, issue, closing_agent):
     return velocity_ticket_mismatch([r["ticket"] for r in mine], issue)
 
 
+def is_velocity_csv_only_conflict(paths, csv_mirror):
+    """A rebase whose ONLY conflicted path is the velocity CSV mirror is
+    auto-resolvable: the mirror is a full-table SQLite export, and the DB (the
+    source of truth) already holds both agents' rows, so the conflict resolves by
+    re-exporting rather than aborting. Pure: conflicted paths + the configured
+    mirror (repo-root-relative). False when the mirror is unset, no paths
+    conflicted, or any non-mirror file also conflicted. (#57; lccjs #313)"""
+    if not csv_mirror:
+        return False
+    items = [p for p in (str(x).strip() for x in (paths or [])) if p]
+    return len(items) > 0 and all(p == csv_mirror for p in items)
+
+
 # --- release-command seams (#22; the cleanup half of close, shared core) ------
 
 def parse_worktree_porcelain(porcelain):
