@@ -30,12 +30,12 @@ COLS = core.VELOCITY_COLS
 
 
 def die(msg):
-    sys.stderr.write("velocity: {}\n".format(msg))
+    sys.stderr.write("[velocity] ✗ {}\n".format(msg))
     sys.exit(1)
 
 
 def note(msg):
-    sys.stderr.write("velocity: note: {}\n".format(msg))
+    sys.stderr.write("[velocity] note: {}\n".format(msg))
 
 
 def fetch_title(ticket, gh="gh"):
@@ -154,7 +154,8 @@ def main(argv):
         return cmd_log(args, cfg)
     if args["cmd"] == "export":
         return cmd_export(args, cfg)
-    die("usage: velocity <log|export> [...]  (got {!r})".format(args["cmd"]))
+    die("usage: velocity <log|export> [...]  (got {})".format(
+        json.dumps(args["cmd"], ensure_ascii=False)))
 
 
 if __name__ == "__main__":

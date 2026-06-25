@@ -25,12 +25,12 @@ const TABLE = 'velocity';
 const COLS = core.VELOCITY_COLS;
 
 function die(msg) {
-  process.stderr.write(`velocity: ${msg}\n`);
+  process.stderr.write(`[velocity] ✗ ${msg}\n`);
   process.exit(1);
 }
 
 function note(msg) {
-  process.stderr.write(`velocity: note: ${msg}\n`);
+  process.stderr.write(`[velocity] note: ${msg}\n`);
 }
 
 // Best-effort title fetch via the GitHub provider. null on any failure.

@@ -100,7 +100,7 @@ function parseArgs(argv) {
 function main(argv) {
   const args = parseArgs(argv);
   const issue = String(args.issue || '').replace(/^#/, '');
-  if (!/^\d+$/.test(issue)) die('usage: pmtools preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]');
+  if (!/^\d+$/.test(issue)) die('usage: preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]');
 
   const bar = '─'.repeat(58);
   out(bar); out(`  PREFLIGHT  ·  issue #${issue}`); out(bar);
