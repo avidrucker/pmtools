@@ -286,8 +286,10 @@ the gated teardown — so it can never fabricate a close.
 unrecognized → `rejected-other`), `should_cleanup` (`onOriginMain === true`
 only), `claim_ref_delete_command` + `classify_claim_ref_delete`
 (`DELETED`/`ABSENT`/`WARN`, idempotent), `classify_rebase_conflict`
-(`none`/`union-only`/`blocking` — `unionFiles` defaults **EMPTY** in pmtools, so
-any conflict is `blocking`), `body_closes_issue` (GitHub close-keyword matcher),
+(`none`/`union-only`/`blocking` — `unionFiles` comes from
+`close.autoResolve.unionFiles` (default **EMPTY** = off); a conflict confined to
+configured union files classifies as `union-only` and auto-resolves via
+`merge=union`, #36 guard 2), `body_closes_issue` (GitHub close-keyword matcher),
 `extract_keywords` + `keywords_overlap` (+ `KEYWORD_STOP_SET` / `SHORT_TECH_WORDS`),
 `marker_still_present`, `scope_audit_diff_command`, `velocity_row_present`
 (Check A — any row for the ticket), `velocity_ticket_mismatch` +
@@ -370,16 +372,27 @@ existing on-origin-main gate + teardown) is tracked as a **possible** enhancemen
 in #27; it is a superset of the trunk-based model, not required for lccjs parity
 (lccjs is itself trunk-based).
 
-### Deferred / omitted (lccjs-specific, intentionally NOT ported)
+### Conflict auto-resolve (config-gated) + still-omitted
 
 The velocity-row guard **is** ported (DB-based + config-gated; see the guard
-sequence above and the §close pure seams) — what stays omitted is the lccjs
-*CSV*-specific machinery: the velocity-CSV diff parsers (`extractTicketFromCsvDiff`
-/ `extractRowsFromCsvDiff`) and CSV-conflict auto-resolve, the learnings-README
-conflict resolver (`isReadmeLearningsConflict` / `resolveReadmeConflict`),
-union-file auto-resolve, and the parent-tracker scan (`scanParentTrackers`).
-Consequently `unionFiles` defaults EMPTY and **any** rebase conflict is
-`blocking`.
+sequence above and the §close pure seams). Both lccjs rebase-conflict
+auto-resolvers are now ported too, each **config-gated and generic** (no consumer
+paths baked into the shared harness — the #23 rule):
+
+- **velocity-CSV** (#313, #36 guard 1): a conflict confined to the velocity CSV
+  mirror re-exports the full table from SQLite (the source of truth, already
+  holding both rows) and continues the rebase — gated by `storage.velocity.csvMirror`.
+- **union-file** (#290, #36 guard 2): a conflict confined to consumer-configured
+  append-only logs (`close.autoResolve.unionFiles`, default empty) is union-merged
+  (`git merge-file --union`, keeping both sides) and continues — **no committed
+  `.gitattributes` required**. Any conflict touching a non-union, non-CSV file is
+  still **blocking** (`classify_rebase_conflict`).
+
+Still **omitted** (tracked under umbrella #36): the learnings-README conflict
+resolver (`isReadmeLearningsConflict` / `resolveReadmeConflict`, #971 / guard 4)
+and the parent-tracker checkbox scan (`scanParentTrackers`, #907 / guard 3), plus
+the lccjs *CSV-diff* parsers (`extractTicketFromCsvDiff` / `extractRowsFromCsvDiff`)
+which are lccjs-velocity-CSV-specific and unneeded.
 
 ---
 
@@ -456,6 +469,11 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
 "pdd": {                           // sibling block; gates `status`'s marker scan
   "enabled": true,                 // default true — false skips the PDD scan
   "ignoreFile": ".pddignore"       // gitignore-style exclude list at repo root
+},
+"close": {                         // sibling block; gates `close`'s conflict auto-resolve
+  "autoResolve": {
+    "unionFiles": []               // append-only logs to union-merge on a rebase
+  }                                //   conflict (default empty = off); #36 guard 2
 }
 ```
 
@@ -472,8 +490,13 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
   `.pddignore`) names the exclude list; enabled-but-absent → one-line stderr warn
   + scan everything. Loaded by `config.load_pdd_config` (twin). See `§status` and
   `.pddignore.example`.
-- A missing file / missing `storage`/`pdd` key / partial block all fall back to
-  the defaults above.
+- `close.autoResolve.unionFiles` (**default `[]`** = off) lists append-only logs
+  (repo-relative paths) that `close` union-merges (`git merge-file --union`, keep
+  both sides) when a rebase conflict is confined to them — no committed
+  `.gitattributes` needed. Consumer-supplied (the #23 generic rule). Loaded by
+  `config.load_close_config` (twin). See `§close` conflict auto-resolve.
+- A missing file / missing `storage`/`pdd`/`close` key / partial block all fall
+  back to the defaults above.
 
 ### Commands
 

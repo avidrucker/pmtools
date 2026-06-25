@@ -296,6 +296,37 @@ function reexportAndStageVelocityCsv(cfg) {
   }
 }
 
+// Union-merge an append-only file that conflicted on BOTH sides of a rebase,
+// keeping every line from each side (git's merge=union semantics) — driven by
+// config so the consumer needs no committed .gitattributes (#36 guard 2 / #290).
+// During the conflict the three versions live in the index: :1: base, :2: ours
+// (origin/main), :3: theirs (the replayed commit); `merge-file --union` folds them.
+function unionMergeAndStage(file) {
+  const dir = path.dirname(file) || '.';
+  const tmp = (k) => path.join(dir, `.pmtools-union.${path.basename(file)}.${k}`);
+  const b = tmp('base'), o = tmp('ours'), t = tmp('theirs');
+  try {
+    fs.writeFileSync(b, sh(`git show ":1:${file}"`, true) || '');
+    fs.writeFileSync(o, sh(`git show ":2:${file}"`, true) || '');
+    fs.writeFileSync(t, sh(`git show ":3:${file}"`, true) || '');
+    const merged = sh(`git merge-file -p --union "${o}" "${b}" "${t}"`, true);
+    if (merged === null) {
+      sh('git rebase --abort', true);
+      die(`union-file conflict: merge-file failed for ${file}. ` +
+          'Aborted the rebase; your commit is safe and local.');
+    }
+    fs.writeFileSync(file, merged);
+    const staged = shCapture(`git add "${file}"`);
+    if (!staged.ok) {
+      sh('git rebase --abort', true);
+      die(`union-file conflict: merged ${file} but git add failed. ` +
+          'Aborted the rebase; your commit is safe and local.');
+    }
+  } finally {
+    for (const f of [b, o, t]) { try { fs.unlinkSync(f); } catch (_) { /* best-effort */ } }
+  }
+}
+
 // One fetch/rebase/push round. Returns 'ok' | 'race' | 'rejected-other', or
 // die()s on a blocking rebase conflict (not retryable). A conflict whose ONLY
 // path is the velocity CSV mirror auto-resolves via re-export (#57).
@@ -306,6 +337,8 @@ function tryLand() {
     const conflicted = conflictedPaths();
     let cfg = null;
     try { cfg = config.loadStorageConfig(); } catch (_) { cfg = null; }
+    let unionFiles = [];
+    try { unionFiles = config.loadCloseConfig().autoResolve.unionFiles; } catch (_) { unionFiles = []; }
     const csvMirror = cfg && cfg.velocity && cfg.velocity.enabled ? cfg.velocity.csvMirror : null;
     if (csvMirror && core.isVelocityCsvOnlyConflict(conflicted, csvMirror)) {
       // Two agents committed divergent full-table CSV exports. Re-export from the
@@ -318,6 +351,18 @@ function tryLand() {
             `--continue failed: ${cont.out.trim()}. Your commit is safe and local.`);
       }
       log('velocity CSV conflict auto-resolved (re-exported from the DB).');
+    } else if (unionFiles.length && core.classifyRebaseConflict(conflicted, unionFiles) === 'union-only') {
+      // Consumer-configured append-only logs diverged on both sides — union-merge
+      // each (keep every line), stage, and continue. Config-driven, so no committed
+      // .gitattributes is required (#36 guard 2 / #290).
+      for (const f of conflicted) unionMergeAndStage(f);
+      const cont = shCapture('GIT_EDITOR=true git rebase --continue');
+      if (!cont.ok) {
+        sh('git rebase --abort', true);
+        die('union-file conflict: merge + stage succeeded but rebase --continue ' +
+            `failed: ${cont.out.trim()}. Your commit is safe and local.`);
+      }
+      log('union-file conflict auto-resolved (merge=union, kept both sides).');
     } else {
       sh('git rebase --abort', true);
       die('rebase hit a real conflict in: ' +

@@ -334,6 +334,41 @@ def reexport_and_stage_velocity_csv(cfg):
             "Aborted the rebase; your commit is safe and local.")
 
 
+def union_merge_and_stage(file):
+    """Union-merge an append-only file that conflicted on BOTH sides of a rebase,
+    keeping every line from each side (git's merge=union semantics) — driven by
+    config so the consumer needs no committed .gitattributes (#36 guard 2 / #290).
+    During the conflict the three versions live in the index: :1: base, :2: ours
+    (origin/main), :3: theirs (the replayed commit); `merge-file --union` folds them.
+    On any failure, abort the rebase and die() — the commit stays safe and local."""
+    d = os.path.dirname(file) or "."
+    base = os.path.join(d, ".pmtools-union.{}.base".format(os.path.basename(file)))
+    ours = os.path.join(d, ".pmtools-union.{}.ours".format(os.path.basename(file)))
+    theirs = os.path.join(d, ".pmtools-union.{}.theirs".format(os.path.basename(file)))
+    try:
+        for tmp, stage in ((base, 1), (ours, 2), (theirs, 3)):
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(sh('git show ":{}:{}"'.format(stage, file), True) or "")
+        merged = sh('git merge-file -p --union "{}" "{}" "{}"'.format(ours, base, theirs), True)
+        if merged is None:
+            sh("git rebase --abort", True)
+            die("union-file conflict: merge-file failed for {}. "
+                "Aborted the rebase; your commit is safe and local.".format(file))
+        with open(file, "w", encoding="utf-8") as fh:
+            fh.write(merged)
+        staged = sh_capture('git add "{}"'.format(file))
+        if not staged["ok"]:
+            sh("git rebase --abort", True)
+            die("union-file conflict: merged {} but git add failed. "
+                "Aborted the rebase; your commit is safe and local.".format(file))
+    finally:
+        for tmp in (base, ours, theirs):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
 def try_land():
     """One fetch/rebase/push round. Returns 'ok' | 'race' | 'rejected-other', or
     die()s on a blocking rebase conflict (not retryable). A conflict whose ONLY
@@ -346,6 +381,10 @@ def try_land():
             cfg = config.load_storage_config()
         except Exception:
             cfg = None
+        try:
+            union_files = config.load_close_config()["autoResolve"]["unionFiles"]
+        except Exception:
+            union_files = []
         csv_mirror = (cfg["velocity"]["csvMirror"]
                       if cfg and cfg.get("velocity") and cfg["velocity"].get("enabled")
                       else None)
@@ -360,6 +399,18 @@ def try_land():
                     "--continue failed: {}. Your commit is safe and local.".format(
                         cont["out"].strip()))
             log("velocity CSV conflict auto-resolved (re-exported from the DB).")
+        elif union_files and core.classify_rebase_conflict(conflicted, union_files) == "union-only":
+            # Consumer-configured append-only logs diverged on both sides — union-merge
+            # each (keep every line), stage, and continue. Config-driven, so no committed
+            # .gitattributes is required (#36 guard 2 / #290).
+            for f in conflicted:
+                union_merge_and_stage(f)
+            cont = sh_capture("GIT_EDITOR=true git rebase --continue")
+            if not cont["ok"]:
+                sh("git rebase --abort", True)
+                die("union-file conflict: merge + stage succeeded but rebase --continue "
+                    "failed: {}. Your commit is safe and local.".format(cont["out"].strip()))
+            log("union-file conflict auto-resolved (merge=union, kept both sides).")
         else:
             sh("git rebase --abort", True)
             die("rebase hit a real conflict in: {}. ".format(", ".join(conflicted) or rebase["out"].strip())

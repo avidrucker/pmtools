@@ -149,3 +149,30 @@ def load_pdd_config(cwd=None):
         if k in raw_pdd:
             merged[k] = raw_pdd[k]
     return merged
+
+
+def load_close_config(cwd=None):
+    """Return the merged `close` config: {autoResolve: {unionFiles: [...]}}. Reads
+    the top-level `close` block of orchestrate.json (sibling to `storage`). The
+    union-file list is consumer-supplied (the #23 generic rule — no paths baked
+    into the shared harness) and defaults to EMPTY (union auto-resolve OFF).
+    Tolerant of a missing repo / file / key / malformed value."""
+    root = repo_root(cwd)
+    raw_close = {}
+    if root:
+        cfg_path = os.path.join(root, ".claude", "orchestrate.json")
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and isinstance(data.get("close"), dict):
+                    raw_close = data["close"]
+            except (ValueError, OSError):
+                raw_close = {}
+
+    ar = raw_close.get("autoResolve")
+    if not isinstance(ar, dict):
+        ar = {}
+    uf = ar.get("unionFiles")
+    union_files = [s for s in uf if isinstance(s, str) and s] if isinstance(uf, list) else []
+    return {"autoResolve": {"unionFiles": union_files}}

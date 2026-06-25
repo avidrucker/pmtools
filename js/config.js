@@ -156,6 +156,36 @@ function loadPddConfig(cwd = null) {
   return merged;
 }
 
+// Return the merged `close` config: { autoResolve: { unionFiles: [...] } }. Reads
+// the top-level `close` block of orchestrate.json (sibling to `storage`). The
+// union-file list is consumer-supplied (the #23 generic rule — no paths baked
+// into the shared harness) and defaults to EMPTY (union auto-resolve OFF).
+// Tolerant of a missing repo / file / key / malformed value.
+function loadCloseConfig(cwd = null) {
+  const root = repoRoot(cwd);
+  let rawClose = {};
+  if (root) {
+    const cfgPath = path.join(root, '.claude', 'orchestrate.json');
+    if (fs.existsSync(cfgPath) && fs.statSync(cfgPath).isFile()) {
+      try {
+        const data = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+        if (data && typeof data === 'object' && !Array.isArray(data)
+            && data.close && typeof data.close === 'object' && !Array.isArray(data.close)) {
+          rawClose = data.close;
+        }
+      } catch {
+        rawClose = {};
+      }
+    }
+  }
+  const ar = (rawClose.autoResolve && typeof rawClose.autoResolve === 'object'
+              && !Array.isArray(rawClose.autoResolve)) ? rawClose.autoResolve : {};
+  const unionFiles = Array.isArray(ar.unionFiles)
+    ? ar.unionFiles.filter((s) => typeof s === 'string' && s)
+    : [];
+  return { autoResolve: { unionFiles } };
+}
+
 module.exports = {
-  repoRoot, mainRepoRoot, defaultDbPath, loadStorageConfig, loadPddConfig, expanduser,
+  repoRoot, mainRepoRoot, defaultDbPath, loadStorageConfig, loadPddConfig, loadCloseConfig, expanduser,
 };
