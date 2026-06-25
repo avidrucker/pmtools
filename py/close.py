@@ -280,8 +280,8 @@ def check_velocity_guard(issue, fruit):
             db_path, str(e).split(chr(10))[0]))
         return
     n = int(issue)
-    if velocity_row_present([r for r in rows if int(r["ticket"]) == n]):
-        return  # Check A satisfied.
+    if velocity_row_present([r for r in rows if r["ticket"] is not None and int(r["ticket"]) == n]):
+        return  # Check A satisfied (skip issueless null-ticket rows, #56).
     mismatch = compute_velocity_mismatch(rows, issue, fruit)
     if mismatch:
         die('velocity-row guard: agent "{}" logged ticket(s) #{} but is closing #{}. '

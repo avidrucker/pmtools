@@ -12,5 +12,9 @@
   { "name": "no closing agent → every off-ticket row counts",
     "args": [[{ "ticket": 6, "agent": "apple" }], "5", null], "expected": [6] },
   { "name": "empty rows → pass",
-    "args": [[], "5", "apple"], "expected": [] }
+    "args": [[], "5", "apple"], "expected": [] },
+  { "name": "null-ticket row (issueless PM) ignored; correct row still passes (#56)",
+    "args": [[{ "ticket": null, "agent": "apple" }, { "ticket": 5, "agent": "apple" }], "5", "apple"], "expected": [] },
+  { "name": "lone null-ticket row by the closer → not a mismatch, pass (#56)",
+    "args": [[{ "ticket": null, "agent": "apple" }], "5", "apple"], "expected": [] }
 ]
