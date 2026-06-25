@@ -12,5 +12,15 @@
   { "name": "a notes field with quotes and a newline is escaped",
     "args": [{ "id": 3, "ticket": null, "title": null, "role": "WRITER", "h_min": null, "c_min": null, "actual_min": null, "delta_h_min": null, "delta_c_min": null, "started_iso": null, "finished_iso": null, "closed_commit": null, "notes": "said \"hi\"\nthen left", "agent": "cherry", "model": null, "repo": null },
              ["id", "ticket", "title", "role", "h_min", "c_min", "actual_min", "delta_h_min", "delta_c_min", "started_iso", "finished_iso", "closed_commit", "notes", "agent", "model", "repo"]],
-    "expected": "3,,,WRITER,,,,,,,,,\"said \"\"hi\"\"\nthen left\",cherry,," }
+    "expected": "3,,,WRITER,,,,,,,,,\"said \"\"hi\"\"\nthen left\",cherry,," },
+
+  { "name": "REAL columns that come back integral from sqlite render WITHOUT a trailing .0 (py/js parity, #38)",
+    "args": [{ "id": 4, "ticket": 7, "title": "t", "role": "DEV", "h_min": 30.0, "c_min": 20.0, "actual_min": 42.0, "delta_h_min": -12.0, "delta_c_min": -22.0, "started_iso": "i1", "finished_iso": "i2", "closed_commit": null, "notes": null, "agent": "apple", "model": "opus-4.8", "repo": "pmtools" },
+             ["id", "ticket", "title", "role", "h_min", "c_min", "actual_min", "delta_h_min", "delta_c_min", "started_iso", "finished_iso", "closed_commit", "notes", "agent", "model", "repo"]],
+    "expected": "4,7,t,DEV,30,20,42,-12,-22,i1,i2,,,apple,opus-4.8,pmtools" },
+
+  { "name": "a fractional REAL keeps its decimal places (no spurious rounding)",
+    "args": [{ "id": 5, "ticket": null, "title": null, "role": "DEV", "h_min": 30.5, "c_min": null, "actual_min": 12.25, "delta_h_min": 18.25, "delta_c_min": null, "started_iso": null, "finished_iso": null, "closed_commit": null, "notes": null, "agent": "apple", "model": null, "repo": null },
+             ["id", "ticket", "title", "role", "h_min", "c_min", "actual_min", "delta_h_min", "delta_c_min", "started_iso", "finished_iso", "closed_commit", "notes", "agent", "model", "repo"]],
+    "expected": "5,,,DEV,30.5,,12.25,18.25,,,,,,apple,," }
 ]

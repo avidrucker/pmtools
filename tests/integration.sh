@@ -438,13 +438,21 @@ run_injection_suite() {
   local repo3; repo3="$(new_env)"
   local N=53
   ( cd "$repo3" && PATH="$gh:$PATH" "${CLAIM[@]}" "$N" --as apple --allow-stale-main ) >"$o" 2>&1
-  local wt3="$repo3/.claude/worktrees/apple-issue-$N"
-  ( cd "$wt3"
-    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
-    printf 'widget impl\n' > widget.txt && git add widget.txt
-    git commit -qm "feat: add widget renderer" -m "Closes #$N" ) >/dev/null 2>&1
+  # new_env's naming config => wt-apple-demo-js-issue-N / br-apple/demo-js-issue-N.
+  # git -C + a dir guard so the seed commit can ONLY ever touch the claimed
+  # worktree — a bare `cd "$wt3"` to a missing path would fall back to the cwd
+  # (the real repo) and land a stray commit on the current branch.
+  local wt3="$repo3/.claude/worktrees/wt-apple-demo-js-issue-$N"
+  if [ -d "$wt3" ]; then
+    git -C "$wt3" config user.email tester@example.com
+    git -C "$wt3" config user.name tester
+    git -C "$wt3" config commit.gpgsign false
+    printf 'widget impl\n' > "$wt3/widget.txt"
+    git -C "$wt3" add widget.txt
+    git -C "$wt3" commit -qm "feat: add widget renderer" -m "Closes #$N" >/dev/null 2>&1
+  fi
   local s3="$TMPROOT/pwned.branch.$lang.$RANDOM"
-  ( cd "$repo3" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "apple/issue-$N;touch $s3;true" ) >"$o" 2>&1
+  ( cd "$repo3" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N;touch $s3;true" ) >"$o" 2>&1
   if [ -e "$s3" ]; then fail "[$lang] inj: close --branch did NOT execute a shell payload"; rm -f "$s3"
   else pass "[$lang] inj: close --branch did NOT execute a shell payload"; fi
 }
@@ -670,6 +678,116 @@ else
   fail "cross-port: py and js produce identical CSV bytes (modulo db filename)"
   diff <(sed "s#${XP_PY_DB##*/}#DB#" "$XP_PY_CSV") <(sed "s#${XP_JS_DB##*/}#DB#" "$XP_JS_CSV") | sed 's/^/      /'
 fi
+
+# ---------------------------------------------------------------------------
+# cross-port parity (#38): the SAME velocity row logged via py and via js must
+# produce an identical sqlite row AND identical CSV bytes (modulo the db filename
+# in the preamble). Mirrors the error-log block above. `title` is supplied so the
+# gh auto-fetch path is skipped — keeping the comparison deterministic + offline.
+# ---------------------------------------------------------------------------
+echo "-- cross-port parity (py vs js: identical velocity DB row + CSV bytes) --"
+xv_repo="$(new_env)"
+mkdir -p "$xv_repo/.claude"
+cat > "$xv_repo/.claude/orchestrate.json" <<'EOF'
+{ "storage": { "velocity": { "enabled": true } } }
+EOF
+XV_ROW='{"ticket":7,"title":"widget work","role":"DEV","agent":"apple","started_iso":"2026-06-23T10:00:00-1000","finished_iso":"2026-06-23T10:42:00-1000","actual_min":42,"model":"opus-4.8","repo":"pmtools"}'
+XV_PY_DB="$xv_repo/xv-py.db";  XV_JS_DB="$xv_repo/xv-js.db"
+XV_PY_CSV="$xv_repo/xv-py.csv"; XV_JS_CSV="$xv_repo/xv-js.csv"
+xvo="$TMPROOT/xv.$RANDOM"
+( cd "$xv_repo" && python3 "$PY_VELOCITY" log "$XV_ROW" --db-path "$XV_PY_DB" --csv "$XV_PY_CSV" ) >"$xvo" 2>&1
+( cd "$xv_repo" && node    "$JS_VELOCITY" log "$XV_ROW" --db-path "$XV_JS_DB" --csv "$XV_JS_CSV" ) >>"$xvo" 2>&1
+if diff <(sqlite3 -json "$XV_PY_DB" 'SELECT * FROM velocity ORDER BY id') \
+        <(sqlite3 -json "$XV_JS_DB" 'SELECT * FROM velocity ORDER BY id') >/dev/null 2>&1; then
+  pass "cross-port: py and js produce an identical velocity sqlite row"
+else
+  fail "cross-port: py and js produce an identical velocity sqlite row"; sed 's/^/      /' "$xvo"
+fi
+if diff <(sed "s#${XV_PY_DB##*/}#DB#" "$XV_PY_CSV") \
+        <(sed "s#${XV_JS_DB##*/}#DB#" "$XV_JS_CSV") >/dev/null 2>&1; then
+  pass "cross-port: py and js produce identical velocity CSV bytes (modulo db filename)"
+else
+  fail "cross-port: py and js produce identical velocity CSV bytes (modulo db filename)"
+  diff <(sed "s#${XV_PY_DB##*/}#DB#" "$XV_PY_CSV") <(sed "s#${XV_JS_DB##*/}#DB#" "$XV_JS_CSV") | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# cross-port parity: stdout/stderr/exit. Run each command under BOTH ports
+# against the same hermetic repo (read-only or --dry-run/no-op paths, so the two
+# runs don't step on each other), then diff NORMALIZED output — neutralizing only
+# the volatile bits (shas, ISO timestamps, pids) and the per-run repo/tmp paths.
+# This makes a faithful-twin drift in any command's user-facing output a failure.
+# ---------------------------------------------------------------------------
+parity_norm() { # <file> <repo-root>
+  sed -E \
+    -e "s#$2#<REPO>#g" \
+    -e "s#${HOME:-/no-home-set}#~#g" \
+    -e "s#$TMPROOT#<TMP>#g" \
+    -e 's/[0-9a-f]{40}/<SHA>/g' \
+    -e 's/[0-9a-f]{7,12}/<SHA>/g' \
+    -e 's/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.+-]+/<TS>/g' \
+    -e 's/pid=[0-9]+/pid=<PID>/g' \
+    "$1"
+}
+# parity_run <cmd> <label> <gh-dir-or-empty> -- <args...>
+parity_run() {
+  local cmd="$1" label="$2" ghdir="$3"; shift 3
+  [ "${1:-}" = "--" ] && shift
+  local prefix=""; [ -n "$ghdir" ] && prefix="$ghdir:"
+  local po="$TMPROOT/par.$cmd.py.$RANDOM" jo="$TMPROOT/par.$cmd.js.$RANDOM" pe je
+  ( cd "$PAR_REPO" && PATH="${prefix}$PATH" python3 "$PMTOOLS_ROOT/py/$cmd.py" "$@" ) >"$po" 2>&1; pe=$?
+  ( cd "$PAR_REPO" && PATH="${prefix}$PATH" node    "$PMTOOLS_ROOT/js/$cmd.js" "$@" ) >"$jo" 2>&1; je=$?
+  assert_exit "$pe" "$je" "parity[$cmd]: $label — same exit code ($pe)"
+  if diff <(parity_norm "$po" "$PAR_REPO") <(parity_norm "$jo" "$PAR_REPO") >/dev/null 2>&1; then
+    pass "parity[$cmd]: $label — identical normalized stdout+stderr"
+  else
+    fail "parity[$cmd]: $label — stdout/stderr drift"
+    diff <(parity_norm "$po" "$PAR_REPO") <(parity_norm "$jo" "$PAR_REPO") | sed 's/^/      /'
+  fi
+}
+
+echo "-- cross-port parity: stdout/stderr/exit (py vs js, same hermetic repo) --"
+PAR_GH="$(make_fake_gh_titled OPEN 'Fix the widget renderer')"
+
+# status (read-only): a seeded canonical marker must be reported identically.
+# git -C + absolute paths so the seed commit can only ever touch the temp repo.
+PAR_REPO="$(new_env)"
+printf '// @todo #252:30m/DEV the real thing\n' > "$PAR_REPO/src.js"
+git -C "$PAR_REPO" add -A
+git -C "$PAR_REPO" commit -qm "seed marker" >/dev/null 2>&1
+parity_run status "status --json on a seeded marker repo" "" -- --json
+
+# preflight (read-only, happy path). NOTE: the usage-ERROR path still drifts
+# (`usage: preflight …` vs `usage: pmtools preflight …`) — that's the error-string
+# convention finding #44 owns, so parity here covers the OPEN-issue happy path.
+PAR_REPO="$(new_env)"
+parity_run preflight "preflight <issue> happy path (OPEN)" "$PAR_GH" -- 5
+
+# claim (--dry-run: no mutation, full banner).
+PAR_REPO="$(new_env)"
+parity_run claim "claim --dry-run banner (branch/worktree/base)" "$PAR_GH" -- 60 --as apple --dry-run --allow-stale-main
+
+# close (--dry-run: seed a claim + a real `Closes #N` commit first; dry-run plans
+# the land/teardown without mutating, so both ports read identical state). Uses
+# the deterministic naming new_env seeds (br-apple/demo-js-issue-N worktree).
+PAR_REPO="$(new_env)"
+( cd "$PAR_REPO" && PATH="$PAR_GH:$PATH" python3 "$PY_CLAIM" 61 --as apple --allow-stale-main ) >/dev/null 2>&1
+PAR_WT="$PAR_REPO/.claude/worktrees/wt-apple-demo-js-issue-61"
+# git -C + a dir guard: the seed commit only ever touches the claimed worktree,
+# never the cwd (a bare `cd "$PAR_WT"` to a missing path would hit the real repo).
+if [ -d "$PAR_WT" ]; then
+  git -C "$PAR_WT" config user.email t@e.com
+  git -C "$PAR_WT" config user.name t
+  git -C "$PAR_WT" config commit.gpgsign false
+  printf 'widget impl\n' > "$PAR_WT/widget.txt"
+  git -C "$PAR_WT" add widget.txt
+  git -C "$PAR_WT" commit -qm "feat: add widget renderer" -m "Closes #61" >/dev/null 2>&1
+fi
+parity_run close "close --dry-run plan" "$PAR_GH" -- 61 --branch br-apple/demo-js-issue-61 --dry-run
+
+# release (orphan: no worktree → deterministic best-effort no-op in both ports).
+PAR_REPO="$(new_env)"
+parity_run release "release of an unclaimed issue is a no-op" "$PAR_GH" -- 777
 
 echo
 echo "== integration: $PASSES passed, $FAILS failed =="

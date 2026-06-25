@@ -262,6 +262,11 @@ def csv_encode_field(val):
     contains a comma, double-quote, CR, or LF."""
     if val is None:
         return ""
+    # Match JS Number stringification: an integral REAL read back from sqlite
+    # (e.g. 42.0) renders as "42", not Python's "42.0" — else the CSV bytes drift
+    # from the JS twin (#38). A genuine fractional value keeps its decimals.
+    if isinstance(val, float) and val.is_integer():
+        val = int(val)
     s = str(val)
     if "," in s or '"' in s or "\n" in s or "\r" in s:
         return '"' + s.replace('"', '""') + '"'

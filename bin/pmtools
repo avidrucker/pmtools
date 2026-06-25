@@ -29,7 +29,11 @@ port="${PMTOOLS_PORT:-py}"
 args=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --port) port="${2:-}"; shift 2 ;;
+    --port)
+      if [ $# -lt 2 ]; then
+        echo "pmtools: --port requires a value (py|js)" >&2; exit 2
+      fi
+      port="$2"; shift 2 ;;
     *) args+=("$1"); shift ;;
   esac
 done
