@@ -18,9 +18,9 @@ const DEFAULT_BRANCH_PATTERN = '^(?:br-)?(?<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-
 // Match the other fleet CLIs (claim/close/error/velocity): a bad flag is a loud
 // failure, not a silent no-op. exit 1 (the shared bad-arg code; #44 may later
 // move all usage errors to 2 — keep both ports identical here, #39).
-function die(msg) {
+function die(msg, code = 1) {
   console.error(`[status] ✗ ${msg}`);
-  process.exit(1);
+  process.exit(code);
 }
 
 function run(cmd, args) {
@@ -111,7 +111,7 @@ function parseArgs(argv) {
     else if (t === '--host') a.host = argv[++i];
     else if (t === '--branch-pattern') a.branchPattern = argv[++i];
     else if (t === '--limit') a.limit = parseInt(argv[++i], 10);
-    else if (t.startsWith('--')) die('unknown flag: ' + t);
+    else if (t.startsWith('--')) die('unknown flag: ' + t, 2);
   }
   return a;
 }

@@ -33,7 +33,7 @@ function sh(cmd) {
 }
 
 function out(s) { process.stdout.write(String(s).replace(/\n?$/, '\n')); }
-function die(msg) { process.stderr.write(`[preflight] ✗ ${msg}\n`); process.exit(1); }
+function die(msg, code = 1) { process.stderr.write(`[preflight] ✗ ${msg}\n`); process.exit(code); }
 const indent = (s) => String(s || '').replace(/^/gm, '    ').replace(/\s+$/, '');
 
 // Pure: OPEN-state gate from a gh `state` string (or null when gh unavailable).
@@ -100,7 +100,7 @@ function parseArgs(argv) {
 function main(argv) {
   const args = parseArgs(argv);
   const issue = String(args.issue || '').replace(/^#/, '');
-  if (!/^\d+$/.test(issue)) die('usage: preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]');
+  if (!/^\d+$/.test(issue)) die('usage: preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]', 2);
 
   const bar = '─'.repeat(58);
   out(bar); out(`  PREFLIGHT  ·  issue #${issue}`); out(bar);

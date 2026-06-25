@@ -48,9 +48,17 @@ failure (and every warning) across all tiers and both ports (#44):
 - **Usage strings** read `usage: <cmd> …` (the bare command name, no `pmtools`
   prefix), uniformly across commands and ports.
 
-Exit-code conventions are documented per-command in each section below; a
-cross-command unification (usage/arg errors → 2, operational failures → 1) is
-proposed but not yet adopted (#44 thread 3).
+**Exit codes** follow one convention across every command and both ports (#44
+thread 3): **2** for a usage/argument error — an unknown/missing subcommand,
+unknown flag, missing required argument, or bad-typed positional (detectable from
+argv alone, so it matches the dispatcher, which already exits 2); **1** for an
+operational failure — the invocation was well-formed but the work failed (bad
+data content, validation, world state, I/O); **0** for success. The line is
+*structural invocation* (→2) vs *the world said no* (→1): e.g. `error log '{bad'`
+is exit 1 (the `log` invocation is valid; the payload content is not), and a
+rejected unsafe `--as`/`--branch` value is exit 1 (input validation, not a
+malformed command line). Per-command sections below note each command's
+operational exit-1 cases.
 
 ---
 
@@ -130,7 +138,8 @@ pmtools status --json     # the reconcile object as JSON to stdout
 pmtools status --strict   # exit 1 if any marker is STALE (else 0)
 ```
 
-- Exit code `0` always, **except** `--strict` with ≥1 STALE marker → exit `1`.
+- Exit code `0` always, **except**: an unknown flag (usage error) → `2`;
+  `--strict` with ≥1 STALE marker → `1` (an operational result, not a usage error).
 - A missing/offline provider degrades to `state: "UNKNOWN"`; never throws.
 
 ---
@@ -232,9 +241,11 @@ minus already-taken names, falling back to `<roster[0]>-2` when all are taken.
 
 ### Exit codes
 
-`0` on success (claim or dry-run); `1` on any `die` (auto identity, CLOSED,
-lane-gate block, unresolved base, stale main, live-worktree, same-issue/cross-clone
-collision, or "no candidate succeeded").
+`0` on success (claim or dry-run). A **usage error** (unknown flag, missing/
+invalid issue number) → `2`. Any **operational** `die` → `1`: auto identity (no
+resolvable agent name), CLOSED, lane-gate block, unresolved base, stale main,
+live-worktree, injection-rejected identity (#37), same-issue/cross-clone
+collision, or "no candidate succeeded".
 
 ### Timestamp / pid in the claim message
 
@@ -323,10 +334,11 @@ rows never false-block).
 
 ### Exit codes
 
-`0` on success (close, recovery clean-close, dry-run, or `--keep`). `1` on any
-`die`: not a worktree branch / wrong issue, missing worktree under `--branch`,
-no `Closes #N` commit, blocking rebase conflict, `rejected-other` push,
-exhausted `--max` race retries, the on-origin-main gate failing, a missing/
+`0` on success (close, recovery clean-close, dry-run, or `--keep`). A **usage
+error** (unknown flag, missing/invalid issue number) → `2`. Any **operational**
+`die` → `1`: not a worktree branch / wrong issue, missing worktree under
+`--branch`, no `Closes #N` commit, blocking rebase conflict, `rejected-other`
+push, exhausted `--max` race retries, the on-origin-main gate failing, a missing/
 mismatched velocity row (guard enabled), marker still present, or keyword
 mismatch.
 
@@ -406,7 +418,8 @@ be discarded.
 ### Flags / exit codes
 
 `--force` bypasses the data-loss guard (discard unpushed commits / a dirty tree).
-Exit `0` on success or nothing-to-do; `1` on bad args or a guard refusal.
+Exit `0` on success or nothing-to-do; a **usage error** (missing issue number,
+unknown/extra arg) → `2`; an **operational** guard refusal (unpushed / dirty) → `1`.
 
 ### Pure seams (`close_core`, graded against `fixtures/close/*`)
 
@@ -476,8 +489,10 @@ pmtools velocity export        [--db-path P] [--csv P]
 - `log` validates the JSON payload via `store_core`, inserts via `store`, then
   exports to the resolved CSV mirror if one is set. `export` re-exports the whole
   table from the DB on demand.
-- Exit `0` on success or disabled-store; `1` on missing arg, invalid JSON,
-  validation failure, or DB error.
+- Exit `0` on success or disabled-store; a **usage error** (missing/unknown
+  subcommand, unknown flag, missing payload argument) → `2`; an **operational**
+  failure (invalid JSON, payload not an object, validation failure, or DB
+  error) → `1`.
 
 ### errors schema (verbatim from lccjs errors-seed.js)
 

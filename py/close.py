@@ -79,9 +79,9 @@ def git_capture(args):
     return {"ok": res.returncode == 0, "out": (res.stdout or "") + (res.stderr or "")}
 
 
-def die(msg):
+def die(msg, code=1):
     sys.stderr.write("[close] ✗ {}\n".format(msg))
-    sys.exit(1)
+    sys.exit(code)
 
 
 def log(msg):
@@ -140,7 +140,7 @@ def parse_args(argv):
             i += 1
             opts["worktreeDir"] = argv[i] if i < n else None
         elif a.startswith("--"):
-            die("unknown flag: " + a)
+            die("unknown flag: " + a, 2)
         else:
             positionals.append(a)
         i += 1
@@ -401,7 +401,7 @@ def main():
     if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
         die("usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] "
             "[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] "
-            "[--skip-velocity-check] [--worktree-dir <dir>]")
+            "[--skip-velocity-check] [--worktree-dir <dir>]", 2)
     issue = opts["issue"]
 
     # --- pre-flight: refuse to start unless the close is real and the tree sane.

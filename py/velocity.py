@@ -14,8 +14,9 @@ delta_c_min are DERIVED (estimate - actual). A non-canonical model is NOTICED,
 not rejected. When title is omitted and a ticket is present, the title is
 fetched best-effort via `gh issue view <N> --json title -q .title`.
 
-Exit codes: 0 success / disabled-store; 1 missing arg, invalid JSON, validation
-failure, or DB error.
+Exit codes: 0 success / disabled-store; 2 usage error (missing/unknown subcommand,
+unknown flag, missing payload arg); 1 operational (invalid JSON, validation
+failure, or DB error). See CONTRACT.md "Output conventions" (#44).
 """
 import json
 import subprocess
@@ -29,9 +30,9 @@ TABLE = "velocity"
 COLS = core.VELOCITY_COLS
 
 
-def die(msg):
+def die(msg, code=1):
     sys.stderr.write("[velocity] ✗ {}\n".format(msg))
-    sys.exit(1)
+    sys.exit(code)
 
 
 def note(msg):
@@ -66,7 +67,7 @@ def parse_args(argv):
         elif t == "--no-csv":
             a["noCsv"] = True
         elif t.startswith("--"):
-            die("unknown flag: " + t)
+            die("unknown flag: " + t, 2)
         else:
             positionals.append(t)
         i += 1
@@ -91,7 +92,7 @@ def cmd_log(args, cfg):
 
     if not args["json"]:
         die("usage: velocity log '{\"role\":\"DEV\",\"agent\":\"apple\",...}' "
-            "[--db-path P] [--csv P|--no-csv]")
+            "[--db-path P] [--csv P|--no-csv]", 2)
     try:
         raw = json.loads(args["json"])
     except (ValueError, TypeError) as e:
@@ -155,7 +156,7 @@ def main(argv):
     if args["cmd"] == "export":
         return cmd_export(args, cfg)
     die("usage: velocity <log|export> [...]  (got {})".format(
-        json.dumps(args["cmd"], ensure_ascii=False)))
+        json.dumps(args["cmd"], ensure_ascii=False)), 2)
 
 
 if __name__ == "__main__":

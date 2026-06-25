@@ -39,9 +39,9 @@ def out(s):
     sys.stdout.write(re.sub(r"\n?$", "\n", str(s)))
 
 
-def die(msg):
+def die(msg, code=1):
     sys.stderr.write("[preflight] ✗ {}\n".format(msg))
-    sys.exit(1)
+    sys.exit(code)
 
 
 def indent(s):
@@ -93,7 +93,7 @@ def main(argv):
     args = parse_args(argv)
     issue = re.sub(r"^#", "", str(args["issue"] or ""))
     if not re.match(r"^\d+$", issue):
-        die("usage: preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]")
+        die("usage: preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]", 2)
 
     bar = "─" * 58
     out(bar); out("  PREFLIGHT  ·  issue #{}".format(issue)); out(bar)

@@ -87,9 +87,9 @@ def git_capture(args):
     return res.stdout or ""
 
 
-def die(msg):
+def die(msg, code=1):
     sys.stderr.write("[claim] ✗ {}\n".format(msg))
-    sys.exit(1)
+    sys.exit(code)
 
 
 def main_root():
@@ -304,7 +304,7 @@ def parse_args(argv):
             raw = argv[i] if i < n else ""
             opts["roster"] = [s.strip() for s in str(raw or "").split(",") if s.strip()]
         elif a.startswith("--"):
-            die("unknown flag: " + a)
+            die("unknown flag: " + a, 2)
         else:
             positionals.append(a)
         i += 1
@@ -323,7 +323,7 @@ def main():
     opts = parse_args(sys.argv[1:])
     if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
         die("usage: claim <issue-number> [slug] [--as <fruit>] [--base <ref>] [--dry-run] [--force] "
-            "[--custom] [--lane-check] [--copy-env] [--worktree-dir <dir>] [--roster a,b,c] [--allow-stale-main]")
+            "[--custom] [--lane-check] [--copy-env] [--worktree-dir <dir>] [--roster a,b,c] [--allow-stale-main]", 2)
     issue = opts["issue"]
     roster = opts["roster"] if (opts["roster"]) else FRUITS
 

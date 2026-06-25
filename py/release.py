@@ -56,9 +56,9 @@ def log(m):
     print("[release] {}".format(m))
 
 
-def die(m):
+def die(m, code=1):
     sys.stderr.write("[release] ✗ {}\n".format(m))
-    sys.exit(1)
+    sys.exit(code)
 
 
 def parse_args(argv):
@@ -70,12 +70,12 @@ def parse_args(argv):
             continue
         elif re.match(r"^\d+$", t):
             if a["issue"] is not None:
-                die("unexpected extra arg: {} (usage: release <N> [--force])".format(t))
+                die("unexpected extra arg: {} (usage: release <N> [--force])".format(t), 2)
             a["issue"] = t
         else:
-            die("unknown arg: {} (usage: release <N> [--force])".format(t))
+            die("unknown arg: {} (usage: release <N> [--force])".format(t), 2)
     if a["issue"] is None:
-        die("usage: release <issue-number> [--force]")
+        die("usage: release <issue-number> [--force]", 2)
     return a
 
 

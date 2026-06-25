@@ -707,11 +707,11 @@ EOF
   #    render must be JSON-style (got "x") so it matches the JS port — not py repr
   #    (got 'x'). grep -F so the literal brackets + glyph are matched verbatim.
   ( cd "$store_repo" && "${ERR[@]}" bogus ) >"$o" 2>&1
-  assert_exit "$?" 1 "[$lang] error: unknown subcommand exits 1"
+  assert_exit "$?" 2 "[$lang] error: unknown subcommand exits 2 (usage error)"
   assert_contains "$o" "[error] ✗" "[$lang] error: failure uses the [error] ✗ prefix"
   assert_contains "$o" 'got "bogus"' "[$lang] error: unknown subcommand renders JSON-style (got \"bogus\")"
   ( cd "$store_repo" && "${VEL[@]}" bogus ) >"$o" 2>&1
-  assert_exit "$?" 1 "[$lang] velocity: unknown subcommand exits 1"
+  assert_exit "$?" 2 "[$lang] velocity: unknown subcommand exits 2 (usage error)"
   assert_contains "$o" "[velocity] ✗" "[$lang] velocity: failure uses the [velocity] ✗ prefix"
   assert_contains "$o" 'got "bogus"' "[$lang] velocity: unknown subcommand renders JSON-style (got \"bogus\")"
 
@@ -888,19 +888,51 @@ parity_run release "release of an unclaimed issue is a no-op" "$PAR_GH" -- 777
 
 # status unknown-flag rejection (#39): a mistyped flag (e.g. --strrict) must be
 # REJECTED loudly with the SAME exit code in both ports — not silently dropped.
-# (js used to ignore it and exit 0, masking a disabled --strict gate in CI; py
-# rejected via argparse but with exit 2.) parity_run proves byte-identical
-# stdout+stderr+exit; the explicit checks pin the absolute exit code to 1.
+# (js used to ignore it and exit 0, masking a disabled --strict gate in CI.)
+# parity_run proves byte-identical stdout+stderr+exit; the explicit checks pin the
+# absolute exit code to 2 — an unknown flag is a usage error (#44 thread 3, which
+# flipped the #39 convention from 1 to 2; see the exit-code-convention block below).
 PAR_REPO="$(new_env)"
 parity_run status "rejects an unknown flag identically" "" -- --strrict
 su_py="$TMPROOT/su.py.$RANDOM"; su_js="$TMPROOT/su.js.$RANDOM"
 ( cd "$PAR_REPO" && python3 "$PY_STATUS" --strrict ) >"$su_py" 2>&1; su_pe=$?
 ( cd "$PAR_REPO" && node    "$JS_STATUS" --strrict ) >"$su_js" 2>&1; su_je=$?
-assert_exit "$su_pe" 1 "[py] status: unknown flag exits 1"
-assert_exit "$su_je" 1 "[js] status: unknown flag exits 1"
+assert_exit "$su_pe" 2 "[py] status: unknown flag exits 2 (usage error)"
+assert_exit "$su_je" 2 "[js] status: unknown flag exits 2 (usage error)"
 assert_contains "$su_py" "unknown flag" "[py] status: names the unknown flag"
 assert_contains "$su_js" "unknown flag" "[js] status: names the unknown flag"
 
-echo
-echo "== integration: $PASSES passed, $FAILS failed =="
+# ---------------------------------------------------------------------------
+# exit-code convention (#44 thread 3): a structurally-invalid invocation
+# (unknown flag, unknown/missing subcommand, missing required arg, bad-typed
+# positional) exits 2 — reserving exit 1 for OPERATIONAL failures — uniformly
+# across every command and both ports, matching the dispatcher (already exit 2).
+# These die during arg parsing, before any gh/network, so they run hermetically.
+# ---------------------------------------------------------------------------
+echo "-- exit-code convention: usage/arg errors exit 2, operational stay 1 (py + js) --"
+EC_REPO="$(new_env)"
+exit_both() { # <cmd> <expected-exit> <label> -- <args...>
+  local cmd="$1" exp="$2" label="$3"; shift 3; [ "${1:-}" = "--" ] && shift
+  local eo="$TMPROOT/ec.$RANDOM"
+  ( cd "$EC_REPO" && python3 "$PMTOOLS_ROOT/py/$cmd.py" "$@" ) >"$eo" 2>&1
+  assert_exit "$?" "$exp" "[py] $label"
+  ( cd "$EC_REPO" && node    "$PMTOOLS_ROOT/js/$cmd.js" "$@" ) >"$eo" 2>&1
+  assert_exit "$?" "$exp" "[js] $label"
+}
+# usage / argument errors -> 2
+exit_both error     2 "error: unknown flag exits 2"            -- --bogus
+exit_both error     2 "error: missing subcommand exits 2"      --
+exit_both error     2 "error: unknown subcommand exits 2"      -- bogus
+exit_both error     2 "error: log without payload exits 2"     -- log
+exit_both velocity  2 "velocity: unknown flag exits 2"         -- --bogus
+exit_both velocity  2 "velocity: unknown subcommand exits 2"   -- bogus
+exit_both preflight 2 "preflight: non-numeric issue exits 2"   -- notanumber
+exit_both claim     2 "claim: unknown flag exits 2"            -- 5 --bogus
+exit_both claim     2 "claim: missing issue exits 2"           --
+exit_both close     2 "close: unknown flag exits 2"            -- 5 --bogus
+exit_both close     2 "close: missing issue exits 2"           --
+exit_both release   2 "release: missing issue exits 2"         --
+exit_both status    2 "status: unknown flag exits 2"           -- --strrict
+# operational failures stay 1 (the well-formed invocation, bad data/world state)
+exit_both error     1 "error: invalid JSON content stays exit 1" -- log "{bad"
 [ "$FAILS" -eq 0 ]
