@@ -399,6 +399,59 @@ run_close_velocity_suite() {
   else
     fail "[$lang] csv-conflict: close landed on origin/main (#57)"
   fi
+
+  # === Env 4 (#60): a union-file-only rebase conflict auto-resolves via merge=union ===
+  # An append-only log listed in close.autoResolve.unionFiles must, on a rebase
+  # conflict confined to it, be union-merged (both sides' lines kept) and land —
+  # the same 3-step arm as the velocity CSV, but driven purely by config (no
+  # committed .gitattributes required from the consumer; the #23 generic rule).
+  local repo4; repo4="$(new_env)"
+  local U=38
+  # Land a config enabling union-file auto-resolve + a baseline log on main FIRST.
+  (
+    cd "$repo4"
+    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
+    mkdir -p .claude docs
+    printf '{ "project": "demo", "languages": ["javascript"], "storage": { "velocity": { "enabled": false }, "errors": { "enabled": true } }, "close": { "autoResolve": { "unionFiles": ["docs/log.md"] } } }\n' > .claude/orchestrate.json
+    printf '# log\nALPHA\n' > docs/log.md
+    git add .claude/orchestrate.json docs/log.md
+    git commit -qm "chore: enable union-file auto-resolve + baseline log"
+    git push -q origin HEAD:main
+  )
+  ( cd "$repo4" && PATH="$gh:$PATH" "${CLAIM[@]}" "$U" --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] union-conflict: claim $U exit 0 (#60)"
+  local wt4="$repo4/.claude/worktrees/wt-apple-demo-js-issue-$U"
+  # Branch side: a divergent append + the keyword-sharing close commit.
+  (
+    cd "$wt4"
+    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
+    printf '# log\nALPHA\nBRANCH\n' > docs/log.md
+    printf 'widget impl\n' > widget.txt
+    git add docs/log.md widget.txt
+    git commit -qm "feat: add widget renderer" -m "Closes #$U"
+  )
+  # Concurrent agent on main: a DIFFERENT divergent append, pushed to origin.
+  (
+    cd "$repo4"
+    printf '# log\nALPHA\nMAIN\n' > docs/log.md
+    git add docs/log.md
+    git commit -qm "data: another agent's log line"
+    git push -q origin HEAD:main
+  )
+  # close: rebasing the branch onto origin/main conflicts ONLY on docs/log.md →
+  # union-merge (keep BRANCH + MAIN), continue the rebase, then land.
+  ( cd "$repo4" && PATH="$gh:$PATH" "${CLOSE[@]}" "$U" --branch "br-apple/demo-js-issue-$U" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] union-conflict: close auto-resolves + exits 0 (#60)"
+  assert_contains "$o" "auto-resolved" "[$lang] union-conflict: prints auto-resolved message (#60)"
+  assert_contains "$o" "CLOSED" "[$lang] union-conflict: prints CLOSED banner (#60)"
+  if [ -d "$wt4" ]; then fail "[$lang] union-conflict: worktree removed after success (#60)"; else pass "[$lang] union-conflict: worktree removed (#60)"; fi
+  # the union merge must have preserved BOTH divergent appends on origin/main.
+  ologm="$(git --git-dir="$(dirname "$repo4")/origin.git" show main:docs/log.md 2>/dev/null)"
+  if printf '%s' "$ologm" | grep -q BRANCH && printf '%s' "$ologm" | grep -q MAIN; then
+    pass "[$lang] union-conflict: both appended lines survive on origin/main (#60)"
+  else
+    fail "[$lang] union-conflict: both appended lines survive on origin/main (#60)"
+  fi
 }
 
 run_close_velocity_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE" python3 "$PY_VELOCITY"
