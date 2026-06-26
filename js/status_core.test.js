@@ -20,6 +20,7 @@ const DISPATCH = {
   parse_canonical_marker: core.parseCanonicalMarker,
   parse_pddignore: core.parsePddignore,
   is_pdd_ignored: core.isPddIgnored,
+  filter_open_claims: core.filterOpenClaims,
 };
 
 test('every status fixture file has a dispatch entry (1:1)', () => {

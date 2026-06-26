@@ -81,3 +81,18 @@ def is_pdd_ignored(file, patterns):
         if _glob_to_regex(pat).search(f):
             return True
     return False
+
+
+def filter_open_claims(claim_numbers, issue_states):
+    """Filter a claims list (issue numbers, from parse_claim_refs) to the genuine
+    in-flight set given the issue states the provider resolved. The signal is
+    claims minus the CONFIRMED-CLOSED: an issue closed without `pmtools close`
+    leaves a dangling refs/claims/issue-N (#81), and a consumer that reads
+    `claims` as in-flight (#70) would otherwise hold a finished ticket. #71's
+    sweep deletes such refs on the next claim; this guards the window before it.
+    Degrade-safe: only a state the provider reports CLOSED drops a claim — OPEN
+    or unknown (offline / not looked up) is kept, so an active claim is never
+    lost merely because the host lookup failed. Pure. (#81, follow-up #70/#71.)"""
+    closed = {s["number"] for s in (issue_states or [])
+              if s and str(s.get("state")).upper() == "CLOSED"}
+    return [n for n in (claim_numbers or []) if n not in closed]
