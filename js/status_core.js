@@ -73,4 +73,21 @@ function isPddIgnored(file, patterns) {
   return false;
 }
 
-module.exports = { parseCanonicalMarker, parsePddignore, isPddIgnored };
+// Filter a claims list (issue numbers, from parseClaimRefs) to the genuine
+// in-flight set given the issue states the provider resolved. The signal is
+// claims minus the CONFIRMED-CLOSED: an issue closed without `pmtools close`
+// leaves a dangling refs/claims/issue-N (#81), and a consumer that reads
+// `claims` as in-flight (#70) would otherwise hold a finished ticket. #71's
+// sweep deletes such refs on the next claim; this guards the window before it.
+// Degrade-safe: only a state the provider reports CLOSED drops a claim — OPEN
+// or unknown (offline / not looked up) is kept, so an active claim is never
+// lost merely because the host lookup failed. Pure. (#81, follow-up #70/#71.)
+function filterOpenClaims(claimNumbers, issueStates) {
+  const closed = new Set();
+  for (const s of issueStates || []) {
+    if (s && String(s.state).toUpperCase() === 'CLOSED') closed.add(s.number);
+  }
+  return (claimNumbers || []).filter((n) => !closed.has(n));
+}
+
+module.exports = { parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims };

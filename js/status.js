@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { reconcile } = require('./reconcile');
 const { getProvider } = require('./provider');
-const { parseCanonicalMarker, parsePddignore, isPddIgnored } = require('./status_core');
+const { parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims } = require('./status_core');
 const { parseClaimRefs } = require('./claim_core');
 const { loadPddConfig } = require('./config');
 const { makeDie } = require('./sh');
@@ -151,7 +151,17 @@ function main(argv) {
   // Active claims (refs/claims/* on origin): the cross-clone-safe in-flight
   // signal an orchestrator should consume instead of git-worktree-list heuristics,
   // which miss sibling-clone worktrees and the br-/wt- naming scheme (#70).
-  report.claims = parseClaimRefs(run('git', ['ls-remote', 'origin', 'refs/claims/*']));
+  const claimNumbers = parseClaimRefs(run('git', ['ls-remote', 'origin', 'refs/claims/*']));
+  // Drop stale CLOSED claim refs so the in-flight signal is claims ∩ ¬CLOSED
+  // (#81): a hand-closed issue leaves a dangling ref the sweep (#71) only clears
+  // on the next claim. Reuse the marker-issue states already fetched; look up
+  // only the claim issues whose state we don't yet know. Host is guaranteed
+  // github here (a gitlab/unknown host already died above).
+  let claimStates = issues;
+  const knownStates = new Set(issues.map((s) => s.number));
+  const unknownClaims = claimNumbers.filter((n) => !knownStates.has(n));
+  if (unknownClaims.length) claimStates = issues.concat(provider.issueStates(unknownClaims));
+  report.claims = filterOpenClaims(claimNumbers, claimStates);
   console.log(args.json ? JSON.stringify(report, null, 2) : renderTable(report));
   return args.strict && report.stale.length ? 1 : 0;
 }

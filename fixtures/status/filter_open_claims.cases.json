@@ -1,0 +1,23 @@
+[
+  { "name": "drops a confirmed-CLOSED claim (the live #44 stale ref)",
+    "args": [[44, 50], [{ "number": 44, "state": "CLOSED" }, { "number": 50, "state": "OPEN" }]],
+    "expected": [50] },
+  { "name": "keeps OPEN claims",
+    "args": [[12, 13], [{ "number": 12, "state": "OPEN" }, { "number": 13, "state": "OPEN" }]],
+    "expected": [12, 13] },
+  { "name": "keeps a claim of unknown state (offline / not looked up) — degrade-safe",
+    "args": [[7], []],
+    "expected": [7] },
+  { "name": "drops only the CLOSED, keeps an unknown-state claim alongside",
+    "args": [[44, 99], [{ "number": 44, "state": "CLOSED" }]],
+    "expected": [99] },
+  { "name": "all claims CLOSED → empty",
+    "args": [[1, 2], [{ "number": 1, "state": "CLOSED" }, { "number": 2, "state": "CLOSED" }]],
+    "expected": [] },
+  { "name": "empty claims → empty (no refs on origin)",
+    "args": [[], [{ "number": 1, "state": "OPEN" }]],
+    "expected": [] },
+  { "name": "lowercase state from a degraded provider is still treated as CLOSED",
+    "args": [[3, 4], [{ "number": 3, "state": "closed" }, { "number": 4, "state": "open" }]],
+    "expected": [4] }
+]

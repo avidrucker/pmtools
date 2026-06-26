@@ -17,7 +17,7 @@ import sys
 
 from reconcile import reconcile
 from provider import get_provider
-from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored
+from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored, filter_open_claims
 from claim_core import parse_claim_refs
 from config import load_pdd_config
 from sh import make_die
@@ -186,7 +186,18 @@ def main(argv=None):
     # Active claims (refs/claims/* on origin): the cross-clone-safe in-flight
     # signal an orchestrator should consume instead of git-worktree-list heuristics,
     # which miss sibling-clone worktrees and the br-/wt- naming scheme (#70).
-    report["claims"] = parse_claim_refs(_run(["git", "ls-remote", "origin", "refs/claims/*"]))
+    claim_numbers = parse_claim_refs(_run(["git", "ls-remote", "origin", "refs/claims/*"]))
+    # Drop stale CLOSED claim refs so the in-flight signal is claims ∩ ¬CLOSED
+    # (#81): a hand-closed issue leaves a dangling ref the sweep (#71) only clears
+    # on the next claim. Reuse the marker-issue states already fetched; look up
+    # only the claim issues whose state we don't yet know. Host is guaranteed
+    # github here (a gitlab/unknown host already died above). Twin of js/status.js.
+    claim_states = issues
+    known_states = {s["number"] for s in issues}
+    unknown_claims = [n for n in claim_numbers if n not in known_states]
+    if unknown_claims:
+        claim_states = issues + provider.issue_states(unknown_claims)
+    report["claims"] = filter_open_claims(claim_numbers, claim_states)
 
     if args["json"]:
         print(json.dumps(report, indent=2))

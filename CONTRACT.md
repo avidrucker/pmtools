@@ -129,6 +129,16 @@ clone's worktrees) and of the `br-/wt-` branch-naming scheme. **Orchestrators sh
 treat an issue in `claims` as in-flight** (do not assign it) rather than inferring
 busy-ness from `git worktree list` + a branch regex, which misses both. (#70)
 
+`claims` is filtered to **`claims ∩ ¬CLOSED`** (#81): an issue closed *without*
+`pmtools close` (hand-close / `gh issue close`) leaves a dangling
+`refs/claims/issue-N` until the next `claim` sweeps it (#71), so the raw ref list
+would report a finished ticket as in-flight. `status` resolves each claim issue's
+state via the provider and drops the **confirmed-CLOSED** ones. The filter is
+**degrade-safe**: only a state the provider reports `CLOSED` removes a claim — an
+`OPEN` or *unknown* (offline / unreachable host) claim is kept, so an active claim
+is never lost merely because a lookup failed. Cost: one provider lookup per claim
+issue whose state was not already fetched for a marker (batching tracked in #42).
+
 ### Status derivation (exact)
 
 For each grep marker, in this precedence:
