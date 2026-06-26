@@ -168,9 +168,18 @@ def main(argv=None):
         sys.stderr.write("[status] pdd disabled — skipping marker scan.\n")
         grep = []
     worktrees = list_worktrees(args["branchPattern"])
-    provider = get_provider(args["host"])
+    # An unknown host fails get_provider (usage error, 2); a not-yet-implemented
+    # host (gitlab) reaches a stub whose methods raise (operational, 1). Either
+    # way: a clean die, never a raw traceback (#43). Twin of js/status.js.
+    try:
+        provider = get_provider(args["host"])
+    except (ValueError, TypeError):
+        die("unknown host '{}' (expected github or gitlab)".format(args["host"]), 2)
     issue_numbers = sorted({m["issue"] for m in grep})
-    issues = provider.issue_states(issue_numbers)
+    try:
+        issues = provider.issue_states(issue_numbers)
+    except NotImplementedError:
+        die("host '{}' not yet supported".format(args["host"]), 1)
 
     report = reconcile(grep, worktrees, issues)
 
