@@ -138,26 +138,28 @@ reconcile, claim, and close while new claims adopt the richer name — there is
 no migration step and no cutover. The canonical named-group regexes:
 
 ```
-branch:   ^(?:br-)?(?<agent>[a-z0-9]+)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)(?:-(?<theme>.+))?$
-worktree: ^(?:wt-)?(?<agent>[a-z0-9]+)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
+branch:   ^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)(?:-(?<theme>.+))?$
+worktree: ^(?:wt-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
 ```
 
 These are the **canonical, consumer-facing contract** (the form lccjs#1461
-mirrors), *not* a description of pmtools' internal scan. pmtools' own `status`
-currently implements only a reduced `agent`+`issue` subset (`DEFAULT_BRANCH_PATTERN`
-in `js/status.js` / `py/status.py` — non-capturing `project`/`lang`, no `theme`,
-no end-anchor), and pmtools has **no worktree-name *parser*** (the worktree regex
-is a published form, not an implemented seam). Raising the code to implement +
-fixture-grade the full canonical form is tracked in #72; see `CONTRACT.md`
-§claim for the precise gap (#53).
+mirrors), and pmtools now implements + fixture-grades them (#72): `parseBranchName`
+/ `parseWorktreeName` in `claim_core.{js,py}` parse via the exact patterns above
+(`CANONICAL_BRANCH_PATTERN` / `CANONICAL_WORKTREE_PATTERN`), graded across both
+ports against `fixtures/claim/parse_{branch,worktree}_name.cases.json`. The `-N`
+collision-fallback agent (#49) the published regex had omitted is corrected here.
+`status`'s `DEFAULT_BRANCH_PATTERN` stays a **deliberate reduced** scan (it only
+needs `agent`+`issue`, with `--branch-pattern` for overrides) — a scoped read, no
+longer a capability gap. See `CONTRACT.md` §claim (#53 → #72).
 
 ### Pure helpers (the testable seam)
 
 Name construction and the branch→worktree-dir bridge are pure functions in
 `claim_core.{js,py}`, graded byte-for-byte across both ports against shared
-`fixtures/claim/*` cases: `langTag`, `buildBranch`, `buildWorktreeName`, and
+`fixtures/claim/*` cases: `langTag`, `buildBranch`, `buildWorktreeName`,
 `branchToWorktreeName` (used by `close` to find a worktree from a branch name,
-handling both new and legacy forms), plus the prefix-tolerant
+handling both new and legacy forms), `parseBranchName` / `parseWorktreeName` (the
+canonical name parsers — #72), plus the prefix-tolerant
 `inferFruitFromBranch` and `worktreesWithIssue`. Construction is exposed so
 consumers (lccjs) **call pmtools** rather than re-templating the scheme — keeping
 pmtools the single canonical definition. Consumer follow-on: avidrucker/lccjs#1461.

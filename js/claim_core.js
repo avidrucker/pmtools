@@ -317,10 +317,57 @@ function branchToWorktreeName(branch) {
   return isNew ? `wt-${flat}` : flat;
 }
 
+// Canonical self-describing name regexes (#72 — raise code to the published
+// CONTRACT/DESIGN spec). Tolerant of BOTH the new `br-`/`wt-` form and the legacy
+// `<fruit>/issue-N[-slug]` / `<fruit>-issue-N` (prefix + `<project>-<lang>-`
+// segment optional). The agent group allows the `-<N>` collision-fallback suffix
+// (#49) — the published regex omitted it; this is the corrected canonical.
+const CANONICAL_BRANCH_PATTERN =
+  '^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\\d+)(?:-(?<theme>.+))?$';
+const CANONICAL_WORKTREE_PATTERN =
+  '^(?:wt-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\\d+)$';
+
+// Parse a branch name into { agent, project, lang, issue, theme } (project/lang/
+// theme null when the segment is absent; issue a number), or null if it is not a
+// recognizable issue branch. The canonical, fixture-graded definition consumers
+// (lccjs#1461) mirror rather than re-templating.
+function parseBranchName(branch) {
+  if (!branch) return null;
+  const m = new RegExp(CANONICAL_BRANCH_PATTERN).exec(branch);
+  if (!m) return null;
+  const g = m.groups;
+  return {
+    agent: g.agent,
+    project: g.project || null,
+    lang: g.lang || null,
+    issue: Number(g.issue),
+    theme: g.theme || null,
+  };
+}
+
+// Parse a worktree DIR name into { agent, project, lang, issue } (project/lang
+// null when absent; issue a number), or null. The worktree analogue of
+// parseBranchName — the parser the published worktree regex implied but no code
+// provided. Note worktree dir names never carry the branch-only theme slug.
+function parseWorktreeName(name) {
+  if (!name) return null;
+  const m = new RegExp(CANONICAL_WORKTREE_PATTERN).exec(name);
+  if (!m) return null;
+  const g = m.groups;
+  return {
+    agent: g.agent,
+    project: g.project || null,
+    lang: g.lang || null,
+    issue: Number(g.issue),
+  };
+}
+
 module.exports = {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, CLAIM_REF_MAX_AGE_S,
+  CANONICAL_BRANCH_PATTERN, CANONICAL_WORKTREE_PATTERN,
   isSafeRef,
   langTag, buildBranch, buildWorktreeName, branchToWorktreeName,
+  parseBranchName, parseWorktreeName,
   slugify, normalizeIdentity, inferFruitFromBranch, parseClaimRefs, resolveIdentity, parseArgs,
   checkIdentityName, assessBaseStaleness, sentinelBranch, isSentinelStaleByAge,
   applyMarkerFlip, worktreesWithIssue, findLiveWorktreeForIssue, findSameIssueCollision,

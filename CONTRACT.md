@@ -208,32 +208,30 @@ and the `issue-<N>` token is always present, so in-flight legacy worktrees still
 claim, reconcile, and close. The canonical regexes:
 
 ```
-branch:   ^(?:br-)?(?<agent>[a-z0-9]+)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)(?:-(?<theme>.+))?$
-worktree: ^(?:wt-)?(?<agent>[a-z0-9]+)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
+branch:   ^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)(?:-(?<theme>.+))?$
+worktree: ^(?:wt-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
 ```
 
-> **Canonical contract vs what pmtools' code implements today (#53).** The two
-> regexes above are the **canonical, consumer-facing contract** — the form a
-> consumer (lccjs#1461) mirrors to parse a name into
-> `{agent, project, lang, issue, theme}`, and the form the construction helpers
-> below emit. pmtools' *own* `status` marker-reconciliation scan currently
-> implements only the **reduced subset it needs** —
-> `^(?:br-)?(?<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?<issue>\d+)`
-> (`DEFAULT_BRANCH_PATTERN` in `js/status.js` / `py/status.py`): `agent` and
-> `issue` are the only *named* groups, `project`/`lang` are non-capturing, and
-> there is no `theme` group or end-anchor. And there is **no worktree-name
-> *parser*** in pmtools — the worktree regex is the canonical *form*, not an
-> implemented seam: `buildWorktreeName` / `branchToWorktreeName` construct the
-> dir via string ops, and `close`/`release` locate a worktree by path basename +
-> `git worktree list` porcelain. Consumers mirroring the canonical regexes get
-> correct results (the names are self-describing); the gap is purely that pmtools
-> does not yet itself implement + fixture-grade the full form. Raising the code
-> to do so (named `project`/`lang`/`theme` everywhere + a worktree-name parser +
-> fixtures) is tracked in #72.
+> **Canonical contract — now implemented + fixture-graded (#72, closing the #53
+> gap).** The two regexes above are the **canonical, consumer-facing contract**
+> (the form lccjs#1461 mirrors, and the form the construction helpers below emit),
+> and pmtools now implements + grades them: `parseBranchName` /
+> `parseWorktreeName` in `claim_core.{js,py}` parse a name into
+> `{agent, project, lang, issue[, theme]}` via the exact patterns above
+> (`CANONICAL_BRANCH_PATTERN` / `CANONICAL_WORKTREE_PATTERN`), graded byte-for-byte
+> across both ports against `fixtures/claim/parse_branch_name.cases.json` +
+> `parse_worktree_name.cases.json`. The earlier `-N` collision-fallback agent gap
+> (#49 — a `banana-2` agent the published regex omitted) is corrected here, so the
+> canonical now matches real branches. `status`'s marker-reconciliation scan keeps
+> a **deliberate reduced** `DEFAULT_BRANCH_PATTERN` (it only needs `agent`+`issue`
+> to reconcile, and exposes `--branch-pattern` for consumer overrides) — a
+> scoped-down read, no longer a *capability* gap now that the full canonical
+> parsers exist.
 
 Pure helpers (graded by `fixtures/claim/*`): `langTag`, `buildBranch`,
 `buildWorktreeName`, `branchToWorktreeName` (the branch→worktree-dir bridge that
-close uses, handling both forms), plus the prefix-tolerant `inferFruitFromBranch`
+close uses, handling both forms), `parseBranchName` / `parseWorktreeName` (the
+canonical name parsers, #72), plus the prefix-tolerant `inferFruitFromBranch`
 and `worktreesWithIssue`. Design + rationale: avidrucker/lccjs#1460.
 
 ### Identity precedence (highest first)
