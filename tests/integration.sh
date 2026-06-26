@@ -119,6 +119,32 @@ EOF
   echo "$d"
 }
 
+# A fake gh for the parent-tracker guard (#36 guard 3 / #907). Besides the
+# standard view/close calls (title shares the "widget" keyword so the close
+# keyword guard passes), it answers `issue list --json number,title,body` from a
+# caller-supplied JSON file (one open tracker holding an UNCHECKED box for the
+# child) and records any `issue edit --body-file -` write — the tick — into
+# <capfile>, so the test can assert the box was (or was NOT) flipped.
+make_fake_gh_tracker() { # <state> <title> <tracker-json-file> <capfile>
+  local d="$TMPROOT/fakeghP.$RANDOM"
+  mkdir -p "$d"
+  cat > "$d/gh" <<EOF
+#!/usr/bin/env bash
+state="$1"; title="$2"; trackerjson="$3"; cap="$4"
+case "\$*" in
+  *"issue list"*"number,title,body"*) cat "\$trackerjson" ;;
+  *"issue edit"*"--body-file"*) cat > "\$cap" ;;
+  *"issue view"*"-q .state"*) echo "\$state" ;;
+  *"issue view"*"-q .title"*) echo "\$title" ;;
+  *"issue view"*"--json"*) printf '{"number":1,"title":"%s","state":"%s","body":"b","comments":[],"labels":[]}\n' "\$title" "\$state" ;;
+  *"issue close"*) echo "closed" ;;
+  *) exit 1 ;;
+esac
+EOF
+  chmod +x "$d/gh"
+  echo "$d"
+}
+
 echo "== pmtools integration: claim/status/preflight (py + js) =="
 
 # ---------------------------------------------------------------------------
@@ -510,6 +536,91 @@ run_close_velocity_suite() {
 
 run_close_velocity_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE" python3 "$PY_VELOCITY"
 run_close_velocity_suite "js" node "$JS_CLAIM" node "$JS_CLOSE" node "$JS_VELOCITY"
+
+# ---------------------------------------------------------------------------
+# close parent-tracker guard (#36 guard 3 / #907): config-gated. With
+# `close.updateParentTrackers` ENABLED, a successful close ticks the parent
+# tracker issue's checkbox for the closed child — but only a box whose SOLE
+# issue ref is that child (an umbrella multi-ref line is left alone). With it
+# DISABLED (default), close performs no tracker write at all. Best-effort: the
+# guard never blocks the close. Config is read from the worktree (close runs
+# there until teardown), so it rides in on the closing commit like the vel one.
+# ---------------------------------------------------------------------------
+run_close_parent_tracker_suite() {
+  # args: <lang> <claim-i> <claim-s> <close-i> <close-s>
+  local lang="$1" ci="$2" cs="$3" oi="$4" os="$5"
+  local -a CLAIM=("$ci" "$cs") CLOSE=("$oi" "$os")
+  echo "-- [$lang] close parent-tracker guard battery --"
+
+  local o="$TMPROOT/closept.$RANDOM"
+  local TRK=200
+
+  # === Env 1: updateParentTrackers ENABLED → close ticks the child's box ===
+  local repo; repo="$(new_env)"
+  local N=40
+  # Tracker body: a sole-ref box for the child (must be ticked) + an umbrella
+  # multi-ref box that cites the child AND #99999 (must NOT be ticked). The \n
+  # are JSON escapes so the provider's json.loads yields real newlines.
+  local tj="$TMPROOT/trk.$lang.$N.json"
+  printf '[{"number":%s,"title":"Parent tracker","body":"## Children\\n- [ ] do the child work #%s\\n- [ ] umbrella covering #%s and #99999"}]\n' "$TRK" "$N" "$N" > "$tj"
+  local cap="$TMPROOT/edit.$lang.$N.txt"
+  local gh; gh="$(make_fake_gh_tracker OPEN 'Fix the widget renderer' "$tj" "$cap")"
+
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" "$N" --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] pt-guard: claim $N exit 0"
+  local wt="$repo/.claude/worktrees/wt-apple-demo-js-issue-$N"
+  # git -C + dir guard: the seed commit can only touch the claimed worktree (#55).
+  if [ -d "$wt" ]; then
+    git -C "$wt" config user.email tester@example.com; git -C "$wt" config user.name tester
+    git -C "$wt" config commit.gpgsign false
+    mkdir -p "$wt/.claude"
+    printf '{ "close": { "updateParentTrackers": true } }\n' > "$wt/.claude/orchestrate.json"
+    printf 'widget impl\n' > "$wt/widget.txt"
+    git -C "$wt" add .claude/orchestrate.json widget.txt
+    git -C "$wt" commit -qm "feat: add widget renderer" -m "Closes #$N"
+  fi
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] pt-guard: enabled → close exits 0"
+  assert_contains "$o" "CLOSED" "[$lang] pt-guard: prints CLOSED banner"
+  assert_contains "$o" "Parent tracker #$TRK: checked the box for #$N" "[$lang] pt-guard: logs the tracker tick"
+  if [ -f "$cap" ]; then pass "[$lang] pt-guard: enabled → tracker body was edited"; else
+    fail "[$lang] pt-guard: enabled → tracker body was edited (no edit captured)"; fi
+  assert_contains "$cap" "- [x] do the child work #$N" "[$lang] pt-guard: child's sole-ref box ticked"
+  assert_contains "$cap" "- [ ] umbrella covering #$N and #99999" "[$lang] pt-guard: umbrella multi-ref box left unticked"
+
+  # === Env 2: updateParentTrackers DISABLED (default) → no tracker write ===
+  local repo2; repo2="$(new_env)"
+  local M=41
+  local tj2="$TMPROOT/trk.$lang.$M.json"
+  printf '[{"number":%s,"title":"Parent tracker","body":"## Children\\n- [ ] do the child work #%s\\n- [ ] umbrella covering #%s and #99999"}]\n' "$TRK" "$M" "$M" > "$tj2"
+  local cap2="$TMPROOT/edit.$lang.$M.txt"
+  local gh2; gh2="$(make_fake_gh_tracker OPEN 'Fix the widget renderer' "$tj2" "$cap2")"
+
+  ( cd "$repo2" && PATH="$gh2:$PATH" "${CLAIM[@]}" "$M" --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] pt-guard: claim $M exit 0"
+  local wt2="$repo2/.claude/worktrees/wt-apple-demo-js-issue-$M"
+  if [ -d "$wt2" ]; then
+    git -C "$wt2" config user.email tester@example.com; git -C "$wt2" config user.name tester
+    git -C "$wt2" config commit.gpgsign false
+    mkdir -p "$wt2/.claude"
+    printf '{ "close": { "updateParentTrackers": false } }\n' > "$wt2/.claude/orchestrate.json"
+    printf 'widget impl\n' > "$wt2/widget.txt"
+    git -C "$wt2" add .claude/orchestrate.json widget.txt
+    git -C "$wt2" commit -qm "feat: add widget renderer" -m "Closes #$M"
+  fi
+  ( cd "$repo2" && PATH="$gh2:$PATH" "${CLOSE[@]}" "$M" --branch "br-apple/demo-js-issue-$M" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] pt-guard: disabled → close exits 0"
+  assert_contains "$o" "CLOSED" "[$lang] pt-guard: disabled → prints CLOSED banner"
+  if [ -f "$cap2" ]; then
+    fail "[$lang] pt-guard: disabled → NO tracker write (but an edit was captured)"; else
+    pass "[$lang] pt-guard: disabled → no tracker write (off by default)"; fi
+  if grep -qF "Parent tracker" "$o"; then
+    fail "[$lang] pt-guard: disabled → no parent-tracker log line emitted"; else
+    pass "[$lang] pt-guard: disabled → no parent-tracker log line"; fi
+}
+
+run_close_parent_tracker_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"
+run_close_parent_tracker_suite "js" node "$JS_CLAIM" node "$JS_CLOSE"
 
 # ---------------------------------------------------------------------------
 # release battery (#22): claim → release frees the claim ref + worktree while the
