@@ -12,16 +12,14 @@ const { reconcile } = require('./reconcile');
 const { getProvider } = require('./provider');
 const { parseCanonicalMarker, parsePddignore, isPddIgnored } = require('./status_core');
 const { loadPddConfig } = require('./config');
+const { makeDie } = require('./sh');
 
 const DEFAULT_BRANCH_PATTERN = '^(?:br-)?(?<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?<issue>\\d+)';
 
 // Match the other fleet CLIs (claim/close/error/velocity): a bad flag is a loud
 // failure, not a silent no-op. exit 1 (the shared bad-arg code; #44 may later
 // move all usage errors to 2 — keep both ports identical here, #39).
-function die(msg, code = 1) {
-  console.error(`[status] ✗ ${msg}`);
-  process.exit(code);
-}
+const die = makeDie('status');
 
 function run(cmd, args) {
   try {

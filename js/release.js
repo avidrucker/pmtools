@@ -19,36 +19,22 @@
  * Exit:   0 on success / nothing-to-do; 1 on bad args or a guard refusal.
  */
 
-const { execSync, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
+const { sh, shTrim, makeDie, makeLog } = require('./sh');
 const {
   isSafeRef, claimRefDeleteCommand, classifyClaimRefDelete,
   parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
 } = require('./close_core');
 
-function sh(cmd, allowFail = false) {
-  try {
-    return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (e) {
-    if (allowFail) return null;
-    throw e;
-  }
-}
-function shCapture(cmd) {
-  try {
-    return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  } catch {
-    return '';
-  }
-}
 // arg-array git exec (#37): values are argv, never re-parsed by a shell. Returns
-// trimmed stdout on success, '' otherwise (mirrors shCapture). Used for every
+// trimmed stdout on success, '' otherwise (mirrors shTrim). Used for every
 // git call that interpolates the porcelain-parsed branch / worktree path.
 function gitCapture(args) {
   const r = spawnSync('git', args, { encoding: 'utf8' });
   return r.status === 0 ? (r.stdout || '').trim() : '';
 }
-function log(m) { console.log(`[release] ${m}`); }
-function die(m, code = 1) { console.error(`[release] ✗ ${m}`); process.exit(code); }
+const log = makeLog('release');
+const die = makeDie('release');
 
 function parseArgs(argv) {
   const a = { issue: null, force: false };
@@ -74,8 +60,8 @@ function deleteClaimRef(issue) {
 
 function main() {
   const { issue, force } = parseArgs(process.argv.slice(2));
-  const rows = parseWorktreePorcelain(shCapture('git worktree list --porcelain'));
-  const root = rows.length ? rows[0].path : shCapture('git rev-parse --show-toplevel');
+  const rows = parseWorktreePorcelain(shTrim('git worktree list --porcelain'));
+  const root = rows.length ? rows[0].path : shTrim('git rev-parse --show-toplevel');
   const wt = findWorktreeForIssue(rows, issue);
 
   if (!wt) {

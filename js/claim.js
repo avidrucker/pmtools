@@ -23,10 +23,11 @@
  * Auto (no identity) is a hard error — agents must be named (lccjs #386).
  */
 
-const { execSync, execFileSync, spawnSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { sh, makeDie } = require('./sh');
 const core = require('./claim_core');
 const {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, isSafeRef,
@@ -40,15 +41,6 @@ const {
 
 const todoKw = '@' + 'todo';
 const inprogressKw = '@' + 'inprogress';
-
-function sh(cmd, allowFail = false) {
-  try {
-    return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  } catch (e) {
-    if (allowFail) return null;
-    throw e;
-  }
-}
 
 // arg-array git exec (#37): values are passed as argv and never re-parsed by a
 // shell, so an interpolated `;touch` can never execute. Used for every git call
@@ -70,10 +62,7 @@ function gitCapture(args) {
   return `${r.stdout || ''}${r.stderr || ''}`;
 }
 
-function die(msg, code = 1) {
-  console.error(`[claim] ✗ ${msg}`);
-  process.exit(code);
-}
+const die = makeDie('claim');
 
 // The MAIN checkout's root, NOT cwd. An agent reusing its identity runs from
 // inside an existing worktree, but the new worktree must still land under the

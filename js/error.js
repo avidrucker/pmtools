@@ -20,14 +20,12 @@ const path = require('node:path');
 const config = require('./config');
 const store = require('./store');
 const core = require('./store_core');
+const { makeDie } = require('./sh');
 
 const TABLE = 'errors';
 const COLS = core.ERROR_COLS;
 
-function die(msg, code = 1) {
-  process.stderr.write(`[error] ✗ ${msg}\n`);
-  process.exit(code);
-}
+const die = makeDie('error');
 
 function repoBasename(cwd = null) {
   // The `repo` data column labels the PROJECT; from a worktree that is still the

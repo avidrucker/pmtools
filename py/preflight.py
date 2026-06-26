@@ -21,6 +21,7 @@ import sys
 
 import config
 from preflight_core import preflight_issue_gate, preflight_evidence, DEFAULT_EVIDENCE_DIRS
+from sh import make_die
 
 
 def sh(cmd):
@@ -39,9 +40,7 @@ def out(s):
     sys.stdout.write(re.sub(r"\n?$", "\n", str(s)))
 
 
-def die(msg, code=1):
-    sys.stderr.write("[preflight] ✗ {}\n".format(msg))
-    sys.exit(code)
+die = make_die("preflight")
 
 
 def indent(s):

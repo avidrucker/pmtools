@@ -25,40 +25,20 @@ from close_core import (
     is_safe_ref, claim_ref_delete_command, classify_claim_ref_delete,
     parse_worktree_porcelain, find_worktree_for_issue, release_guard_verdict,
 )
-
-
-def sh(cmd, allow_fail=False):
-    try:
-        return subprocess.run(cmd, shell=True, check=True,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout
-    except subprocess.CalledProcessError:
-        if allow_fail:
-            return None
-        raise
-
-
-def sh_capture(cmd):
-    res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, text=True)
-    return (res.stdout or "").strip()
+from sh import sh, sh_trim, make_die, make_log
 
 
 def git_capture(args):
     """arg-array git exec (#37): values are argv, never re-parsed by a shell.
-    Returns trimmed stdout (mirrors sh_capture). Used for every git call that
+    Returns trimmed stdout (mirrors sh_trim). Used for every git call that
     interpolates the porcelain-parsed branch / worktree path."""
     res = subprocess.run(["git", *args], stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE, text=True)
     return (res.stdout or "").strip()
 
 
-def log(m):
-    print("[release] {}".format(m))
-
-
-def die(m, code=1):
-    sys.stderr.write("[release] ✗ {}\n".format(m))
-    sys.exit(code)
+log = make_log("release")
+die = make_die("release")
 
 
 def parse_args(argv):
@@ -94,8 +74,8 @@ def delete_claim_ref(issue):
 def main():
     args = parse_args(sys.argv[1:])
     issue, force = args["issue"], args["force"]
-    rows = parse_worktree_porcelain(sh_capture("git worktree list --porcelain"))
-    root = rows[0]["path"] if rows else sh_capture("git rev-parse --show-toplevel")
+    rows = parse_worktree_porcelain(sh_trim("git worktree list --porcelain"))
+    root = rows[0]["path"] if rows else sh_trim("git rev-parse --show-toplevel")
     wt = find_worktree_for_issue(rows, issue)
 
     if not wt:

@@ -21,6 +21,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const config = require('./config');
+const { makeDie } = require('./sh');
 
 const DEFAULT_EVIDENCE_DIRS = ['docs/logs', 'docs/research'];
 
@@ -33,7 +34,7 @@ function sh(cmd) {
 }
 
 function out(s) { process.stdout.write(String(s).replace(/\n?$/, '\n')); }
-function die(msg, code = 1) { process.stderr.write(`[preflight] ✗ ${msg}\n`); process.exit(code); }
+const die = makeDie('preflight');
 const indent = (s) => String(s || '').replace(/^/gm, '    ').replace(/\s+$/, '');
 
 // Pure: OPEN-state gate from a gh `state` string (or null when gh unavailable).
