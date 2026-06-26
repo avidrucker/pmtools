@@ -221,15 +221,17 @@ run_close_suite() {
 
   # 2) in the worktree, make a trivial source change + commit with a subject that
   #    shares the keyword "widget" with the fake issue title, body `Closes #N`.
-  (
-    cd "$wt"
-    git config user.email tester@example.com
-    git config user.name tester
-    git config commit.gpgsign false
-    printf 'widget impl\n' > widget.txt
-    git add widget.txt
-    git commit -qm "feat: add widget renderer" -m "Closes #$N"
-  )
+  # git -C + a dir guard so the seed commit can ONLY ever touch the claimed
+  # worktree — a bare `cd "$wt"` to a missing path would fall back to the cwd
+  # (the branch running the suite) and land a stray commit. (#55)
+  if [ -d "$wt" ]; then
+    git -C "$wt" config user.email tester@example.com
+    git -C "$wt" config user.name tester
+    git -C "$wt" config commit.gpgsign false
+    printf 'widget impl\n' > "$wt/widget.txt"
+    git -C "$wt" add widget.txt
+    git -C "$wt" commit -qm "feat: add widget renderer" -m "Closes #$N"
+  fi
 
   # 3) close it. From the main checkout, pass --branch so close chdirs into the wt.
   ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" ) >"$o" 2>&1
@@ -283,16 +285,16 @@ run_close_velocity_suite() {
 
   # Commit a tracked orchestrate.json that ENABLES velocity (DB outside the tree
   # so the .db never dirties the worktree) + the keyword-sharing close commit.
-  (
-    cd "$wt"
-    git config user.email tester@example.com; git config user.name tester
-    git config commit.gpgsign false
-    mkdir -p .claude
-    printf '{ "storage": { "dbPath": "%s", "velocity": { "enabled": true }, "errors": { "enabled": true } } }\n' "$DB" > .claude/orchestrate.json
-    printf 'widget impl\n' > widget.txt
-    git add .claude/orchestrate.json widget.txt
-    git commit -qm "feat: add widget renderer" -m "Closes #$N"
-  )
+  # git -C + dir guard: the seed commit can only touch the claimed worktree (#55).
+  if [ -d "$wt" ]; then
+    git -C "$wt" config user.email tester@example.com; git -C "$wt" config user.name tester
+    git -C "$wt" config commit.gpgsign false
+    mkdir -p "$wt/.claude"
+    printf '{ "storage": { "dbPath": "%s", "velocity": { "enabled": true }, "errors": { "enabled": true } } }\n' "$DB" > "$wt/.claude/orchestrate.json"
+    printf 'widget impl\n' > "$wt/widget.txt"
+    git -C "$wt" add .claude/orchestrate.json widget.txt
+    git -C "$wt" commit -qm "feat: add widget renderer" -m "Closes #$N"
+  fi
 
   # Materialise the DB with an EMPTY velocity table (so the guard sees "no row",
   # not "DB absent → skip"). `velocity export` seeds the schema via connect().
@@ -332,16 +334,16 @@ run_close_velocity_suite() {
   local M=32
   ( cd "$repo2" && PATH="$gh:$PATH" "${CLAIM[@]}" "$M" --as apple --allow-stale-main ) >"$o" 2>&1
   local wt2="$repo2/.claude/worktrees/wt-apple-demo-js-issue-$M"
-  (
-    cd "$wt2"
-    git config user.email tester@example.com; git config user.name tester
-    git config commit.gpgsign false
-    mkdir -p .claude
-    printf '{ "storage": { "velocity": { "enabled": false } } }\n' > .claude/orchestrate.json
-    printf 'widget impl\n' > widget.txt
-    git add .claude/orchestrate.json widget.txt
-    git commit -qm "feat: add widget renderer" -m "Closes #$M"
-  )
+  # git -C + dir guard: the seed commit can only touch the claimed worktree (#55).
+  if [ -d "$wt2" ]; then
+    git -C "$wt2" config user.email tester@example.com; git -C "$wt2" config user.name tester
+    git -C "$wt2" config commit.gpgsign false
+    mkdir -p "$wt2/.claude"
+    printf '{ "storage": { "velocity": { "enabled": false } } }\n' > "$wt2/.claude/orchestrate.json"
+    printf 'widget impl\n' > "$wt2/widget.txt"
+    git -C "$wt2" add .claude/orchestrate.json widget.txt
+    git -C "$wt2" commit -qm "feat: add widget renderer" -m "Closes #$M"
+  fi
   # No velocity row logged anywhere; disabled config must NOT block the close.
   ( cd "$repo2" && PATH="$gh:$PATH" "${CLOSE[@]}" "$M" --branch "br-apple/demo-js-issue-$M" ) >"$o" 2>&1
   assert_exit "$?" 0 "[$lang] vel-guard: disabled + no row → close exits 0 (skipped)"
@@ -371,14 +373,14 @@ run_close_velocity_suite() {
   assert_exit "$?" 0 "[$lang] csv-conflict: claim $K exit 0 (#57)"
   local wt3="$repo3/.claude/worktrees/wt-apple-demo-js-issue-$K"
   # Branch side: a divergent CSV snapshot + the keyword-sharing close commit.
-  (
-    cd "$wt3"
-    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
-    printf 'id,ticket,agent\nBRANCH-SIDE\n' > docs/vel.csv
-    printf 'widget impl\n' > widget.txt
-    git add docs/vel.csv widget.txt
-    git commit -qm "feat: add widget renderer" -m "Closes #$K"
-  )
+  # git -C + dir guard: the seed commit can only touch the claimed worktree (#55).
+  if [ -d "$wt3" ]; then
+    git -C "$wt3" config user.email tester@example.com; git -C "$wt3" config user.name tester; git -C "$wt3" config commit.gpgsign false
+    printf 'id,ticket,agent\nBRANCH-SIDE\n' > "$wt3/docs/vel.csv"
+    printf 'widget impl\n' > "$wt3/widget.txt"
+    git -C "$wt3" add docs/vel.csv widget.txt
+    git -C "$wt3" commit -qm "feat: add widget renderer" -m "Closes #$K"
+  fi
   # Concurrent agent on main: a DIFFERENT divergent CSV snapshot, pushed to origin.
   (
     cd "$repo3"
@@ -422,14 +424,14 @@ run_close_velocity_suite() {
   assert_exit "$?" 0 "[$lang] union-conflict: claim $U exit 0 (#60)"
   local wt4="$repo4/.claude/worktrees/wt-apple-demo-js-issue-$U"
   # Branch side: a divergent append + the keyword-sharing close commit.
-  (
-    cd "$wt4"
-    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
-    printf '# log\nALPHA\nBRANCH\n' > docs/log.md
-    printf 'widget impl\n' > widget.txt
-    git add docs/log.md widget.txt
-    git commit -qm "feat: add widget renderer" -m "Closes #$U"
-  )
+  # git -C + dir guard: the seed commit can only touch the claimed worktree (#55).
+  if [ -d "$wt4" ]; then
+    git -C "$wt4" config user.email tester@example.com; git -C "$wt4" config user.name tester; git -C "$wt4" config commit.gpgsign false
+    printf '# log\nALPHA\nBRANCH\n' > "$wt4/docs/log.md"
+    printf 'widget impl\n' > "$wt4/widget.txt"
+    git -C "$wt4" add docs/log.md widget.txt
+    git -C "$wt4" commit -qm "feat: add widget renderer" -m "Closes #$U"
+  fi
   # Concurrent agent on main: a DIFFERENT divergent append, pushed to origin.
   (
     cd "$repo4"
@@ -491,9 +493,12 @@ run_release_suite() {
   # 3) data-loss guard: an UNPUSHED commit blocks release without --force.
   ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" 42 --as apple --allow-stale-main ) >"$o" 2>&1
   local wt2="$repo/.claude/worktrees/wt-apple-demo-js-issue-42"
-  ( cd "$wt2"
-    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
-    printf 'work\n' > work.txt && git add work.txt && git commit -qm "wip: unpushed work" )
+  # git -C + dir guard: the seed commit can only touch the claimed worktree (#55).
+  if [ -d "$wt2" ]; then
+    git -C "$wt2" config user.email tester@example.com; git -C "$wt2" config user.name tester; git -C "$wt2" config commit.gpgsign false
+    printf 'work\n' > "$wt2/work.txt"
+    git -C "$wt2" add work.txt && git -C "$wt2" commit -qm "wip: unpushed work"
+  fi
   ( cd "$repo" && PATH="$gh:$PATH" "${RELEASE[@]}" 42 ) >"$o" 2>&1
   assert_exit "$?" 1 "[$lang] release: unpushed commit blocks (exit 1)"
   assert_contains "$o" "NOT on origin/main" "[$lang] release: explains the blocked commit"
