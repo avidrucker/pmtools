@@ -23,6 +23,12 @@ source of truth; `fixtures/` are the golden cases every port is graded against.
 specified in their own sections (all now ported to py + js). See §claim /
 §preflight / §close.
 
+**Storage CSV mirrors.** The `error`/`velocity` stores' CSV mirrors (`--csv P`, or
+the configured `storage.<store>.csvMirror`) are **derived** from the SQLite store
+(the source of truth) and are **never git-tracked** — `.gitignore` excludes them
+and they regenerate on demand via `<store> export`. Tracking them produced
+spurious rebase conflicts on concurrent `close`. (#65 audit finding C4 / ruling R2, #68)
+
 ---
 
 ## Output conventions (all commands, both ports)

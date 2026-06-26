@@ -4,7 +4,12 @@ __pycache__/
 node_modules/
 
 # SQLite store artifacts (the dogfood DB lives out-of-tree at ~/.pmtools/<repo>/;
-# these guard against an in-tree dbPath override). CSV mirrors are committed.
+# these guard against an in-tree dbPath override).
 *.db
 *.db-wal
 *.db-shm
+
+# CSV mirrors are DERIVED from the SQLite store (the source of truth) and are
+# never tracked — regenerate on demand via `<store> export`. Tracking them caused
+# spurious rebase conflicts on concurrent close. (#68 / #65 ruling R2)
+docs/pmtools-*.csv

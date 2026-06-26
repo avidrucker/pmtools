@@ -75,7 +75,10 @@ no hardcoded paths in any consumer config.
 
 **SQLite is the source of truth.** Two stores — `errors` and `velocity` —
 configurable per-project, with CSV mirrors as *derived, regenerated-on-write*
-exports (safe to delete, never authoritative). The JS port drives the **`sqlite3`
+exports (safe to delete, never authoritative). Because they are derived, **CSV
+mirrors are never git-tracked** — `.gitignore` excludes them and they are
+regenerated on demand via `<store> export`; tracking them created spurious rebase
+conflicts on concurrent `close` (the #65 audit's finding C4; ruling R2, #68). The JS port drives the **`sqlite3`
 CLI** (Node has no bundled SQLite and better-sqlite3 is not assumed); the Python
 port uses stdlib `sqlite3`. Both produce byte-identical rows + CSV (graded by
 `fixtures/{error,velocity}/*` + a cross-port parity test).
