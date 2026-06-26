@@ -56,14 +56,13 @@ log = make_log("close")
 
 def main_root():
     """The MAIN checkout's root, NOT the worktree we're closing — the worktree is
-    about to be removed, so the removal must run from a directory that survives."""
-    d = sh("git rev-parse --path-format=absolute --git-common-dir", True)
-    if not d:
-        rel = sh("git rev-parse --git-common-dir", True)  # older git fallback
-        if not rel:
-            die("not inside a git repository.")
-        d = os.path.abspath(os.path.join(os.getcwd(), rel.strip()))
-    return os.path.dirname(d.strip())
+    about to be removed, so the removal must run from a directory that survives.
+    git-common-dir resolution lives once in config.main_repo_root (#74); this
+    wrapper keeps the die-on-failure behavior (config returns None)."""
+    root = config.main_repo_root()
+    if not root:
+        die("not inside a git repository.")
+    return root
 
 
 def parse_args(argv):

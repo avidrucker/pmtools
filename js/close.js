@@ -53,14 +53,12 @@ const log = makeLog('close');
 
 // The MAIN checkout's root, NOT the worktree we're closing — the worktree is
 // about to be removed, so the removal must run from a directory that survives.
+// git-common-dir resolution lives once in config.mainRepoRoot (#74); this wrapper
+// keeps close's die-on-failure behavior (config returns null).
 function mainRoot() {
-  let dir = sh('git rev-parse --path-format=absolute --git-common-dir', true);
-  if (!dir) {
-    const rel = sh('git rev-parse --git-common-dir', true); // older git fallback
-    if (!rel) die('not inside a git repository.');
-    dir = path.resolve(process.cwd(), rel.trim());
-  }
-  return path.dirname(dir.trim());
+  const root = config.mainRepoRoot();
+  if (!root) die('not inside a git repository.');
+  return root;
 }
 
 function parseArgs(argv) {

@@ -29,6 +29,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
+import config
 import claim_core as core
 from claim_core import (
     FRUITS, slugify, resolve_identity, check_identity_name,
@@ -66,14 +67,12 @@ die = make_die("claim")
 
 def main_root():
     """The MAIN checkout's root, NOT cwd (so a reused worktree still nests under
-    the main repo, never inside the caller's worktree)."""
-    d = sh("git rev-parse --path-format=absolute --git-common-dir", True)
-    if not d:
-        rel = sh("git rev-parse --git-common-dir", True)  # older git fallback
-        if not rel:
-            die("not inside a git repository.")
-        d = os.path.abspath(os.path.join(os.getcwd(), rel.strip()))
-    return os.path.dirname(d.strip())
+    the main repo). git-common-dir resolution lives once in config.main_repo_root
+    (#74); this wrapper keeps the die-on-failure behavior (config returns None)."""
+    root = config.main_repo_root()
+    if not root:
+        die("not inside a git repository.")
+    return root
 
 
 def resolve_name_parts(root):
