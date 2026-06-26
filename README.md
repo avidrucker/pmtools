@@ -34,7 +34,8 @@ default true) — see CONTRACT.md §status.
 
 pmtools eats its own dog food: this repo ships a tracked `.claude/orchestrate.json`
 that **enables both stores** (errors + velocity; the SQLite DB lives out-of-tree
-at `~/.pmtools/<repo>/`, CSV mirrors committed under `docs/`) and a `.pddignore`
+at `~/.pmtools/<repo>/`, CSV mirrors regenerated under `docs/` but **gitignored** —
+derived from the DB, never tracked, #68) and a `.pddignore`
 that keeps `pmtools status` on this tree clean (fixtures/tests carry marker-like
 test data, not real puzzles). **Because velocity is enabled, `pmtools close` here
 requires a velocity row for the ticket** (the config-gated guard from #5) — log
@@ -97,16 +98,19 @@ zero-hardcoded-path option.)
 ./run-tests.sh                       # all stages: py unittest + node:test + integration
 ```
 
-`run-tests.sh` runs three stages and exits non-zero if any fails:
+`run-tests.sh` runs four stages and exits non-zero if any fails:
 
 ```bash
 python3 -m unittest discover -s py   # 1. Python port vs fixtures (stdlib only, no pip install)
 node --test 'js/*.test.js'           # 2. Node port vs the SAME fixtures
-bash tests/integration.sh            # 3. impure claim/status/preflight CLIs (py + js) vs temp git repos
+bash tests/integration.sh            # 3. impure claim/status/preflight/close/release CLIs (py + js) vs temp git repos
+bash tests/dispatcher.sh             # 4. the public bin/pmtools router (port resolution, exit codes)
 ```
 
-The pure ports consume `fixtures/*.input.json` and must produce
-`fixtures/*.expected.json`. The integration stage exercises the impure CLIs
+The pure ports are graded against shared golden cases —
+`fixtures/<command>/*.cases.json`, each a `{name, args, expected}` case; a few
+status-reconcile edge fixtures use the older `fixtures/*.input.json` →
+`fixtures/*.expected.json` form. The integration stage exercises the impure CLIs
 (real `git worktree add`, real `refs/claims/*` push to a local bare `origin`,
 lane-gate on/off, CLOSED guard, `--worktree-dir` parameterization) against
 throwaway repos.
