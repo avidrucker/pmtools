@@ -21,7 +21,8 @@ from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored
 from config import load_pdd_config
 from sh import make_die
 
-DEFAULT_BRANCH_PATTERN = r"^(?:br-)?(?P<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?P<issue>\d+)"
+# agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
+DEFAULT_BRANCH_PATTERN = r"^(?:br-)?(?P<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?P<issue>\d+)"
 
 
 die = make_die("status")

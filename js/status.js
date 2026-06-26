@@ -14,7 +14,8 @@ const { parseCanonicalMarker, parsePddignore, isPddIgnored } = require('./status
 const { loadPddConfig } = require('./config');
 const { makeDie } = require('./sh');
 
-const DEFAULT_BRANCH_PATTERN = '^(?:br-)?(?<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?<issue>\\d+)';
+// agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
+const DEFAULT_BRANCH_PATTERN = '^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?<issue>\\d+)';
 
 // Match the other fleet CLIs (claim/close/error/velocity): a bad flag is a loud
 // failure, not a silent no-op. exit 1 (the shared bad-arg code; #44 may later
