@@ -19,7 +19,9 @@ function reconcile(grep, worktrees, issues) {
 
     let status;
     if (worktree !== null) {
-      status = 'CLAIMED';
+      // A live worktree exists: distinguish actively-in-progress work
+      // (@inprogress) from claimed-but-not-started (@todo). (#77)
+      status = m.keyword === '@inprogress' ? 'IN-PROGRESS' : 'CLAIMED';
     } else if (state === 'CLOSED' || m.keyword === '@inprogress') {
       status = 'STALE';
     } else {

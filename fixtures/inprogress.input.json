@@ -1,0 +1,18 @@
+{
+  "grep": [
+    { "file": "src/a.js", "line": 5, "keyword": "@todo", "issue": 200 },
+    { "file": "src/b.js", "line": 8, "keyword": "@inprogress", "issue": 201 },
+    { "file": "src/c.js", "line": 12, "keyword": "@inprogress", "issue": 202 },
+    { "file": "src/d.js", "line": 20, "keyword": "@todo", "issue": 203 }
+  ],
+  "worktrees": [
+    { "branch": "apple/issue-200", "issue": 200, "agent": "apple" },
+    { "branch": "banana/issue-201", "issue": 201, "agent": "banana" }
+  ],
+  "issues": [
+    { "number": 200, "state": "OPEN" },
+    { "number": 201, "state": "OPEN" },
+    { "number": 202, "state": "OPEN" },
+    { "number": 203, "state": "OPEN" }
+  ]
+}

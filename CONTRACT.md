@@ -110,7 +110,7 @@ issues:     [ { "number": int, "state": "OPEN" | "CLOSED" } ]
     { "issue": 179, "file": "src/a.py", "line": 42, "keyword": "@todo",
       "state": "OPEN" | "CLOSED" | "UNKNOWN",
       "worktree": "<agent>" | null,
-      "status": "IDLE" | "CLAIMED" | "STALE" }
+      "status": "IDLE" | "CLAIMED" | "IN-PROGRESS" | "STALE" }
   ],
   "stale": [ /* the subset of markers whose status == "STALE" */ ]
 }
@@ -133,14 +133,15 @@ busy-ness from `git worktree list` + a branch regex, which misses both. (#70)
 
 For each grep marker, in this precedence:
 
-1. **CLAIMED** — a live worktree exists for the marker's issue
-   (`worktree != null`). This covers both a `@todo` whose issue is being worked
-   and an `@inprogress` with a live worktree.
-2. **STALE** — either:
+1. **IN-PROGRESS** — a live worktree exists (`worktree != null`) **and**
+   `keyword == "@inprogress"`: the issue is actively being worked. (#77)
+2. **CLAIMED** — a live worktree exists with a `@todo` marker: the issue is
+   claimed but the marker hasn't been flipped to in-progress yet.
+3. **STALE** — either:
    - the issue `state == "CLOSED"` but the marker still exists, **or**
    - `keyword == "@inprogress"` with **no** live worktree (the human-only
      in-progress convention whose worktree went away).
-3. **IDLE** — otherwise (`@todo`, issue OPEN or UNKNOWN, no worktree).
+4. **IDLE** — otherwise (`@todo`, issue OPEN or UNKNOWN, no worktree).
 
 `state == "UNKNOWN"` never by itself makes a marker STALE (offline `gh` must not
 manufacture false staleness).

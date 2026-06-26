@@ -142,7 +142,7 @@ def list_worktrees(branch_pattern):
 
 def render_table(report):
     lines = []
-    glyph = {"IDLE": "·", "CLAIMED": "▶", "STALE": "✗"}
+    glyph = {"IDLE": "·", "CLAIMED": "▶", "IN-PROGRESS": "↻", "STALE": "✗"}
     for m in report["markers"]:
         wt = f" [{m['worktree']}]" if m["worktree"] else ""
         lines.append(
