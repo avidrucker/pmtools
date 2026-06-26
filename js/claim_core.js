@@ -61,6 +61,20 @@ function inferFruitFromBranch(branch) {
   return m ? m[1] : null;
 }
 
+// Parse `git ls-remote origin 'refs/claims/*'` output → sorted, unique claimed
+// issue numbers. This is the cross-clone-safe in-flight signal: the claim ref
+// lives on origin, so it is visible from any clone and independent of any
+// clone's `git worktree list` or branch-naming scheme — the gap that let the
+// orchestrator double-assign a claimed issue. Pure. (#70)
+function parseClaimRefs(listing) {
+  const issues = new Set();
+  for (const line of String(listing || '').split('\n')) {
+    const m = /refs\/claims\/issue-(\d+)\b/.exec(line);
+    if (m) issues.add(Number(m[1]));
+  }
+  return [...issues].sort((a, b) => a - b);
+}
+
 function resolveIdentity(opts, env, branch = null) {
   if (opts.as) {
     return { name: normalizeIdentity(opts.as), source: 'as', modeLabel: 'reuse (--as)' };
@@ -307,7 +321,7 @@ module.exports = {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, CLAIM_REF_MAX_AGE_S,
   isSafeRef,
   langTag, buildBranch, buildWorktreeName, branchToWorktreeName,
-  slugify, normalizeIdentity, inferFruitFromBranch, resolveIdentity, parseArgs,
+  slugify, normalizeIdentity, inferFruitFromBranch, parseClaimRefs, resolveIdentity, parseArgs,
   checkIdentityName, assessBaseStaleness, sentinelBranch, isSentinelStaleByAge,
   applyMarkerFlip, worktreesWithIssue, findLiveWorktreeForIssue, findSameIssueCollision,
   shouldBlockWorktreeGuard, shouldBlockClaim, needsAreaLabel, shouldBlockUncategorized,

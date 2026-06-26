@@ -77,6 +77,20 @@ def infer_fruit_from_branch(branch):
     return m.group(1) if m else None
 
 
+def parse_claim_refs(listing):
+    """Parse `git ls-remote origin 'refs/claims/*'` output -> sorted, unique
+    claimed issue numbers. The cross-clone-safe in-flight signal: the claim ref
+    lives on origin, so it is visible from any clone and independent of any
+    clone's `git worktree list` or branch-naming scheme — the gap that let the
+    orchestrator double-assign a claimed issue. Pure. (#70)"""
+    issues = set()
+    for line in str(listing or "").split("\n"):
+        m = re.search(r"refs/claims/issue-(\d+)\b", line)
+        if m:
+            issues.add(int(m.group(1)))
+    return sorted(issues)
+
+
 def resolve_identity(opts, env, branch=None):
     """Resolve agent identity by precedence: --as > env > branch-inferred > auto.
 

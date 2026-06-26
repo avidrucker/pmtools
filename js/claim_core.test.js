@@ -25,6 +25,7 @@ const DISPATCH = {
   is_safe_ref: claim.isSafeRef,
   normalize_identity: claim.normalizeIdentity,
   infer_fruit_from_branch: claim.inferFruitFromBranch,
+  parse_claim_refs: claim.parseClaimRefs,
   resolve_identity: claim.resolveIdentity,
   parse_args: claim.parseArgs,
   check_identity_name: claim.checkIdentityName,

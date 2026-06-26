@@ -18,6 +18,7 @@ import sys
 from reconcile import reconcile
 from provider import get_provider
 from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored
+from claim_core import parse_claim_refs
 from config import load_pdd_config
 from sh import make_die
 
@@ -179,6 +180,10 @@ def main(argv=None):
         die("host '{}' not yet supported".format(args["host"]), 1)
 
     report = reconcile(grep, worktrees, issues)
+    # Active claims (refs/claims/* on origin): the cross-clone-safe in-flight
+    # signal an orchestrator should consume instead of git-worktree-list heuristics,
+    # which miss sibling-clone worktrees and the br-/wt- naming scheme (#70).
+    report["claims"] = parse_claim_refs(_run(["git", "ls-remote", "origin", "refs/claims/*"]))
 
     if args["json"]:
         print(json.dumps(report, indent=2))

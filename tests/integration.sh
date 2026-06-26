@@ -907,6 +907,24 @@ run_status_pdd_suite() {
 run_status_pdd_suite "py" python3 "$PY_STATUS"
 run_status_pdd_suite "js" node "$JS_STATUS"
 
+# --- #70: status --json surfaces active claims (refs/claims/* on origin) — the
+# cross-clone-safe in-flight signal, independent of `git worktree list` (which
+# misses sibling-clone worktrees) and the br-/wt- branch-naming scheme. ---
+echo "-- status claims signal (#70) --"
+claims_repo="$(new_env)"
+( cd "$claims_repo" && node "$JS_CLAIM" 88 --as apple --allow-stale-main ) >/dev/null 2>&1
+# the worktree is local, but the SIGNAL we assert is the origin claim ref, which a
+# sibling clone (and the orchestrator) can see without seeing the worktree.
+for st in "py:python3 $PY_STATUS" "js:node $JS_STATUS"; do
+  lang="${st%%:*}"; cmd="${st#*:}"
+  cj="$(cd "$claims_repo" && $cmd --json 2>/dev/null)"
+  if printf '%s' "$cj" | python3 -c 'import json,sys; sys.exit(0 if 88 in json.load(sys.stdin).get("claims",[]) else 1)' 2>/dev/null; then
+    pass "[$lang] status --json claims includes the claimed issue #88 (#70)"
+  else
+    fail "[$lang] status --json claims includes the claimed issue #88 (#70)"; printf '%s\n' "$cj" | sed 's/^/      /' | head -3
+  fi
+done
+
 # preflight: offline gh (no fake) -> warn-and-proceed (exit 0). Confine scratch
 # to the temp tree so we don't touch ~/.pmtools.
 ( cd "$smoke_repo" && python3 "$PY_PREFLIGHT" 5 --scratch-dir "$TMPROOT/scratch-py" ) >"$o" 2>&1

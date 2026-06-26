@@ -120,6 +120,15 @@ issues:     [ { "number": int, "state": "OPEN" | "CLOSED" } ]
 - `state` = the matching issue's state, or `"UNKNOWN"` if the issue is absent from `issues`.
 - `worktree` = the `agent` of a live worktree on the marker's issue, else `null`.
 
+**`claims` (status `--json`).** Beyond `reconcile`'s output, `status --json` adds a
+top-level `claims: [<issue>, …]` — the issue numbers with a live `refs/claims/issue-N`
+on **origin** (`git ls-remote origin 'refs/claims/*'`). This is the **cross-clone-safe
+in-flight signal**: the claim ref lives on origin, so it is visible from any clone
+independent of that clone's `git worktree list` (which does *not* surface a sibling
+clone's worktrees) and of the `br-/wt-` branch-naming scheme. **Orchestrators should
+treat an issue in `claims` as in-flight** (do not assign it) rather than inferring
+busy-ness from `git worktree list` + a branch regex, which misses both. (#70)
+
 ### Status derivation (exact)
 
 For each grep marker, in this precedence:
