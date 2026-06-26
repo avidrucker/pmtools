@@ -89,14 +89,23 @@ def resolve_name_parts(root):
     fallback repo basename + 'unk'. Both normalized to a single [a-z0-9] token
     (the scheme delimiter is '-'). Sensible default; override via a "project"
     key and the existing "languages" array."""
+    # Absent config = legitimate silent default. PRESENT but unparseable =
+    # operator error: never swallow it, or claim builds repo-unk names and
+    # desyncs every tool that locates work by the orchestrate.json names. (#52)
+    # TODO(#45): when the orchestrate.json readers are consolidated, the shared
+    # reader must carry this same parse-fail diagnostic.
     cfg = {}
-    try:
-        p = os.path.join(root, ".claude", "orchestrate.json")
-        if os.path.exists(p):
+    p = os.path.join(root, ".claude", "orchestrate.json")
+    if os.path.exists(p):
+        try:
             with open(p) as f:
                 cfg = json.load(f) or {}
-    except Exception:
-        cfg = {}
+        except ValueError as e:
+            die(".claude/orchestrate.json is present but unparseable ({}). "
+                "Fix or remove it, then re-run.".format(e))
+        except OSError as e:
+            die(".claude/orchestrate.json present but unreadable ({}). "
+                "Fix or remove it, then re-run.".format(e))
     raw = str(cfg.get("project")) if cfg.get("project") is not None else os.path.basename(root)
     project = re.sub(r"[^a-z0-9]", "", (raw or "repo").lower()) or "repo"
     langs = cfg.get("languages") if isinstance(cfg.get("languages"), list) else []

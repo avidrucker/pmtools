@@ -82,11 +82,20 @@ function mainRoot() {
 // [a-z0-9] token (the scheme delimiter is '-'). Sensible default; override via
 // an explicit "project" key and the existing "languages" array in the config.
 function resolveNameParts(root) {
+  // Absent config = legitimate silent default. PRESENT but unparseable = operator
+  // error: never swallow it, or claim builds repo-unk names and desyncs every
+  // tool that locates work by the orchestrate.json names. (#52)
+  // TODO(#45): when the orchestrate.json readers are consolidated, the shared
+  // reader must carry this same parse-fail diagnostic.
   let cfg = {};
-  try {
-    const p = path.join(root, '.claude', 'orchestrate.json');
-    if (fs.existsSync(p)) cfg = JSON.parse(fs.readFileSync(p, 'utf8')) || {};
-  } catch (_) { cfg = {}; }
+  const p = path.join(root, '.claude', 'orchestrate.json');
+  if (fs.existsSync(p)) {
+    let text;
+    try { text = fs.readFileSync(p, 'utf8'); }
+    catch (e) { die(`.claude/orchestrate.json present but unreadable (${e.message}). Fix or remove it, then re-run.`); }
+    try { cfg = JSON.parse(text) || {}; }
+    catch (e) { die(`.claude/orchestrate.json is present but unparseable (${e.message}). Fix or remove it, then re-run.`); }
+  }
   const rawProject = (cfg.project != null ? String(cfg.project) : path.basename(root)) || 'repo';
   const project = rawProject.toLowerCase().replace(/[^a-z0-9]/g, '') || 'repo';
   const langs = Array.isArray(cfg.languages) ? cfg.languages : [];
