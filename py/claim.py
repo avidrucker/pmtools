@@ -30,6 +30,7 @@ import time
 from datetime import datetime, timezone
 
 import config
+from close_core import parse_worktree_porcelain
 import claim_core as core
 from claim_core import (
     FRUITS, slugify, resolve_identity, check_identity_name,
@@ -104,14 +105,13 @@ def resolve_name_parts(root):
 
 
 def list_worktree_branches():
+    # Reuse the canonical pure porcelain parser (#74) + layer fruit extraction.
     out = sh("git worktree list --porcelain", True) or ""
-    branches = []
-    for line in out.split("\n"):
-        if line.startswith("branch "):
-            branch = line[len("branch "):].replace("refs/heads/", "", 1)
-            fruit = branch.split("/")[0] if "/" in branch else None
-            branches.append({"branch": branch, "fruit": fruit})
-    return branches
+    return [
+        {"branch": r["branch"],
+         "fruit": r["branch"].split("/")[0] if "/" in r["branch"] else None}
+        for r in parse_worktree_porcelain(out) if r["branch"]
+    ]
 
 
 def is_sentinel_stale(fruit):
