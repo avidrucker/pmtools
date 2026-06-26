@@ -181,6 +181,36 @@ function isVelocityCsvOnlyConflict(paths, csvMirror) {
   return list.length > 0 && list.every((p) => p === csvMirror);
 }
 
+// A rebase whose ONLY conflicted paths are consumer-configured append-only
+// markdown indexes is auto-resolvable: each agent appended a row at the bottom,
+// a trivially mergeable conflict (keep both rows). Pure: conflicted paths + the
+// configured file list (repo-root-relative). False when the list is empty, no
+// paths conflicted, or any non-index file also conflicted. (#36 guard 4 / lccjs #971)
+function isMarkdownIndexOnlyConflict(paths, files) {
+  const set = (files || []).map((f) => String(f).trim()).filter(Boolean);
+  if (set.length === 0) return false;
+  const list = (paths || []).map((p) => String(p).trim()).filter(Boolean);
+  return list.length > 0 && list.every((p) => set.includes(p));
+}
+
+// Resolve an append-only markdown conflict in text: drop git conflict-marker
+// lines (keeping both sides' appended rows), then collapse any adjacent
+// exact-duplicate non-blank line (two agents appending an identical row, which
+// lands adjacent once the `=======` separator is removed). Blank lines are never
+// deduped, so document spacing is preserved. The diff3 base marker (|||||||) is
+// stripped too; for an append-only file the base section is empty, so the result
+// is correct regardless of merge.conflictstyle. Pure text→text. (#36 guard 4 / lccjs #971)
+function resolveAppendOnlyMarkdownConflict(text) {
+  const MARKERS = ['<<<<<<<', '|||||||', '=======', '>>>>>>>'];
+  const out = [];
+  for (const line of String(text).split('\n')) {
+    if (MARKERS.some((m) => line.startsWith(m))) continue;
+    if (line !== '' && out.length > 0 && out[out.length - 1] === line) continue;
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 // Guard 1 decision (lccjs #361): given the velocity rows {ticket, agent}, the
 // issue, and the closing agent, return the mismatching ticket numbers (empty =
 // pass). If ANY row records the correct ticket the close is consistent; only
@@ -248,6 +278,6 @@ module.exports = {
   extractKeywords, keywordsOverlap,
   markerStillPresent, scopeAuditDiffCommand,
   velocityRowPresent, velocityTicketMismatch, computeVelocityMismatch,
-  isVelocityCsvOnlyConflict,
+  isVelocityCsvOnlyConflict, isMarkdownIndexOnlyConflict, resolveAppendOnlyMarkdownConflict,
   parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
 };

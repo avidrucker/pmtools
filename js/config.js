@@ -183,7 +183,10 @@ function loadCloseConfig(cwd = null) {
   const unionFiles = Array.isArray(ar.unionFiles)
     ? ar.unionFiles.filter((s) => typeof s === 'string' && s)
     : [];
-  return { autoResolve: { unionFiles } };
+  const markdownIndexes = Array.isArray(ar.markdownIndexes)
+    ? ar.markdownIndexes.filter((s) => typeof s === 'string' && s)
+    : [];
+  return { autoResolve: { unionFiles, markdownIndexes } };
 }
 
 module.exports = {

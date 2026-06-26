@@ -369,6 +369,33 @@ def union_merge_and_stage(file):
                 pass
 
 
+def resolve_markdown_index_and_stage(file):
+    """Resolve an append-only markdown index that conflicted (each side appended a
+    row) by stripping the git conflict markers in place — keeping both rows, and
+    collapsing an adjacent identical row — then stage it. The decision logic is the
+    pure resolve_append_only_markdown_conflict; this wraps it with file I/O.
+    (#36 guard 4 / #971)"""
+    try:
+        with open(file, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as e:
+        sh("git rebase --abort", True)
+        die("learnings-index conflict: could not read {} ({}). "
+            "Aborted the rebase; your commit is safe and local.".format(file, e))
+    try:
+        with open(file, "w", encoding="utf-8") as fh:
+            fh.write(core.resolve_append_only_markdown_conflict(text))
+    except OSError as e:
+        sh("git rebase --abort", True)
+        die("learnings-index conflict: could not write {} ({}). "
+            "Aborted the rebase; your commit is safe and local.".format(file, e))
+    staged = sh_capture('git add "{}"'.format(file))
+    if not staged["ok"]:
+        sh("git rebase --abort", True)
+        die("learnings-index conflict: resolved {} but git add failed. "
+            "Aborted the rebase; your commit is safe and local.".format(file))
+
+
 def try_land():
     """One fetch/rebase/push round. Returns 'ok' | 'race' | 'rejected-other', or
     die()s on a blocking rebase conflict (not retryable). A conflict whose ONLY
@@ -382,9 +409,11 @@ def try_land():
         except Exception:
             cfg = None
         try:
-            union_files = config.load_close_config()["autoResolve"]["unionFiles"]
+            close_cfg = config.load_close_config()
         except Exception:
-            union_files = []
+            close_cfg = {"autoResolve": {"unionFiles": [], "markdownIndexes": []}}
+        union_files = close_cfg["autoResolve"]["unionFiles"]
+        markdown_indexes = close_cfg["autoResolve"]["markdownIndexes"]
         csv_mirror = (cfg["velocity"]["csvMirror"]
                       if cfg and cfg.get("velocity") and cfg["velocity"].get("enabled")
                       else None)
@@ -411,6 +440,18 @@ def try_land():
                 die("union-file conflict: merge + stage succeeded but rebase --continue "
                     "failed: {}. Your commit is safe and local.".format(cont["out"].strip()))
             log("union-file conflict auto-resolved (merge=union, kept both sides).")
+        elif markdown_indexes and core.is_markdown_index_only_conflict(conflicted, markdown_indexes):
+            # Consumer-configured append-only markdown indexes diverged (each agent
+            # appended a row) — strip the conflict markers (keep both rows, dedup an
+            # adjacent identical row), stage, and continue. (#36 guard 4 / #971)
+            for f in conflicted:
+                resolve_markdown_index_and_stage(f)
+            cont = sh_capture("GIT_EDITOR=true git rebase --continue")
+            if not cont["ok"]:
+                sh("git rebase --abort", True)
+                die("learnings-index conflict: resolve + stage succeeded but rebase --continue "
+                    "failed: {}. Your commit is safe and local.".format(cont["out"].strip()))
+            log("learnings-index conflict auto-resolved (kept both rows).")
         else:
             sh("git rebase --abort", True)
             die("rebase hit a real conflict in: {}. ".format(", ".join(conflicted) or rebase["out"].strip())
