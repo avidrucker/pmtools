@@ -47,6 +47,23 @@ def sh_trim(cmd):
     return (res.stdout or "").strip()
 
 
+def git_capture(args):
+    """arg-array git exec (#37): values are argv, never re-parsed by a shell.
+    Returns {"ok", "out"} with stdout+stderr merged, never raises — the arg-array
+    twin of sh_capture, consolidated here (#45)."""
+    res = subprocess.run(
+        ["git", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return {"ok": res.returncode == 0, "out": (res.stdout or "") + (res.stderr or "")}
+
+
+def git_trim(args):
+    """Like git_capture but returns trimmed stdout on success, "" otherwise — the
+    arg-array twin of sh_trim (#45)."""
+    res = subprocess.run(
+        ["git", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return (res.stdout or "").strip() if res.returncode == 0 else ""
+
+
 def make_die(tag):
     """die factory parameterized by the command tag — `die = make_die('close')`
     yields the per-command `[close] ✗ <msg>` dialect uniformly."""

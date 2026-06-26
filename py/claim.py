@@ -38,7 +38,7 @@ from claim_core import (
     apply_marker_flip, build_banner_lines, classify_claim_push_result,
     build_claim_message, claim_push_action,
 )
-from sh import sh, make_die
+from sh import sh, git_capture, make_die
 
 TODO_KW = "@" + "todo"
 INPROGRESS_KW = "@" + "inprogress"
@@ -59,14 +59,6 @@ def git(args, allow_fail=False):
         if allow_fail:
             return None
         raise
-
-
-def git_capture(args):
-    """Combined stdout+stderr regardless of exit, never raises (for the claim-ref
-    push, whose output the push-result classifier inspects)."""
-    res = subprocess.run(
-        ["git", *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    return res.stdout or ""
 
 
 die = make_die("claim")
@@ -458,7 +450,7 @@ def main():
             claim_sha = (git(["commit-tree", base_tree, "-m", claim_msg], True) or "").strip()
             if claim_sha:
                 push_out = git_capture(
-                    ["push", "origin", "{}:refs/claims/issue-{}".format(claim_sha, issue)])
+                    ["push", "origin", "{}:refs/claims/issue-{}".format(claim_sha, issue)])["out"]
                 action = claim_push_action(classify_claim_push_result(push_out), opts["force"])
                 if action == "ROLLBACK_DIE":
                     git(["worktree", "remove", wt_path, "--force"], True)

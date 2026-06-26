@@ -19,20 +19,12 @@
  * Exit:   0 on success / nothing-to-do; 1 on bad args or a guard refusal.
  */
 
-const { spawnSync } = require('node:child_process');
-const { sh, shTrim, makeDie, makeLog } = require('./sh');
+const { sh, shTrim, gitTrim, makeDie, makeLog } = require('./sh');
 const {
   isSafeRef, claimRefDeleteCommand, classifyClaimRefDelete,
   parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
 } = require('./close_core');
 
-// arg-array git exec (#37): values are argv, never re-parsed by a shell. Returns
-// trimmed stdout on success, '' otherwise (mirrors shTrim). Used for every
-// git call that interpolates the porcelain-parsed branch / worktree path.
-function gitCapture(args) {
-  const r = spawnSync('git', args, { encoding: 'utf8' });
-  return r.status === 0 ? (r.stdout || '').trim() : '';
-}
 const log = makeLog('release');
 const die = makeDie('release');
 
@@ -82,12 +74,12 @@ function main() {
   // --- data-loss guard FIRST — a refused release leaves the claim + worktree intact.
   if (!force) {
     sh('git fetch origin -q', true);
-    const ahead = parseInt(gitCapture(['rev-list', '--count', `origin/main..${branch}`]), 10) || 0;
-    const dirty = gitCapture(['-C', wtPath, 'status', '--porcelain']);
+    const ahead = parseInt(gitTrim(['rev-list', '--count', `origin/main..${branch}`]), 10) || 0;
+    const dirty = gitTrim(['-C', wtPath, 'status', '--porcelain']);
     const verdict = releaseGuardVerdict(ahead, !!dirty, false);
     if (verdict === 'unpushed') {
       die(`#${issue} branch ${branch} has ${ahead} commit(s) NOT on origin/main — release would discard them:\n`
-        + gitCapture(['log', `origin/main..${branch}`, '--oneline'])
+        + gitTrim(['log', `origin/main..${branch}`, '--oneline'])
         + '\n  Land them on the right ticket first, or re-run with --force to discard.');
     }
     if (verdict === 'dirty') {
@@ -104,10 +96,10 @@ function main() {
   log(`releasing #${issue}: worktree ${wtPath} + branch ${branch} — issue stays OPEN.`);
   try { process.chdir(root); } catch (_) { /* best-effort */ }
   // arg-array exec (#37): the branch/path never reach a shell.
-  gitCapture(['worktree', 'remove', '--force', wtPath]);
-  if (branch) gitCapture(['branch', '-D', branch]);
-  gitCapture(['worktree', 'prune']);
-  if (gitCapture(['worktree', 'list', '--porcelain']).includes(wtPath)) {
+  gitTrim(['worktree', 'remove', '--force', wtPath]);
+  if (branch) gitTrim(['branch', '-D', branch]);
+  gitTrim(['worktree', 'prune']);
+  if (gitTrim(['worktree', 'list', '--porcelain']).includes(wtPath)) {
     console.error('[release] warning: teardown may have failed — check: git worktree list');
   }
   log(`Shell re-root: cd "${root}"`);

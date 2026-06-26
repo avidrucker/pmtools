@@ -34,7 +34,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { sh, shCapture, makeDie, makeLog } = require('./sh');
+const { sh, shCapture, gitCapture, makeDie, makeLog } = require('./sh');
 const core = require('./close_core');
 const config = require('./config');
 const { getProvider } = require('./provider');
@@ -47,14 +47,6 @@ const {
   bodyClosesIssue, extractKeywords, keywordsOverlap, markerStillPresent,
   scopeAuditDiffCommand, velocityRowPresent, computeVelocityMismatch,
 } = core;
-
-// arg-array git exec (#37): values are passed as argv and never re-parsed by a
-// shell. Returns { ok, out } like shCapture; used for teardown's `branch -D
-// <branch>`, where --branch is attacker-influenced.
-function gitCapture(args) {
-  const r = spawnSync('git', args, { encoding: 'utf8' });
-  return { ok: r.status === 0, out: `${r.stdout || ''}${r.stderr || ''}` };
-}
 
 const die = makeDie('close');
 const log = makeLog('close');

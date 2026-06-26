@@ -32,6 +32,18 @@ class ShHelpers(unittest.TestCase):
         self.assertEqual(shmod.sh_trim('echo "  hi  "'), "hi")
         self.assertEqual(shmod.sh_trim("exit 1"), "")
 
+    def test_git_capture_ok(self):
+        r = shmod.git_capture(["--version"])
+        self.assertTrue(r["ok"])
+        self.assertIn("git version", r["out"])
+
+    def test_git_capture_failure(self):
+        self.assertFalse(shmod.git_capture(["not-a-real-subcommand-xyz"])["ok"])
+
+    def test_git_trim(self):
+        self.assertTrue(shmod.git_trim(["--version"]).startswith("git version"))
+        self.assertEqual(shmod.git_trim(["not-a-real-subcommand-xyz"]), "")
+
     def test_make_log_tags_output(self):
         buf = io.StringIO()
         orig = sys.stdout

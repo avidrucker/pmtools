@@ -11,7 +11,7 @@
 // strings); the arg-array git/gh exec added in #37 stays in each wrapper.
 'use strict';
 
-const { execSync } = require('node:child_process');
+const { execSync, spawnSync } = require('node:child_process');
 
 // Run a shell command, returning stdout text. allowFail -> null on a non-zero
 // exit (else the error throws). stderr is captured (pipe), so it never leaks to
@@ -46,6 +46,23 @@ function shTrim(cmd) {
   }
 }
 
+// arg-array git exec (#37): values are passed as argv and never re-parsed by a
+// shell, so an interpolated `;touch` can never execute. gitCapture/gitTrim are
+// the arg-array twins of shCapture/shTrim, consolidated here (#45) so close's
+// { ok, out } and release's trimmed-string variants stop drifting under one name.
+
+// Returns { ok, out } with stdout+stderr merged, never throws.
+function gitCapture(args) {
+  const r = spawnSync('git', args, { encoding: 'utf8' });
+  return { ok: r.status === 0, out: `${r.stdout || ''}${r.stderr || ''}` };
+}
+
+// Returns trimmed stdout on success, '' otherwise. The string variant.
+function gitTrim(args) {
+  const r = spawnSync('git', args, { encoding: 'utf8' });
+  return r.status === 0 ? (r.stdout || '').trim() : '';
+}
+
 // die/log factories parameterized by the command tag — `const die = makeDie('close')`
 // yields the per-command `[close] ✗ <msg>` / `[close] <msg>` dialect uniformly.
 function makeDie(tag) {
@@ -59,4 +76,4 @@ function makeLog(tag) {
   return (msg) => { console.log(`[${tag}] ${msg}`); };
 }
 
-module.exports = { sh, shCapture, shTrim, makeDie, makeLog };
+module.exports = { sh, shCapture, shTrim, gitCapture, gitTrim, makeDie, makeLog };

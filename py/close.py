@@ -40,7 +40,7 @@ import store
 import store_core
 import claim_core
 import provider as provider_mod
-from sh import sh, sh_capture, make_die, make_log
+from sh import sh, sh_capture, git_capture, make_die, make_log
 from close_core import (
     DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
     claim_ref_delete_command, classify_claim_ref_delete,
@@ -48,15 +48,6 @@ from close_core import (
     extract_keywords, keywords_overlap, marker_still_present,
     scope_audit_diff_command, velocity_row_present, compute_velocity_mismatch,
 )
-
-
-def git_capture(args):
-    """arg-array git exec (#37): values are passed as argv and never re-parsed by
-    a shell. Returns {"ok", "out"} like sh_capture; used for teardown's
-    `branch -D <branch>`, where --branch is attacker-influenced."""
-    res = subprocess.run(
-        ["git", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return {"ok": res.returncode == 0, "out": (res.stdout or "") + (res.stderr or "")}
 
 
 die = make_die("close")

@@ -4,7 +4,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { sh, shCapture, shTrim, makeDie, makeLog } = require('./sh');
+const { sh, shCapture, shTrim, gitCapture, gitTrim, makeDie, makeLog } = require('./sh');
 
 test('sh returns stdout on success', () => {
   assert.strictEqual(sh('printf hi'), 'hi');
@@ -31,6 +31,21 @@ test('shCapture returns { ok:false, out } on failure and never throws', () => {
 test('shTrim returns a trimmed string, "" on failure', () => {
   assert.strictEqual(shTrim('echo "  hi  "'), 'hi');
   assert.strictEqual(shTrim('exit 1'), '');
+});
+
+test('gitCapture returns { ok:true, out } for a succeeding git command', () => {
+  const r = gitCapture(['--version']);
+  assert.strictEqual(r.ok, true);
+  assert.match(r.out, /git version/);
+});
+
+test('gitCapture returns { ok:false } for a failing git command and never throws', () => {
+  assert.strictEqual(gitCapture(['not-a-real-subcommand-xyz']).ok, false);
+});
+
+test('gitTrim returns trimmed stdout on success, "" on failure', () => {
+  assert.match(gitTrim(['--version']), /^git version/);
+  assert.strictEqual(gitTrim(['not-a-real-subcommand-xyz']), '');
 });
 
 test('makeLog tags its output', () => {

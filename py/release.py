@@ -18,23 +18,13 @@ Exit:   0 on success / nothing-to-do; 1 on bad args or a guard refusal.
 """
 import os
 import re
-import subprocess
 import sys
 
 from close_core import (
     is_safe_ref, claim_ref_delete_command, classify_claim_ref_delete,
     parse_worktree_porcelain, find_worktree_for_issue, release_guard_verdict,
 )
-from sh import sh, sh_trim, make_die, make_log
-
-
-def git_capture(args):
-    """arg-array git exec (#37): values are argv, never re-parsed by a shell.
-    Returns trimmed stdout (mirrors sh_trim). Used for every git call that
-    interpolates the porcelain-parsed branch / worktree path."""
-    res = subprocess.run(["git", *args], stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, text=True)
-    return (res.stdout or "").strip()
+from sh import sh, sh_trim, git_trim, make_die, make_log
 
 
 log = make_log("release")
@@ -94,14 +84,14 @@ def main():
     # --- data-loss guard FIRST — a refused release leaves the claim + worktree intact.
     if not force:
         sh("git fetch origin -q", True)
-        ahead_raw = git_capture(["rev-list", "--count", "origin/main..{}".format(branch)])
+        ahead_raw = git_trim(["rev-list", "--count", "origin/main..{}".format(branch)])
         ahead = int(ahead_raw) if ahead_raw.isdigit() else 0
-        dirty = git_capture(["-C", wt_path, "status", "--porcelain"])
+        dirty = git_trim(["-C", wt_path, "status", "--porcelain"])
         verdict = release_guard_verdict(ahead, bool(dirty), False)
         if verdict == "unpushed":
             die("#{} branch {} has {} commit(s) NOT on origin/main — release would discard them:\n".format(
                 issue, branch, ahead)
-                + git_capture(["log", "origin/main..{}".format(branch), "--oneline"])
+                + git_trim(["log", "origin/main..{}".format(branch), "--oneline"])
                 + "\n  Land them on the right ticket first, or re-run with --force to discard.")
         if verdict == "dirty":
             die("worktree {} has uncommitted changes — release would discard them:\n".format(wt_path)
@@ -118,11 +108,11 @@ def main():
     except OSError:
         pass
     # arg-array exec (#37): the branch/path never reach a shell.
-    git_capture(["worktree", "remove", "--force", wt_path])
+    git_trim(["worktree", "remove", "--force", wt_path])
     if branch:
-        git_capture(["branch", "-D", branch])
-    git_capture(["worktree", "prune"])
-    if wt_path in git_capture(["worktree", "list", "--porcelain"]):
+        git_trim(["branch", "-D", branch])
+    git_trim(["worktree", "prune"])
+    if wt_path in git_trim(["worktree", "list", "--porcelain"]):
         sys.stderr.write("[release] warning: teardown may have failed — check: git worktree list\n")
     log('Shell re-root: cd "{}"'.format(root))
 
