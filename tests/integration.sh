@@ -287,6 +287,55 @@ run_close_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"
 run_close_suite "js" node "$JS_CLAIM" node "$JS_CLOSE"
 
 # ---------------------------------------------------------------------------
+# close worktree DISCOVERY (#51): close must locate the worktree via
+# `git worktree list` (the way release does), NOT by rebuilding the dir name.
+# Repro: stake the worktree under a NON-default --worktree-dir, then close
+# WITHOUT re-passing it. Name reconstruction looks in the default
+# .claude/worktrees and fails (orphaning the worktree); discovery finds it under
+# wt/ regardless and tears it down. Hermetic, mirrors run_close_suite.
+# ---------------------------------------------------------------------------
+run_close_discovery_suite() {
+  local lang="$1" ci="$2" cs="$3" oi="$4" os="$5"
+  local -a CLAIM=("$ci" "$cs") CLOSE=("$oi" "$os")
+  echo "-- [$lang] close worktree-discovery battery (#51) --"
+
+  local repo; repo="$(new_env)"
+  local o="$TMPROOT/closedisc.$RANDOM"
+  local gh; gh="$(make_fake_gh_titled OPEN 'Fix the widget renderer')"
+  local N=42
+
+  # Claim under a NON-default worktree dir (wt/): the real worktree lives at
+  # <root>/wt/wt-apple-demo-js-issue-N, not the default .claude/worktrees.
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" "$N" --as apple --worktree-dir wt --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] disc: claim $N under wt/ exit 0"
+  local wt="$repo/wt/wt-apple-demo-js-issue-$N"
+  assert_dir "$wt" "[$lang] disc: worktree staked under wt/"
+  # git -C + dir guard: the seed commit can only touch the claimed worktree (#55).
+  if [ -d "$wt" ]; then
+    git -C "$wt" config user.email tester@example.com; git -C "$wt" config user.name tester; git -C "$wt" config commit.gpgsign false
+    printf 'widget impl\n' > "$wt/widget.txt"
+    git -C "$wt" add widget.txt
+    git -C "$wt" commit -qm "feat: add widget renderer" -m "Closes #$N"
+  fi
+
+  # Close WITHOUT --worktree-dir. Reconstruction would resolve .claude/worktrees
+  # (wrong) and die; discovery locates the worktree under wt/ and tears it down.
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] disc: close (no --worktree-dir) exits 0 via discovery"
+  assert_contains "$o" "CLOSED" "[$lang] disc: prints CLOSED banner"
+  if [ -d "$wt" ]; then fail "[$lang] disc: worktree under wt/ removed"; else pass "[$lang] disc: worktree under wt/ removed"; fi
+  assert_no_branch "$repo" "br-apple/demo-js-issue-$N" "[$lang] disc: branch br-apple/demo-js-issue-$N deleted"
+  if git -C "$repo" ls-remote origin 'refs/claims/*' 2>/dev/null | grep -q "refs/claims/issue-$N"; then
+    fail "[$lang] disc: refs/claims/issue-$N deleted on origin (still present)"
+  else
+    pass "[$lang] disc: refs/claims/issue-$N deleted on origin"
+  fi
+}
+
+run_close_discovery_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"
+run_close_discovery_suite "js" node "$JS_CLAIM" node "$JS_CLOSE"
+
+# ---------------------------------------------------------------------------
 # close velocity-row guard (#5): config-gated. With storage.velocity ENABLED,
 # `close` refuses (exit 1) when the DB holds no velocity row for the ticket, and
 # proceeds once one is logged. With velocity DISABLED, the guard no-ops (no false

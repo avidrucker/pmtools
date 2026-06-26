@@ -347,11 +347,13 @@ def parse_worktree_porcelain(porcelain):
 
 
 def find_worktree_for_issue(rows, issue):
-    """The worktree staked for issue N: branch `<agent>/issue-<N>` (optional
-    trailing slug) or path basename ending `-issue-<N>`. Skips the main entry
-    (rows[0]). The `(?:[^0-9]|$)` boundary keeps `issue-9` from matching
-    `issue-99`. Pure: rows + issue → {path, branch} | None."""
-    re_branch = re.compile(r"/issue-{}(?:[^0-9]|$)".format(issue))
+    """The worktree staked for issue N: branch matching `[-/]issue-<N>` (so both
+    legacy `<agent>/issue-<N>` and new-scheme `…-issue-<N>` branches match by
+    branch, mirroring claim_core.worktrees_with_issue, #51) or path basename
+    ending `-issue-<N>`. Skips the main entry (rows[0]). The `(?:[^0-9]|$)`
+    boundary keeps `issue-9` from matching `issue-99`. Pure: rows + issue →
+    {path, branch} | None."""
+    re_branch = re.compile(r"[-/]issue-{}(?:[^0-9]|$)".format(issue))
     re_path = re.compile(r"-issue-{}$".format(issue))
     for r in (rows or [])[1:]:
         base = str(r["path"]).split("/")[-1]

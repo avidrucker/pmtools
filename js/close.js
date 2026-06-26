@@ -501,14 +501,19 @@ function main() {
   }
 
   const root = mainRoot();
-  const fruit = claimCore.inferFruitFromBranch(branch) || branch.split('/')[0];
-  const wtPath = path.join(root, opts.worktreeDir, claimCore.branchToWorktreeName(branch));
+  const fruit = claimCore.inferFruitFromBranch(branch);
+  // Discover the worktree from git's own porcelain (as release does) rather than
+  // rebuilding the dir name — robust under a non-default --worktree-dir and odd
+  // branch shapes, and the single source of truth for where the worktree is (#51).
+  const wtRow = core.findWorktreeForIssue(
+    core.parseWorktreePorcelain(sh('git worktree list --porcelain', true) || ''), issue);
+  const wtPath = wtRow ? wtRow.path : null;
   if (opts.branch) {
-    try {
-      process.chdir(wtPath);
-    } catch (_) {
-      die(`--branch supplied but worktree not found at ${wtPath}. Is it still present?`);
+    if (!wtPath || !fs.existsSync(wtPath)) {
+      die(`--branch supplied but no worktree for issue #${issue} found via ` +
+          '`git worktree list`. Is it still present?');
     }
+    process.chdir(wtPath);
   }
 
   const closingCommitSha = findClosingCommitSha(issue);
