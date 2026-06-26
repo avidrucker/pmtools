@@ -72,7 +72,8 @@ def infer_fruit_from_branch(branch):
     """Extract <agent> from a [br-]<agent>/[<project>-<lang>-]issue-N[...] branch, else None."""
     if not branch:
         return None
-    m = re.match(r"^(?:br-)?([a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-\d+", branch)
+    # agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
+    m = re.match(r"^(?:br-)?([a-z0-9]+(?:-[0-9]+)?)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-\d+", branch)
     return m.group(1) if m else None
 
 

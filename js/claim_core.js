@@ -56,7 +56,8 @@ function normalizeIdentity(s) {
 
 function inferFruitFromBranch(branch) {
   if (!branch) return null;
-  const m = branch.match(/^(?:br-)?([a-z0-9]+)\/(?:[a-z0-9]+-[a-z0-9]+-)?issue-\d+/);
+  // agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
+  const m = branch.match(/^(?:br-)?([a-z0-9]+(?:-[0-9]+)?)\/(?:[a-z0-9]+-[a-z0-9]+-)?issue-\d+/);
   return m ? m[1] : null;
 }
 
