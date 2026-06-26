@@ -17,7 +17,7 @@ velocity/errors, reconcile marker status, close race-safely — behind one
 relocatable CLI:
 
 ```
-pmtools <status|claim|preflight|close|error|velocity> [--port py|js] [args...]
+pmtools <status|claim|preflight|close|release|error|velocity> [--port py|js] [args...]
 ```
 
 **Generic-harness principle (load-bearing).** pmtools supplies **mechanism**;
@@ -39,6 +39,7 @@ generic core; consumers keep their own scripts for the rest (see §7).
 | `claim` | Stake a worktree+branch for an issue under an agent identity; push a cross-clone claim ref | creates worktree/branch; pushes `refs/claims/issue-N`; optional marker flip | 0 / 1 (blocked) |
 | `preflight` | Gather evidence for an issue (git status, worktree list, issue body+comments, prior evidence) + stamp `started_iso` | writes a scratch `preflight-N.iso` | 0 (open) / 1 (closed/absent) |
 | `close` | Race-safe land (loop fetch/rebase/push) + gated worktree teardown + claim-ref delete | pushes to `main`; removes worktree/branch; deletes claim ref | 0 / 1 |
+| `release` | Abandon a claim + tear down its worktree WITHOUT closing the issue (the cleanup half of `close`) | removes worktree/branch; deletes claim ref; issue stays **OPEN** | 0 / 1 |
 | `error` | Validate + insert an error row into the SQLite store (+ optional CSV mirror) | DB write; CSV re-export | 0 / 1 |
 | `velocity` | Validate + insert a velocity row (+ optional CSV mirror) | DB write; CSV re-export | 0 / 1 |
 
@@ -187,8 +188,9 @@ pmtools reads (tolerant of missing file/keys, falling back to defaults):
   §5) `project`. These are policy the consumer owns.
 
 pmtools **dogfoods itself**: this repo ships a tracked `.claude/orchestrate.json`
-(both stores enabled, with `docs/pmtools-{errors,velocity}.csv` mirrors) + a
-`.pddignore`, so pmtools development uses pmtools.
+(both stores enabled, with `docs/pmtools-{errors,velocity}.csv` mirror *paths*
+configured — the CSV files themselves are gitignored, §4) + a `.pddignore`, so
+pmtools development uses pmtools.
 
 ## 7. Migration coverage map (lccjs → pmtools)
 
@@ -206,10 +208,10 @@ bug-log curation (`open_bugs.md`), and any lccjs-specific report format.
 | status ignores `.pddignore` / non-canonical-grammar marker flood | **Landed** — canonical-grammar + `.pddignore` filtering (#15); toggle via the `pdd` config block (#16) |
 | velocity-row guard at close | **Landed** — config-gated, DB-based (#5) |
 | `connect()` aborts all logging on a legacy dup'd DB | **Landed** — dedup-gate `uq_velocity_session` (#10); see §4 |
-| close omits lccjs's learnings-README / union-file / CSV auto-resolve + parent-tracker scan | **Still omitted** — any rebase conflict is blocking (manual resolve), by design for now |
+| close omits lccjs's learnings-README / union-file / CSV auto-resolve + parent-tracker scan | **Landed** — all four ported config-gated (#36): velocity-CSV (#313), union-file (#290), markdown-index (#971), parent-tracker (#907); each off by default |
 | velocity store does not default `repo` | open (rows land `repo=NULL` unless passed) |
 | per-project state (DB path, scratch dir) keys off the *worktree* toplevel, fragmenting across worktrees | **#26** |
-| close exits 1 after a successful `CLOSE OK`; no PR-gated landing path | **#8 / #27** |
+| no PR-gated landing path for push-protected `main` (close lands trunk-based, exits 0 on success since #8) | **#27** |
 
 **Signal-after-pull rule (hand-off).** When landing a pmtools change a consumer
 depends on, post the "landed + pulled (commit X)" signal **only after** running
@@ -224,8 +226,8 @@ consumer is still testing stale code.
   branch from a worktree); verify-in-clone until fixed.
 - **#26** — worktree-state fragmentation (DB/scratch keyed off worktree toplevel).
 - **#27** — PR-gated landing path for push-protected repos.
-- **#22** — `pmtools release <N>` (abandon a claim without closing).
-- **#6 / #8 / #9** — docs staleness + close UX (exit-1 signal, `--as` rejection).
+- **#22** — `pmtools release <N>` (abandon a claim without closing): **implemented + landed** (§2 table; CONTRACT §release).
+- **#6 / #9** — docs staleness + close UX (`--as` rejection); the close exit-1-after-`CLOSE OK` signal (#8) is fixed (close exits 0).
 
 Consumers tracking the migration: lccjs#1456 (tracker), #1451 (go/no-go), #1461
 (naming adoption), and avidrucker/claude-config#6 (skill defaults).
