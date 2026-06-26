@@ -222,6 +222,42 @@ run_claim_suite "py" python3 "$PY_CLAIM"
 run_claim_suite "js" node "$JS_CLAIM"
 
 # ---------------------------------------------------------------------------
+# claim malformed-config diagnostic (#52): a PRESENT but unparseable
+# .claude/orchestrate.json is operator error, NOT a silent repo-unk default
+# (which would mis-name the worktree and desync status/close-by-convention).
+# claim must exit non-zero, name the file on stderr, and create nothing. (An
+# ABSENT config stays a legitimate silent default — covered by run_claim_suite.)
+# ---------------------------------------------------------------------------
+run_claim_malformed_config_suite() {
+  local lang="$1"; shift
+  local -a RUN=("$@")
+  echo "-- [$lang] claim malformed-config battery (#52) --"
+
+  local repo; repo="$(new_env)"
+  local o="$TMPROOT/claimbad.$RANDOM"
+  # Trailing comma → invalid JSON (the exact repro from #52). Overwrites the
+  # valid config new_env seeds.
+  printf '{ "project": "demo", }\n' > "$repo/.claude/orchestrate.json"
+
+  ( cd "$repo" && "${RUN[@]}" 17 --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 1 "[$lang] malformed-cfg: claim exits 1 (no silent default)"
+  assert_contains "$o" "orchestrate.json" "[$lang] malformed-cfg: diagnostic names the file"
+  if git -C "$repo" show-ref 2>/dev/null | grep -q "refs/heads/br-apple/"; then
+    fail "[$lang] malformed-cfg: no claim branch created"
+  else
+    pass "[$lang] malformed-cfg: no claim branch created"
+  fi
+  if ls -d "$repo/.claude/worktrees/"*issue-17 >/dev/null 2>&1; then
+    fail "[$lang] malformed-cfg: no worktree created"
+  else
+    pass "[$lang] malformed-cfg: no worktree created"
+  fi
+}
+
+run_claim_malformed_config_suite "py" python3 "$PY_CLAIM"
+run_claim_malformed_config_suite "js" node "$JS_CLAIM"
+
+# ---------------------------------------------------------------------------
 # close battery for one runner: claim → commit a real `Closes #N` in the
 # worktree → close → assert it landed on origin/main, the worktree+branch are
 # gone, and refs/claims/issue-N was deleted on origin. Hermetic: local bare
