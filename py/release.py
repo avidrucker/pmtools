@@ -21,10 +21,11 @@ import re
 import sys
 
 from close_core import (
-    is_safe_ref, claim_ref_delete_command, classify_claim_ref_delete,
-    parse_worktree_porcelain, find_worktree_for_issue, release_guard_verdict,
+    is_safe_ref, parse_worktree_porcelain, find_worktree_for_issue,
+    release_guard_verdict,
 )
 from sh import sh, sh_trim, git_trim, make_die, make_log
+from claimref import delete_claim_ref
 
 
 log = make_log("release")
@@ -49,16 +50,6 @@ def parse_args(argv):
     return a
 
 
-def delete_claim_ref(issue):
-    out = sh("{} --no-verify 2>&1 || true".format(claim_ref_delete_command(issue)), True) or ""
-    verdict = classify_claim_ref_delete(out)
-    if verdict == "DELETED":
-        log("claim ref refs/claims/issue-{} deleted.".format(issue))
-    elif verdict == "ABSENT":
-        log("claim ref refs/claims/issue-{} already absent — no-op.".format(issue))
-    else:
-        log("warn: could not delete claim ref refs/claims/issue-{} "
-            "(best-effort; continuing).".format(issue))
 
 
 def main():
@@ -70,7 +61,7 @@ def main():
 
     if not wt:
         # Orphan claim ref (no worktree): free the ref so the issue is re-claimable.
-        delete_claim_ref(issue)
+        delete_claim_ref(issue, log, no_verify=True)
         log("no worktree found for #{} — nothing to tear down.".format(issue))
         log("#{} left as-is (OPEN unless already closed elsewhere).".format(issue))
         return
@@ -98,7 +89,7 @@ def main():
                 + dirty + "\n  Commit/stash what you want to keep, or re-run with --force to discard.")
 
     # --- claim ref (only now that the guard passed / --force) ---
-    delete_claim_ref(issue)
+    delete_claim_ref(issue, log, no_verify=True)
 
     # --- teardown: synchronous from the main root (mirrors close.py; reverts any
     #     uncommitted @inprogress flip for free; leaves the issue OPEN). ---

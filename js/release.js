@@ -20,9 +20,9 @@
  */
 
 const { sh, shTrim, gitTrim, makeDie, makeLog } = require('./sh');
+const { deleteClaimRef } = require('./claimref');
 const {
-  isSafeRef, claimRefDeleteCommand, classifyClaimRefDelete,
-  parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
+  isSafeRef, parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
 } = require('./close_core');
 
 const log = makeLog('release');
@@ -42,14 +42,6 @@ function parseArgs(argv) {
   return a;
 }
 
-function deleteClaimRef(issue) {
-  const out = sh(`${claimRefDeleteCommand(issue)} --no-verify 2>&1 || true`, true) || '';
-  const verdict = classifyClaimRefDelete(out);
-  if (verdict === 'DELETED') log(`claim ref refs/claims/issue-${issue} deleted.`);
-  else if (verdict === 'ABSENT') log(`claim ref refs/claims/issue-${issue} already absent — no-op.`);
-  else log(`warn: could not delete claim ref refs/claims/issue-${issue} (best-effort; continuing).`);
-}
-
 function main() {
   const { issue, force } = parseArgs(process.argv.slice(2));
   const rows = parseWorktreePorcelain(shTrim('git worktree list --porcelain'));
@@ -59,7 +51,7 @@ function main() {
   if (!wt) {
     // Orphan claim ref (no worktree — e.g. a dead session): free the ref so the
     // issue is re-claimable. Nothing to guard or tear down.
-    deleteClaimRef(issue);
+    deleteClaimRef(issue, { noVerify: true, log });
     log(`no worktree found for #${issue} — nothing to tear down.`);
     log(`#${issue} left as-is (OPEN unless already closed elsewhere).`);
     return;
@@ -89,7 +81,7 @@ function main() {
   }
 
   // --- claim ref (only now that the guard passed / --force) ---
-  deleteClaimRef(issue);
+  deleteClaimRef(issue, { noVerify: true, log });
 
   // --- teardown: synchronous from the main root (mirrors close.js; reverts any
   //     uncommitted @inprogress flip for free; leaves the issue OPEN). ---

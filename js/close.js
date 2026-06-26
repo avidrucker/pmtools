@@ -35,6 +35,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { sh, shCapture, gitCapture, makeDie, makeLog } = require('./sh');
+const { deleteClaimRef } = require('./claimref');
 const core = require('./close_core');
 const config = require('./config');
 const { getProvider } = require('./provider');
@@ -228,13 +229,6 @@ function checkVelocityGuard(issue, fruit) {
       '  Then re-run close. Pass --skip-velocity-check to bypass (PM/triage closes).');
 }
 
-function deleteClaimRef(issue) {
-  const out = sh(`${claimRefDeleteCommand(issue)} 2>&1 || true`, true) || '';
-  const verdict = classifyClaimRefDelete(out);
-  if (verdict === 'DELETED') log(`claim ref refs/claims/issue-${issue} deleted.`);
-  else if (verdict === 'ABSENT') log(`claim ref refs/claims/issue-${issue} already absent — no-op.`);
-  else log(`warn: could not delete claim ref refs/claims/issue-${issue} (best-effort; close continues).`);
-}
 
 // ---- land loop -------------------------------------------------------------
 
@@ -515,7 +509,7 @@ function main() {
       const state = sh(`gh issue view ${issue} --json state -q .state`, true);
       if (state && state.trim().toUpperCase() !== 'OPEN') {
         log(`commit ${alreadyLandedSha.slice(0, 12)} already on origin/main and #${issue} is ${state.trim()} — treating as clean close.`);
-        deleteClaimRef(issue);
+        deleteClaimRef(issue, { log });
         if (opts.keep) {
           report({ issue, branch, wtPath, closingSha: alreadyLandedSha, landedSha: alreadyLandedSha, kept: true, dry: false });
           logCommentPrompt(issue, alreadyLandedSha);
@@ -611,7 +605,7 @@ function main() {
     log(`commit ${landedSha.slice(0, 12)} confirmed on origin/main.`);
   }
 
-  deleteClaimRef(issue);
+  deleteClaimRef(issue, { log });
 
   // --- best-effort: confirm the issue actually closed (the keyword can lag).
   if (opts.verifyIssue) {

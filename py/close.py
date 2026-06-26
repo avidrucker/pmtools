@@ -41,9 +41,9 @@ import store_core
 import claim_core
 import provider as provider_mod
 from sh import sh, sh_capture, git_capture, make_die, make_log
+from claimref import delete_claim_ref
 from close_core import (
     DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
-    claim_ref_delete_command, classify_claim_ref_delete,
     classify_rebase_conflict, body_closes_issue,
     extract_keywords, keywords_overlap, marker_still_present,
     scope_audit_diff_command, velocity_row_present, compute_velocity_mismatch,
@@ -261,20 +261,6 @@ def check_velocity_guard(issue, fruit):
         "\"started_iso\":\"<ISO>\",\"finished_iso\":\"<ISO>\",\"actual_min\":<A>}}'\n"
         "  Then re-run close. Pass --skip-velocity-check to bypass (PM/triage closes).".format(
             issue, db_path, issue, fruit))
-
-
-def delete_claim_ref(issue):
-    """Best-effort, idempotent claim-ref delete so a closed issue can't falsely
-    block a future re-claim. Never aborts the close."""
-    out = sh("{} 2>&1 || true".format(claim_ref_delete_command(issue)), True) or ""
-    verdict = classify_claim_ref_delete(out)
-    if verdict == "DELETED":
-        log("claim ref refs/claims/issue-{} deleted.".format(issue))
-    elif verdict == "ABSENT":
-        log("claim ref refs/claims/issue-{} already absent — no-op.".format(issue))
-    else:
-        log("warn: could not delete claim ref refs/claims/issue-{} "
-            "(best-effort; close continues).".format(issue))
 
 
 # ---- land loop -------------------------------------------------------------
@@ -548,7 +534,7 @@ def main():
             if state and state.strip().upper() != "OPEN":
                 log("commit {} already on origin/main and #{} is {} — treating as clean close.".format(
                     already_landed[:12], issue, state.strip()))
-                delete_claim_ref(issue)
+                delete_claim_ref(issue, log)
                 if opts["keep"]:
                     report(issue, branch, wt_path, already_landed, already_landed, True, False)
                     log_comment_prompt(issue, already_landed)
@@ -638,7 +624,7 @@ def main():
     else:
         log("commit {} confirmed on origin/main.".format(landed_sha[:12] if landed_sha else ""))
 
-    delete_claim_ref(issue)
+    delete_claim_ref(issue, log)
 
     # --- best-effort: confirm the issue actually closed (the keyword can lag).
     if opts["verifyIssue"]:
