@@ -12,7 +12,7 @@ Ported from lccjs scripts/velocity-log.js (+ velocity-seed/export). Required
 fields: role (closed vocabulary) + agent; ticket nullable. delta_h_min /
 delta_c_min are DERIVED (estimate - actual). A non-canonical model is NOTICED,
 not rejected. When title is omitted and a ticket is present, the title is
-fetched best-effort via `gh issue view <N> --json title -q .title`.
+fetched best-effort via the GitHub provider (provider.issue_title).
 
 Exit codes: 0 success / disabled-store; 2 usage error (missing/unknown subcommand,
 unknown flag, missing payload arg); 1 operational (invalid JSON, validation
@@ -20,12 +20,12 @@ failure, or DB error). See CONTRACT.md "Output conventions" (#44).
 """
 import json
 import os
-import subprocess
 import sys
 
 import config
 import store
 import store_core as core
+from provider import get_provider
 
 TABLE = "velocity"
 COLS = core.VELOCITY_COLS
@@ -40,18 +40,11 @@ def note(msg):
     sys.stderr.write("[velocity] note: {}\n".format(msg))
 
 
-def fetch_title(ticket, gh="gh"):
-    """Best-effort `gh issue view <N> --json title -q .title`. None on failure."""
-    try:
-        out = subprocess.run(
-            [gh, "issue", "view", str(ticket), "--json", "title", "-q", ".title"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            check=True, timeout=5,
-        )
-        t = out.stdout.strip()
-        return t or None
-    except Exception:
-        return None
+def fetch_title(ticket):
+    """Best-effort issue title via the GitHub provider. None on any failure.
+    Delegates to provider.issue_title (the pure/impure boundary lives there) —
+    mirrors js/velocity.js fetchTitle -> provider.issueTitle (#40)."""
+    return get_provider("github").issue_title(ticket)
 
 
 def parse_args(argv):

@@ -8,11 +8,12 @@ import json
 import subprocess
 
 
-def _run(cmd):
-    """Return stdout on success, else None (never raises)."""
+def _run(cmd, timeout=5):
+    """Return stdout on success, else None (never raises). A 5s timeout keeps a
+    hung `gh` from blocking the caller — parity with js provider's run() (#40)."""
     try:
         out = subprocess.run(
-            cmd, capture_output=True, text=True, check=True
+            cmd, capture_output=True, text=True, check=True, timeout=timeout
         )
         return out.stdout
     except Exception:
@@ -35,15 +36,9 @@ class GitHubProvider:
                 rows.append({"number": n, "state": state})
         return rows
 
-    def list_open_issues(self, limit):
-        out = _run(["gh", "issue", "list", "--state", "open",
-                    "--limit", str(limit), "--json",
-                    "number,title,labels"])
-        return json.loads(out) if out else []
-
     def list_open_issues_with_bodies(self, limit):
-        """Like list_open_issues but includes each issue body — used by the
-        parent-tracker scan (#36 guard 3). Best-effort: [] offline."""
+        """Open issues incl. each issue body — used by the parent-tracker
+        scan (#36 guard 3). Best-effort: [] offline."""
         out = _run(["gh", "issue", "list", "--state", "open",
                     "--limit", str(limit), "--json", "number,title,body"])
         return json.loads(out) if out else []
@@ -61,12 +56,15 @@ class GitHubProvider:
         except Exception:
             return False
 
-    def create_label(self, name, color, description, repo=None):
-        cmd = ["gh", "label", "create", name, "--color", color,
-               "--description", description, "--force"]
-        if repo:
-            cmd[2:2] = ["-R", repo]
-        return _run(cmd) is not None
+    def issue_title(self, number):
+        """Best-effort `gh issue view <N> --json title -q .title`. None on
+        failure (offline / missing gh / not found). Mirrors js issueTitle."""
+        out = _run(["gh", "issue", "view", str(number), "--json", "title",
+                    "-q", ".title"])
+        if out is None:
+            return None
+        t = out.strip()
+        return t or None
 
 
 class GitLabProvider:
@@ -77,7 +75,7 @@ class GitLabProvider:
             "gitlab adapter not yet implemented — only host:'github' is supported"
         )
 
-    issue_states = list_open_issues = create_label = _stub
+    issue_states = issue_title = _stub
     list_open_issues_with_bodies = edit_issue_body = _stub
 
 
