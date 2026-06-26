@@ -21,6 +21,7 @@ from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored
 from claim_core import parse_claim_refs
 from config import load_pdd_config
 from sh import make_die
+from close_core import parse_worktree_porcelain
 
 # agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
 DEFAULT_BRANCH_PATTERN = r"^(?:br-)?(?P<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?P<issue>\d+)"
@@ -120,12 +121,14 @@ def grep_markers(ignore_patterns=None):
 def list_worktrees(branch_pattern):
     """[{branch,issue,agent}] parsed from `git worktree list --porcelain`."""
     rx = re.compile(_js_to_py_named_groups(branch_pattern))
+    # Reuse the canonical pure porcelain parser (#74); keep status's regex
+    # extraction + null-safety (parser tolerates None/empty).
     out = _run(["git", "worktree", "list", "--porcelain"])
     rows = []
-    for raw in out.splitlines():
-        if not raw.startswith("branch "):
+    for r in parse_worktree_porcelain(out):
+        branch = r["branch"]
+        if not branch:
             continue
-        branch = raw[len("branch "):].strip().replace("refs/heads/", "", 1)
         m = rx.search(branch)
         if not m:
             continue

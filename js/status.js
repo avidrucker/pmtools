@@ -14,6 +14,7 @@ const { parseCanonicalMarker, parsePddignore, isPddIgnored } = require('./status
 const { parseClaimRefs } = require('./claim_core');
 const { loadPddConfig } = require('./config');
 const { makeDie } = require('./sh');
+const { parseWorktreePorcelain } = require('./close_core');
 
 // agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
 const DEFAULT_BRANCH_PATTERN = '^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?<issue>\\d+)';
@@ -76,11 +77,12 @@ function grepMarkers(ignorePatterns = []) {
 
 function listWorktrees(branchPattern) {
   const rx = new RegExp(branchPattern);
-  const out = run('git', ['worktree', 'list', '--porcelain']);
+  // Reuse the canonical pure porcelain parser (#74); keep status's regex
+  // extraction of issue/agent + null-safety (parser tolerates null/empty).
+  const porcelain = run('git', ['worktree', 'list', '--porcelain']);
   const rows = [];
-  for (const raw of out.split('\n')) {
-    if (!raw.startsWith('branch ')) continue;
-    const branch = raw.slice('branch '.length).trim().replace('refs/heads/', '');
+  for (const { branch } of parseWorktreePorcelain(porcelain)) {
+    if (!branch) continue;
     const m = rx.exec(branch);
     if (!m) continue;
     rows.push({ branch, issue: parseInt(m.groups.issue, 10), agent: m.groups.agent });

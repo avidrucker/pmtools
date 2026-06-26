@@ -29,6 +29,7 @@ const path = require('node:path');
 
 const { sh, gitCapture, makeDie } = require('./sh');
 const config = require('./config');
+const { parseWorktreePorcelain } = require('./close_core');
 const core = require('./claim_core');
 const {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, isSafeRef,
@@ -94,16 +95,11 @@ function resolveNameParts(root) {
 }
 
 function listWorktreeBranches() {
+  // Reuse the canonical pure porcelain parser (#74) and layer fruit extraction.
   const out = sh('git worktree list --porcelain', true) || '';
-  const branches = [];
-  for (const line of out.split('\n')) {
-    if (line.startsWith('branch ')) {
-      const branch = line.slice('branch '.length).replace('refs/heads/', '');
-      const fruit = branch.includes('/') ? branch.split('/')[0] : null;
-      branches.push({ branch, fruit });
-    }
-  }
-  return branches;
+  return parseWorktreePorcelain(out)
+    .filter((r) => r.branch)
+    .map((r) => ({ branch: r.branch, fruit: r.branch.includes('/') ? r.branch.split('/')[0] : null }));
 }
 
 function isSentinelStale(fruit) {
