@@ -28,6 +28,7 @@ DISPATCH = {
     "is_safe_ref": claim_core.is_safe_ref,
     "normalize_identity": claim_core.normalize_identity,
     "infer_fruit_from_branch": claim_core.infer_fruit_from_branch,
+    "parse_claim_refs": claim_core.parse_claim_refs,
     "resolve_identity": claim_core.resolve_identity,
     "parse_args": claim_core.parse_args,
     "check_identity_name": claim_core.check_identity_name,

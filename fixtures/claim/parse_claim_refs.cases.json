@@ -1,0 +1,9 @@
+[
+  { "name": "parses claimed issue numbers from ls-remote output",
+    "args": ["abc123\trefs/claims/issue-5\ndef456\trefs/claims/issue-12"], "expected": [5, 12] },
+  { "name": "empty listing → []", "args": [""], "expected": [] },
+  { "name": "null listing → []", "args": [null], "expected": [] },
+  { "name": "dedup + numeric sort", "args": ["a\trefs/claims/issue-12\nb\trefs/claims/issue-3\nc\trefs/claims/issue-12"], "expected": [3, 12] },
+  { "name": "ignores non-claim refs", "args": ["a\trefs/heads/main\nb\trefs/claims/issue-7\nc\trefs/tags/v1"], "expected": [7] },
+  { "name": "tolerates blank/garbage lines", "args": ["\n  \nzz\trefs/claims/issue-9\n"], "expected": [9] }
+]

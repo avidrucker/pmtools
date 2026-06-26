@@ -11,6 +11,7 @@ const path = require('node:path');
 const { reconcile } = require('./reconcile');
 const { getProvider } = require('./provider');
 const { parseCanonicalMarker, parsePddignore, isPddIgnored } = require('./status_core');
+const { parseClaimRefs } = require('./claim_core');
 const { loadPddConfig } = require('./config');
 const { makeDie } = require('./sh');
 
@@ -145,6 +146,10 @@ function main(argv) {
   }
 
   const report = reconcile(grep, worktrees, issues);
+  // Active claims (refs/claims/* on origin): the cross-clone-safe in-flight
+  // signal an orchestrator should consume instead of git-worktree-list heuristics,
+  // which miss sibling-clone worktrees and the br-/wt- naming scheme (#70).
+  report.claims = parseClaimRefs(run('git', ['ls-remote', 'origin', 'refs/claims/*']));
   console.log(args.json ? JSON.stringify(report, null, 2) : renderTable(report));
   return args.strict && report.stale.length ? 1 : 0;
 }
