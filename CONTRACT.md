@@ -196,6 +196,25 @@ branch:   ^(?:br-)?(?<agent>[a-z0-9]+)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]
 worktree: ^(?:wt-)?(?<agent>[a-z0-9]+)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
 ```
 
+> **Canonical contract vs what pmtools' code implements today (#53).** The two
+> regexes above are the **canonical, consumer-facing contract** — the form a
+> consumer (lccjs#1461) mirrors to parse a name into
+> `{agent, project, lang, issue, theme}`, and the form the construction helpers
+> below emit. pmtools' *own* `status` marker-reconciliation scan currently
+> implements only the **reduced subset it needs** —
+> `^(?:br-)?(?<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?<issue>\d+)`
+> (`DEFAULT_BRANCH_PATTERN` in `js/status.js` / `py/status.py`): `agent` and
+> `issue` are the only *named* groups, `project`/`lang` are non-capturing, and
+> there is no `theme` group or end-anchor. And there is **no worktree-name
+> *parser*** in pmtools — the worktree regex is the canonical *form*, not an
+> implemented seam: `buildWorktreeName` / `branchToWorktreeName` construct the
+> dir via string ops, and `close`/`release` locate a worktree by path basename +
+> `git worktree list` porcelain. Consumers mirroring the canonical regexes get
+> correct results (the names are self-describing); the gap is purely that pmtools
+> does not yet itself implement + fixture-grade the full form. Raising the code
+> to do so (named `project`/`lang`/`theme` everywhere + a worktree-name parser +
+> fixtures) is tracked in #72.
+
 Pure helpers (graded by `fixtures/claim/*`): `langTag`, `buildBranch`,
 `buildWorktreeName`, `branchToWorktreeName` (the branch→worktree-dir bridge that
 close uses, handling both forms), plus the prefix-tolerant `inferFruitFromBranch`
