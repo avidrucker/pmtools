@@ -139,6 +139,15 @@ branch:   ^(?:br-)?(?<agent>[a-z0-9]+)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]
 worktree: ^(?:wt-)?(?<agent>[a-z0-9]+)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
 ```
 
+These are the **canonical, consumer-facing contract** (the form lccjs#1461
+mirrors), *not* a description of pmtools' internal scan. pmtools' own `status`
+currently implements only a reduced `agent`+`issue` subset (`DEFAULT_BRANCH_PATTERN`
+in `js/status.js` / `py/status.py` — non-capturing `project`/`lang`, no `theme`,
+no end-anchor), and pmtools has **no worktree-name *parser*** (the worktree regex
+is a published form, not an implemented seam). Raising the code to implement +
+fixture-grade the full canonical form is tracked in #72; see `CONTRACT.md`
+§claim for the precise gap (#53).
+
 ### Pure helpers (the testable seam)
 
 Name construction and the branch→worktree-dir bridge are pure functions in
