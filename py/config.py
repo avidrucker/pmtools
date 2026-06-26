@@ -93,6 +93,26 @@ def _merge_store(default_store, override):
     return merged
 
 
+def _read_orchestrate_block(block, cwd=None):
+    """Read .claude/orchestrate.json under the repo root and return its top-level
+    `block` dict, or {} for a missing repo / file / parse error / non-dict block.
+    The shared read+parse+guard behind the load_*_config loaders (#74)."""
+    root = repo_root(cwd)
+    if not root:
+        return {}
+    cfg_path = os.path.join(root, ".claude", "orchestrate.json")
+    if not os.path.isfile(cfg_path):
+        return {}
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and isinstance(data.get(block), dict):
+            return data[block]
+    except (ValueError, OSError):
+        pass
+    return {}
+
+
 def load_storage_config(cwd=None):
     """Return the merged storage config dict.
 
@@ -100,18 +120,7 @@ def load_storage_config(cwd=None):
     errors {enabled, csvMirror, logCommand}, velocity {...}. Always tolerant:
     a missing repo / file / key falls back to defaults.
     """
-    root = repo_root(cwd)
-    raw_storage = {}
-    if root:
-        cfg_path = os.path.join(root, ".claude", "orchestrate.json")
-        if os.path.isfile(cfg_path):
-            try:
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict) and isinstance(data.get("storage"), dict):
-                    raw_storage = data["storage"]
-            except (ValueError, OSError):
-                raw_storage = {}
+    raw_storage = _read_orchestrate_block("storage", cwd)
 
     db_path = raw_storage.get("dbPath")
     if not db_path:
@@ -131,19 +140,7 @@ def load_pdd_config(cwd=None):
     """Return the merged `pdd` config: {enabled, ignoreFile}. Reads the top-level
     `pdd` block of orchestrate.json (sibling to `storage`); tolerant of a missing
     repo / file / key (falls back to _DEFAULTS_PDD → scanning ON)."""
-    root = repo_root(cwd)
-    raw_pdd = {}
-    if root:
-        cfg_path = os.path.join(root, ".claude", "orchestrate.json")
-        if os.path.isfile(cfg_path):
-            try:
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict) and isinstance(data.get("pdd"), dict):
-                    raw_pdd = data["pdd"]
-            except (ValueError, OSError):
-                raw_pdd = {}
-
+    raw_pdd = _read_orchestrate_block("pdd", cwd)
     merged = dict(_DEFAULTS_PDD)
     for k in ("enabled", "ignoreFile"):
         if k in raw_pdd:
@@ -157,19 +154,7 @@ def load_close_config(cwd=None):
     union-file list is consumer-supplied (the #23 generic rule — no paths baked
     into the shared harness) and defaults to EMPTY (union auto-resolve OFF).
     Tolerant of a missing repo / file / key / malformed value."""
-    root = repo_root(cwd)
-    raw_close = {}
-    if root:
-        cfg_path = os.path.join(root, ".claude", "orchestrate.json")
-        if os.path.isfile(cfg_path):
-            try:
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict) and isinstance(data.get("close"), dict):
-                    raw_close = data["close"]
-            except (ValueError, OSError):
-                raw_close = {}
-
+    raw_close = _read_orchestrate_block("close", cwd)
     ar = raw_close.get("autoResolve")
     if not isinstance(ar, dict):
         ar = {}

@@ -96,23 +96,26 @@ function mergeStore(defaultStore, override) {
 // Return the merged storage config object. Keys: dbPath (resolved to a concrete
 // path — never null on the way out), errors {enabled, csvMirror, logCommand},
 // velocity {...}. Always tolerant: a missing repo / file / key falls back.
-function loadStorageConfig(cwd = null) {
+// Read .claude/orchestrate.json under the repo root and return its top-level
+// `<block>` object — or {} for a missing repo / file, a parse error, or a
+// non-object block. The shared read+parse+guard behind the load*Config loaders (#74).
+function readOrchestrateBlock(block, cwd = null) {
   const root = repoRoot(cwd);
-  let rawStorage = {};
-  if (root) {
-    const cfgPath = path.join(root, '.claude', 'orchestrate.json');
-    if (fs.existsSync(cfgPath) && fs.statSync(cfgPath).isFile()) {
-      try {
-        const data = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-        if (data && typeof data === 'object' && !Array.isArray(data)
-            && data.storage && typeof data.storage === 'object' && !Array.isArray(data.storage)) {
-          rawStorage = data.storage;
-        }
-      } catch {
-        rawStorage = {};
-      }
+  if (!root) return {};
+  const cfgPath = path.join(root, '.claude', 'orchestrate.json');
+  if (!(fs.existsSync(cfgPath) && fs.statSync(cfgPath).isFile())) return {};
+  try {
+    const data = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    if (data && typeof data === 'object' && !Array.isArray(data)
+        && data[block] && typeof data[block] === 'object' && !Array.isArray(data[block])) {
+      return data[block];
     }
-  }
+  } catch { /* fall through to {} */ }
+  return {};
+}
+
+function loadStorageConfig(cwd = null) {
+  const rawStorage = readOrchestrateBlock('storage', cwd);
 
   let dbPath = rawStorage.dbPath;
   if (!dbPath) {
@@ -133,22 +136,7 @@ function loadStorageConfig(cwd = null) {
 // `pdd` block of orchestrate.json (sibling to `storage`); tolerant of a missing
 // repo / file / key (falls back to DEFAULTS_PDD → scanning ON).
 function loadPddConfig(cwd = null) {
-  const root = repoRoot(cwd);
-  let rawPdd = {};
-  if (root) {
-    const cfgPath = path.join(root, '.claude', 'orchestrate.json');
-    if (fs.existsSync(cfgPath) && fs.statSync(cfgPath).isFile()) {
-      try {
-        const data = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-        if (data && typeof data === 'object' && !Array.isArray(data)
-            && data.pdd && typeof data.pdd === 'object' && !Array.isArray(data.pdd)) {
-          rawPdd = data.pdd;
-        }
-      } catch {
-        rawPdd = {};
-      }
-    }
-  }
+  const rawPdd = readOrchestrateBlock('pdd', cwd);
   const merged = { ...DEFAULTS_PDD };
   for (const k of ['enabled', 'ignoreFile']) {
     if (Object.prototype.hasOwnProperty.call(rawPdd, k)) merged[k] = rawPdd[k];
@@ -162,22 +150,7 @@ function loadPddConfig(cwd = null) {
 // into the shared harness) and defaults to EMPTY (union auto-resolve OFF).
 // Tolerant of a missing repo / file / key / malformed value.
 function loadCloseConfig(cwd = null) {
-  const root = repoRoot(cwd);
-  let rawClose = {};
-  if (root) {
-    const cfgPath = path.join(root, '.claude', 'orchestrate.json');
-    if (fs.existsSync(cfgPath) && fs.statSync(cfgPath).isFile()) {
-      try {
-        const data = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-        if (data && typeof data === 'object' && !Array.isArray(data)
-            && data.close && typeof data.close === 'object' && !Array.isArray(data.close)) {
-          rawClose = data.close;
-        }
-      } catch {
-        rawClose = {};
-      }
-    }
-  }
+  const rawClose = readOrchestrateBlock('close', cwd);
   const ar = (rawClose.autoResolve && typeof rawClose.autoResolve === 'object'
               && !Array.isArray(rawClose.autoResolve)) ? rawClose.autoResolve : {};
   const unionFiles = Array.isArray(ar.unionFiles)
