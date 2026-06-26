@@ -23,11 +23,11 @@
  * Auto (no identity) is a hard error — agents must be named (lccjs #386).
  */
 
-const { execFileSync, spawnSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { sh, makeDie } = require('./sh');
+const { sh, gitCapture, makeDie } = require('./sh');
 const core = require('./claim_core');
 const {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, isSafeRef,
@@ -53,13 +53,6 @@ function git(args, allowFail = false) {
     if (allowFail) return null;
     throw e;
   }
-}
-
-// Like git() but returns combined stdout+stderr regardless of exit, never throws
-// (for the claim-ref push, whose output the push-result classifier inspects).
-function gitCapture(args) {
-  const r = spawnSync('git', args, { encoding: 'utf8' });
-  return `${r.stdout || ''}${r.stderr || ''}`;
 }
 
 const die = makeDie('claim');
@@ -428,7 +421,7 @@ function main() {
       const claimMsg = buildClaimMessage(issue, branch, process.pid, stamp);
       const claimSha = (git(['commit-tree', baseTree, '-m', claimMsg], true) || '').trim();
       if (claimSha) {
-        const pushOut = gitCapture(['push', 'origin', `${claimSha}:refs/claims/issue-${issue}`]);
+        const pushOut = gitCapture(['push', 'origin', `${claimSha}:refs/claims/issue-${issue}`]).out;
         const action = claimPushAction(classifyClaimPushResult(pushOut), opts.force);
         if (action === 'ROLLBACK_DIE') {
           git(['worktree', 'remove', wtPath, '--force'], true);

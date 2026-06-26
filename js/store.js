@@ -13,11 +13,11 @@
 'use strict';
 
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const core = require('./store_core');
+const { expanduser } = require('./config');
 
 // --- schema (verbatim from py/store.py) --------------------------------------
 
@@ -72,12 +72,6 @@ const INSERT_COLS = {
 };
 
 const TABLES = ['errors', 'velocity'];
-
-function expanduser(p) {
-  if (p === '~') return os.homedir();
-  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
-  return p;
-}
 
 // expanduser + absolutise a DB path (mirrors py _resolve).
 function resolveDb(dbPath) {
