@@ -28,6 +28,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { sh, gitCapture, makeDie } = require('./sh');
+const config = require('./config');
 const core = require('./claim_core');
 const {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, isSafeRef,
@@ -57,17 +58,14 @@ function git(args, allowFail = false) {
 
 const die = makeDie('claim');
 
-// The MAIN checkout's root, NOT cwd. An agent reusing its identity runs from
-// inside an existing worktree, but the new worktree must still land under the
-// main repo — never nested inside the caller's worktree.
+// The MAIN checkout's root, NOT cwd — an agent reusing its identity runs from
+// inside an existing worktree, but the new worktree must land under the main
+// repo. The git-common-dir resolution lives once in config.mainRepoRoot (#74);
+// this wrapper keeps claim's die-on-failure behavior (config returns null).
 function mainRoot() {
-  let dir = sh('git rev-parse --path-format=absolute --git-common-dir', true);
-  if (!dir) {
-    const rel = sh('git rev-parse --git-common-dir', true); // older git fallback
-    if (!rel) die('not inside a git repository.');
-    dir = path.resolve(process.cwd(), rel.trim());
-  }
-  return path.dirname(dir.trim());
+  const root = config.mainRepoRoot();
+  if (!root) die('not inside a git repository.');
+  return root;
 }
 
 // Resolve {project, lang} for the naming scheme from .claude/orchestrate.json,
