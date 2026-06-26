@@ -39,6 +39,7 @@ import config
 import store
 import store_core
 import claim_core
+import provider as provider_mod
 from close_core import (
     DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
     claim_ref_delete_command, classify_claim_ref_delete,
@@ -105,7 +106,7 @@ def parse_args(argv):
         "issue": None, "max": DEFAULT_MAX_RETRIES, "dryRun": False,
         "keep": False, "verifyIssue": True, "skipKeywordCheck": False,
         "skipMarkerCheck": False, "skipScopeAudit": False, "skipVelocityCheck": False,
-        "branch": None, "worktreeDir": ".claude/worktrees",
+        "updateTrackers": False, "branch": None, "worktreeDir": ".claude/worktrees",
     }
     positionals = []
     i = 0
@@ -133,6 +134,8 @@ def parse_args(argv):
             opts["skipScopeAudit"] = True
         elif a == "--skip-velocity-check":
             opts["skipVelocityCheck"] = True
+        elif a == "--update-trackers":
+            opts["updateTrackers"] = True
         elif a == "--branch":
             i += 1
             opts["branch"] = argv[i] if i < n else None
@@ -488,6 +491,49 @@ def log_comment_prompt(issue, closing_sha):
     log('Post your closing comment:\n  gh issue comment {} --body "Closed in {}. <your summary here>"'.format(issue, s))
 
 
+def scan_parent_trackers(issue, opts):
+    """After a successful close, tick the parent tracker issue's checkbox for this
+    child (#36 guard 3 / lccjs #907). Opt-in: config `close.updateParentTrackers`
+    or the --update-trackers flag. Best-effort — every failure warns and skips; it
+    never blocks or fails the close. Only a box whose SOLE issue ref is this child
+    is ticked (the pure tick_checkbox_for_issue), so an umbrella line is never
+    prematurely checked."""
+    enabled = bool(opts.get("updateTrackers"))
+    if not enabled:
+        try:
+            enabled = config.load_close_config().get("updateParentTrackers") is True
+        except Exception:
+            enabled = False
+    if not enabled:
+        return
+    try:
+        prov = provider_mod.get_provider("github")
+    except Exception:
+        return
+    try:
+        issues = prov.list_open_issues_with_bodies(500)
+    except Exception:
+        log("warn: could not fetch open issues for parent-tracker scan — skipping.")
+        return
+    seen = set()
+    for match in core.find_parent_trackers(issues, issue):
+        tracker = match["trackerNumber"]
+        if tracker in seen:
+            continue
+        seen.add(tracker)
+        full = next((i for i in (issues or []) if i.get("number") == tracker), None)
+        if not full:
+            continue
+        new_body = core.tick_checkbox_for_issue(full.get("body"), issue)
+        if new_body == str(full.get("body") or ""):
+            log("warn: parent tracker #{} box replacement had no effect — skipping.".format(tracker))
+            continue
+        if prov.edit_issue_body(tracker, new_body):
+            log("Parent tracker #{}: checked the box for #{}.".format(tracker, issue))
+        else:
+            log("warn: could not update parent tracker #{} — left as-is.".format(tracker))
+
+
 def main():
     opts = parse_args(sys.argv[1:])
     if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
@@ -637,6 +683,9 @@ def main():
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif st:
             log("#{} is {}.".format(issue, st.strip()))
+
+    # --- best-effort: tick the parent tracker's checkbox for this child (#36 guard 3).
+    scan_parent_trackers(issue, opts)
 
     if opts["keep"]:
         report(issue, branch, wt_path, closing_on_main, landed_sha, True, False)

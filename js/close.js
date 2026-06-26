@@ -36,6 +36,7 @@ const path = require('node:path');
 
 const core = require('./close_core');
 const config = require('./config');
+const { getProvider } = require('./provider');
 const store = require('./store');
 const storeCore = require('./store_core');
 const claimCore = require('./claim_core');
@@ -100,7 +101,7 @@ function parseArgs(argv) {
     issue: null, max: DEFAULT_MAX_RETRIES, dryRun: false,
     keep: false, verifyIssue: true, skipKeywordCheck: false,
     skipMarkerCheck: false, skipScopeAudit: false, skipVelocityCheck: false,
-    branch: null, worktreeDir: '.claude/worktrees',
+    updateTrackers: false, branch: null, worktreeDir: '.claude/worktrees',
   };
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
@@ -113,6 +114,7 @@ function parseArgs(argv) {
     else if (a === '--skip-marker-check') opts.skipMarkerCheck = true;
     else if (a === '--skip-scope-audit') opts.skipScopeAudit = true;
     else if (a === '--skip-velocity-check') opts.skipVelocityCheck = true;
+    else if (a === '--update-trackers') opts.updateTrackers = true;
     else if (a === '--branch') opts.branch = argv[++i];
     else if (a === '--worktree-dir') opts.worktreeDir = argv[++i];
     else if (a.startsWith('--')) die(`unknown flag: ${a}`, 2);
@@ -455,6 +457,44 @@ function teardown(wtPath, branch, root) {
   }
 }
 
+// After a successful close, tick the parent tracker issue's checkbox for this
+// child (#36 guard 3 / lccjs #907). Opt-in: config `close.updateParentTrackers`
+// or the --update-trackers flag. Best-effort — every failure warns and skips; it
+// never blocks or fails the close. Only a box whose SOLE issue ref is this child
+// is ticked (the pure tickCheckboxForIssue), so an umbrella line is never
+// prematurely checked.
+function scanParentTrackers(issue, opts) {
+  let enabled = !!opts.updateTrackers;
+  if (!enabled) {
+    try { enabled = config.loadCloseConfig().updateParentTrackers === true; } catch (_) { enabled = false; }
+  }
+  if (!enabled) return;
+  let provider;
+  try { provider = getProvider('github'); } catch (_) { return; }
+  let issues;
+  try { issues = provider.listOpenIssuesWithBodies(500); } catch (_) {
+    log('warn: could not fetch open issues for parent-tracker scan — skipping.');
+    return;
+  }
+  const seen = new Set();
+  for (const { trackerNumber } of core.findParentTrackers(issues, issue)) {
+    if (seen.has(trackerNumber)) continue;
+    seen.add(trackerNumber);
+    const full = (issues || []).find((i) => i.number === trackerNumber);
+    if (!full) continue;
+    const newBody = core.tickCheckboxForIssue(full.body, issue);
+    if (newBody === String(full.body || '')) {
+      log(`warn: parent tracker #${trackerNumber} box replacement had no effect — skipping.`);
+      continue;
+    }
+    if (provider.editIssueBody(trackerNumber, newBody)) {
+      log(`Parent tracker #${trackerNumber}: checked the box for #${issue}.`);
+    } else {
+      log(`warn: could not update parent tracker #${trackerNumber} — left as-is.`);
+    }
+  }
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.issue || !/^\d+$/.test(opts.issue)) {
@@ -615,6 +655,9 @@ function main() {
       log(`#${issue} is ${st.trim()}.`);
     }
   }
+
+  // --- best-effort: tick the parent tracker's checkbox for this child (#36 guard 3).
+  scanParentTrackers(issue, opts);
 
   if (opts.keep) {
     report({ issue, branch, wtPath, closingSha: closingCommitOnMainSha, landedSha, kept: true, dry: false });

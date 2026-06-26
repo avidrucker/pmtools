@@ -211,6 +211,36 @@ function resolveAppendOnlyMarkdownConflict(text) {
   return out.join('\n');
 }
 
+// Scan open tracker issues for an UNCHECKED checklist box referencing the given
+// child issue. Pure: takes [{number, body}] + issue number (int or string),
+// returns [{trackerNumber, line}] (line trimmed) per matched line, in document
+// order. (#36 guard 3 / lccjs #907)
+function findParentTrackers(issues, issueNumber) {
+  const re = new RegExp(`- \\[ \\].*#${issueNumber}\\b`);
+  const matches = [];
+  for (const iss of (issues || [])) {
+    for (const line of String((iss && iss.body) || '').split('\n')) {
+      if (re.test(line)) matches.push({ trackerNumber: iss.number, line: line.trim() });
+    }
+  }
+  return matches;
+}
+
+// Tick the checklist box(es) referencing the given child issue in a tracker
+// body: flip `- [ ]` → `- [x]` on a line whose SOLE issue ref is that child (a
+// multi-ref line is left alone — never prematurely check an umbrella box). Pure
+// text→text; returns the body unchanged when nothing safe matches.
+// (#36 guard 3 / lccjs #907)
+function tickCheckboxForIssue(body, issueNumber) {
+  const re = new RegExp(`- \\[ \\].*#${issueNumber}\\b`);
+  return String(body || '').split('\n').map((line) => {
+    if (!re.test(line)) return line;
+    const refs = line.match(/#\d+/g) || [];
+    if (refs.length !== 1) return line;
+    return line.replace('- [ ]', '- [x]');
+  }).join('\n');
+}
+
 // Guard 1 decision (lccjs #361): given the velocity rows {ticket, agent}, the
 // issue, and the closing agent, return the mismatching ticket numbers (empty =
 // pass). If ANY row records the correct ticket the close is consistent; only
@@ -279,5 +309,6 @@ module.exports = {
   markerStillPresent, scopeAuditDiffCommand,
   velocityRowPresent, velocityTicketMismatch, computeVelocityMismatch,
   isVelocityCsvOnlyConflict, isMarkdownIndexOnlyConflict, resolveAppendOnlyMarkdownConflict,
+  findParentTrackers, tickCheckboxForIssue,
   parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
 };

@@ -42,6 +42,8 @@ const DISPATCH = {
   is_velocity_csv_only_conflict: close.isVelocityCsvOnlyConflict,
   is_markdown_index_only_conflict: close.isMarkdownIndexOnlyConflict,
   resolve_append_only_markdown_conflict: close.resolveAppendOnlyMarkdownConflict,
+  find_parent_trackers: close.findParentTrackers,
+  tick_checkbox_for_issue: close.tickCheckboxForIssue,
   parse_worktree_porcelain: close.parseWorktreePorcelain,
   find_worktree_for_issue: close.findWorktreeForIssue,
   release_guard_verdict: close.releaseGuardVerdict,

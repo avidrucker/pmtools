@@ -278,6 +278,7 @@ the gated teardown — so it can never fabricate a close.
 | `--skip-keyword-check` | off | Skip the Guard 2 issue-title keyword spot-check. |
 | `--skip-scope-audit` | off | Suppress the informational `git diff --stat` scope summary. |
 | `--skip-velocity-check` | off | Skip the velocity-row guard (PM/triage closes without a logged session). |
+| `--update-trackers` | off | After a successful close, tick the parent tracker's `- [ ] #N` checkbox (also enabled by `close.updateParentTrackers`). #36 guard 3. |
 | `--worktree-dir <dir>` | `.claude/worktrees` | **Parameterized** (lccjs hardcoded it). Worktree parent dir, relative to main repo root. |
 
 ### Pure seams (`close_core`, graded against `fixtures/close/*`)
@@ -295,7 +296,10 @@ configured union files classifies as `union-only` and auto-resolves via
 (Check A — any row for the ticket), `velocity_ticket_mismatch` +
 `compute_velocity_mismatch` (Guard 1 — closing agent's row must carry this
 ticket; a correct-ticket row by any agent passes; concurrent agents' off-ticket
-rows never false-block).
+rows never false-block). Conflict-resolver predicates `is_velocity_csv_only_conflict`
+(#313) / `is_markdown_index_only_conflict` (#971) + the `resolve_append_only_markdown_conflict`
+transform; and the parent-tracker seams `find_parent_trackers` +
+`tick_checkbox_for_issue` (#907, single-ref-safe).
 
 ### Guard / flow sequence (in `main()` order)
 
@@ -396,9 +400,20 @@ paths baked into the shared harness — the #23 rule):
 Any conflict touching a file outside the three configured sets is still
 **blocking** (`classify_rebase_conflict`).
 
-Still **omitted** (tracked under umbrella #36): the parent-tracker checkbox scan
-(`scanParentTrackers`, #907 / guard 3), plus the lccjs *CSV-diff* parsers
-(`extractTicketFromCsvDiff` / `extractRowsFromCsvDiff`) which are
+### Parent-tracker auto-check (config-gated, #907 / #36 guard 3)
+
+After a **successful** close, if `close.updateParentTrackers: true` (default
+**false**) or `--update-trackers` is passed, `close` scans open issues for an
+unchecked checklist box referencing the just-closed child (`- [ ] … #N`) and
+flips it to `- [x]`, writing the parent body back via the provider. Pure seams
+`find_parent_trackers` + `tick_checkbox_for_issue` (fixture-graded, both ports);
+only a box whose **sole** issue ref is the child is ticked — a multi-ref umbrella
+line is never prematurely checked. Best-effort: every fetch/parse/write failure
+warns and skips; it never blocks or fails the close. Uses the provider's
+`list_open_issues_with_bodies` (read) + `edit_issue_body` (the one provider
+**write**). With all four guards ported (#313/#290/#971/#907), nothing of the
+lccjs close behavior remains omitted — only the lccjs *CSV-diff* parsers
+(`extractTicketFromCsvDiff` / `extractRowsFromCsvDiff`), which are
 lccjs-velocity-CSV-specific and unneeded.
 
 ---
@@ -477,11 +492,12 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
   "enabled": true,                 // default true — false skips the PDD scan
   "ignoreFile": ".pddignore"       // gitignore-style exclude list at repo root
 },
-"close": {                         // sibling block; gates `close`'s conflict auto-resolve
+"close": {                         // sibling block; gates close's auto-resolve + trackers
   "autoResolve": {
     "unionFiles": [],              // append-only logs to union-merge (#36 guard 2)
     "markdownIndexes": []          // append-only markdown indexes to marker-strip
-  }                                //   (#36 guard 4); both default empty = off
+  },                               //   (#36 guard 4); both default empty = off
+  "updateParentTrackers": false    // tick parent tracker checkboxes on close (#36 guard 3)
 }
 ```
 
@@ -498,6 +514,10 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
   `.pddignore`) names the exclude list; enabled-but-absent → one-line stderr warn
   + scan everything. Loaded by `config.load_pdd_config` (twin). See `§status` and
   `.pddignore.example`.
+- `close.updateParentTrackers` (**default `false`**) — when true (or `close
+  --update-trackers`), a successful close ticks the parent tracker issue's
+  `- [ ] #N` checkbox for the closed child (#36 guard 3). Loaded by
+  `config.load_close_config` (twin). See `§close` parent-tracker auto-check.
 - `close.autoResolve.markdownIndexes` (**default `[]`** = off) lists append-only
   markdown index files (repo-relative) that `close` resolves on a confined rebase
   conflict by stripping the conflict markers — keep both appended rows, collapse an
