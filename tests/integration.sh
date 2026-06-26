@@ -454,6 +454,58 @@ run_close_velocity_suite() {
   else
     fail "[$lang] union-conflict: both appended lines survive on origin/main (#60)"
   fi
+
+  # === Env 5 (#64 / #31): a learnings-README (append-only markdown index)
+  # conflict auto-resolves — strip the markers, keep BOTH appended rows — when the
+  # index is listed in close.autoResolve.markdownIndexes. The 4th and last kept
+  # close guard; pins that it fires when enabled (#36 guard 4 / lccjs#971). ===
+  local repo5; repo5="$(new_env)"
+  local D=40
+  # Land a config enabling markdown-index auto-resolve + a baseline index on main FIRST.
+  (
+    cd "$repo5"
+    git config user.email tester@example.com; git config user.name tester; git config commit.gpgsign false
+    mkdir -p .claude docs
+    printf '{ "project": "demo", "languages": ["javascript"], "storage": { "velocity": { "enabled": false }, "errors": { "enabled": true } }, "close": { "autoResolve": { "markdownIndexes": ["docs/learnings.md"] } } }\n' > .claude/orchestrate.json
+    printf '# Learnings\n- base entry\n' > docs/learnings.md
+    git add .claude/orchestrate.json docs/learnings.md
+    git commit -qm "chore: enable markdown-index auto-resolve + baseline learnings"
+    git push -q origin HEAD:main
+  )
+  ( cd "$repo5" && PATH="$gh:$PATH" "${CLAIM[@]}" "$D" --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] md-conflict: claim $D exit 0 (#64/#31)"
+  local wt5="$repo5/.claude/worktrees/wt-apple-demo-js-issue-$D"
+  # Branch side: append a row + the keyword-sharing close commit.
+  # git -C + dir guard: the seed commit can only touch the claimed worktree (#55).
+  if [ -d "$wt5" ]; then
+    git -C "$wt5" config user.email tester@example.com; git -C "$wt5" config user.name tester; git -C "$wt5" config commit.gpgsign false
+    printf '# Learnings\n- base entry\n- BRANCH entry\n' > "$wt5/docs/learnings.md"
+    printf 'widget impl\n' > "$wt5/widget.txt"
+    git -C "$wt5" add docs/learnings.md widget.txt
+    git -C "$wt5" commit -qm "feat: add widget renderer" -m "Closes #$D"
+  fi
+  # Concurrent agent on main: a DIFFERENT appended row, pushed to origin.
+  (
+    cd "$repo5"
+    printf '# Learnings\n- base entry\n- MAIN entry\n' > docs/learnings.md
+    git add docs/learnings.md
+    git commit -qm "data: another agent's learnings line"
+    git push -q origin HEAD:main
+  )
+  # close: rebasing the branch onto origin/main conflicts ONLY on docs/learnings.md →
+  # markdown-index auto-resolve (keep both rows, strip markers), continue, land.
+  ( cd "$repo5" && PATH="$gh:$PATH" "${CLOSE[@]}" "$D" --branch "br-apple/demo-js-issue-$D" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] md-conflict: close auto-resolves + exits 0 (#64/#31)"
+  assert_contains "$o" "auto-resolved" "[$lang] md-conflict: prints auto-resolved message (#64/#31)"
+  assert_contains "$o" "CLOSED" "[$lang] md-conflict: prints CLOSED banner (#64/#31)"
+  if [ -d "$wt5" ]; then fail "[$lang] md-conflict: worktree removed after success (#64/#31)"; else pass "[$lang] md-conflict: worktree removed (#64/#31)"; fi
+  # both appended rows must survive on origin/main; no conflict markers committed.
+  olm="$(git --git-dir="$(dirname "$repo5")/origin.git" show main:docs/learnings.md 2>/dev/null)"
+  if printf '%s' "$olm" | grep -q 'BRANCH entry' && printf '%s' "$olm" | grep -q 'MAIN entry' && ! printf '%s' "$olm" | grep -q '<<<<<<<'; then
+    pass "[$lang] md-conflict: both learnings rows survive, no markers, on origin/main (#64/#31)"
+  else
+    fail "[$lang] md-conflict: both learnings rows survive on origin/main (#64/#31)"
+  fi
 }
 
 run_close_velocity_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE" python3 "$PY_VELOCITY"
