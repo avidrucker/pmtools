@@ -5,9 +5,15 @@
 
 const { execFileSync } = require('node:child_process');
 
+// A 5s timeout keeps a hung `gh` from blocking the caller — parity with the
+// Python provider's _run() timeout (#40). On timeout execFileSync throws, which
+// the catch degrades to null (best-effort, same as any other failure).
+const RUN_TIMEOUT_MS = 5000;
+
 function run(cmd, args) {
   try {
-    return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return execFileSync(cmd, args,
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: RUN_TIMEOUT_MS });
   } catch {
     return null;
   }
@@ -27,14 +33,8 @@ class GitHubProvider {
     return rows;
   }
 
-  listOpenIssues(limit) {
-    const out = run('gh', ['issue', 'list', '--state', 'open', '--limit', String(limit),
-      '--json', 'number,title,labels']);
-    return out ? JSON.parse(out) : [];
-  }
-
-  // Like listOpenIssues but includes each issue body — used by the parent-tracker
-  // scan (#36 guard 3) to find unchecked checkbox lines. Best-effort: [] offline.
+  // Open issues incl. each issue body — used by the parent-tracker scan
+  // (#36 guard 3) to find unchecked checkbox lines. Best-effort: [] offline.
   listOpenIssuesWithBodies(limit) {
     const out = run('gh', ['issue', 'list', '--state', 'open', '--limit', String(limit),
       '--json', 'number,title,body']);
@@ -62,12 +62,6 @@ class GitHubProvider {
     const t = out.trim();
     return t || null;
   }
-
-  createLabel(name, color, description, repo) {
-    const args = ['label', 'create', name, '--color', color, '--description', description, '--force'];
-    if (repo) args.splice(2, 0, '-R', repo);
-    return run('gh', args) !== null;
-  }
 }
 
 class GitLabProvider {
@@ -76,11 +70,9 @@ class GitLabProvider {
     throw new Error("gitlab adapter not yet implemented — only host:'github' is supported");
   }
   issueStates() { return this._stub(); }
-  listOpenIssues() { return this._stub(); }
   listOpenIssuesWithBodies() { return this._stub(); }
   editIssueBody() { return this._stub(); }
   issueTitle() { return this._stub(); }
-  createLabel() { return this._stub(); }
 }
 
 function getProvider(host) {
