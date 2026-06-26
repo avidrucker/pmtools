@@ -41,6 +41,26 @@ class GitHubProvider:
                     "number,title,labels"])
         return json.loads(out) if out else []
 
+    def list_open_issues_with_bodies(self, limit):
+        """Like list_open_issues but includes each issue body — used by the
+        parent-tracker scan (#36 guard 3). Best-effort: [] offline."""
+        out = _run(["gh", "issue", "list", "--state", "open",
+                    "--limit", str(limit), "--json", "number,title,body"])
+        return json.loads(out) if out else []
+
+    def edit_issue_body(self, number, body):
+        """Write a new issue body via stdin (`gh issue edit <N> --body-file -`).
+        Returns True on success, False on any failure (offline / missing gh /
+        permission). The only provider WRITE; used by parent-tracker (#36 guard 3)."""
+        try:
+            subprocess.run(
+                ["gh", "issue", "edit", str(number), "--body-file", "-"],
+                input=body, text=True, capture_output=True, check=True,
+            )
+            return True
+        except Exception:
+            return False
+
     def create_label(self, name, color, description, repo=None):
         cmd = ["gh", "label", "create", name, "--color", color,
                "--description", description, "--force"]
@@ -58,6 +78,7 @@ class GitLabProvider:
         )
 
     issue_states = list_open_issues = create_label = _stub
+    list_open_issues_with_bodies = edit_issue_body = _stub
 
 
 def get_provider(host):

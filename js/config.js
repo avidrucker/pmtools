@@ -186,7 +186,8 @@ function loadCloseConfig(cwd = null) {
   const markdownIndexes = Array.isArray(ar.markdownIndexes)
     ? ar.markdownIndexes.filter((s) => typeof s === 'string' && s)
     : [];
-  return { autoResolve: { unionFiles, markdownIndexes } };
+  const updateParentTrackers = rawClose.updateParentTrackers === true;
+  return { autoResolve: { unionFiles, markdownIndexes }, updateParentTrackers };
 }
 
 module.exports = {

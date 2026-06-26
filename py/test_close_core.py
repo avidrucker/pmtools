@@ -46,6 +46,8 @@ DISPATCH = {
     "is_velocity_csv_only_conflict": close_core.is_velocity_csv_only_conflict,
     "is_markdown_index_only_conflict": close_core.is_markdown_index_only_conflict,
     "resolve_append_only_markdown_conflict": close_core.resolve_append_only_markdown_conflict,
+    "find_parent_trackers": close_core.find_parent_trackers,
+    "tick_checkbox_for_issue": close_core.tick_checkbox_for_issue,
     "parse_worktree_porcelain": close_core.parse_worktree_porcelain,
     "find_worktree_for_issue": close_core.find_worktree_for_issue,
     "release_guard_verdict": close_core.release_guard_verdict,

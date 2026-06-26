@@ -1,0 +1,22 @@
+[
+  { "name": "single-ref unchecked box → ticked",
+    "args": ["- [ ] do #5 thing", 5], "expected": "- [x] do #5 thing" },
+  { "name": "already checked → unchanged",
+    "args": ["- [x] do #5", 5], "expected": "- [x] do #5" },
+  { "name": "multi-ref line → left unchecked (avoid premature check of an umbrella line)",
+    "args": ["- [ ] #5 and #6 together", 5], "expected": "- [ ] #5 and #6 together" },
+  { "name": "only the matching single-ref line is ticked",
+    "args": ["- [ ] #5\n- [ ] #6\nplain text", 5], "expected": "- [x] #5\n- [ ] #6\nplain text" },
+  { "name": "word boundary: #5 does not tick #50's box",
+    "args": ["- [ ] #50", 5], "expected": "- [ ] #50" },
+  { "name": "no matching box → unchanged",
+    "args": ["# Tracker\n- [ ] #9", 5], "expected": "# Tracker\n- [ ] #9" },
+  { "name": "two single-ref boxes for the same child both tick",
+    "args": ["- [ ] a #5\n- [ ] b #5", 5], "expected": "- [x] a #5\n- [x] b #5" },
+  { "name": "string issue number works",
+    "args": ["- [ ] #5", "5"], "expected": "- [x] #5" },
+  { "name": "empty body → empty",
+    "args": ["", 5], "expected": "" },
+  { "name": "null body → empty string",
+    "args": [null, 5], "expected": "" }
+]

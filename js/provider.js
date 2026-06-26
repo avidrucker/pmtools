@@ -33,6 +33,27 @@ class GitHubProvider {
     return out ? JSON.parse(out) : [];
   }
 
+  // Like listOpenIssues but includes each issue body — used by the parent-tracker
+  // scan (#36 guard 3) to find unchecked checkbox lines. Best-effort: [] offline.
+  listOpenIssuesWithBodies(limit) {
+    const out = run('gh', ['issue', 'list', '--state', 'open', '--limit', String(limit),
+      '--json', 'number,title,body']);
+    return out ? JSON.parse(out) : [];
+  }
+
+  // Write a new issue body via stdin (`gh issue edit <N> --body-file -`). Returns
+  // true on success, false on any failure (offline / missing gh / permission).
+  // The only provider WRITE; used by the parent-tracker auto-check (#36 guard 3).
+  editIssueBody(number, body) {
+    try {
+      execFileSync('gh', ['issue', 'edit', String(number), '--body-file', '-'],
+        { input: body, encoding: 'utf8', stdio: ['pipe', 'ignore', 'ignore'] });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // Best-effort `gh issue view <N> --json title -q .title`. null on failure
   // (offline / missing gh / not found). Mirrors py/velocity.py fetch_title.
   issueTitle(number) {
@@ -56,6 +77,8 @@ class GitLabProvider {
   }
   issueStates() { return this._stub(); }
   listOpenIssues() { return this._stub(); }
+  listOpenIssuesWithBodies() { return this._stub(); }
+  editIssueBody() { return this._stub(); }
   issueTitle() { return this._stub(); }
   createLabel() { return this._stub(); }
 }

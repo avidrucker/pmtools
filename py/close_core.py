@@ -295,6 +295,41 @@ def resolve_append_only_markdown_conflict(text):
     return "\n".join(out)
 
 
+def find_parent_trackers(issues, issue_number):
+    """Scan open tracker issues for an UNCHECKED checklist box referencing the
+    given child issue. Pure: takes [{number, body}] + issue number (int or
+    string), returns [{trackerNumber, line}] (line trimmed) per matched line, in
+    document order. (#36 guard 3 / lccjs #907)"""
+    pat = re.compile(r"- \[ \].*#" + re.escape(str(issue_number)) + r"\b")
+    matches = []
+    for iss in (issues or []):
+        body = str((iss or {}).get("body") or "")
+        for line in body.split("\n"):
+            if pat.search(line):
+                matches.append({"trackerNumber": iss.get("number"), "line": line.strip()})
+    return matches
+
+
+def tick_checkbox_for_issue(body, issue_number):
+    """Tick the checklist box(es) referencing the given child issue in a tracker
+    body: flip `- [ ]` -> `- [x]` on a line whose SOLE issue ref is that child (a
+    multi-ref line is left alone — never prematurely check an umbrella box). Pure
+    text->text; returns the body unchanged when nothing safe matches.
+    (#36 guard 3 / lccjs #907)"""
+    pat = re.compile(r"- \[ \].*#" + re.escape(str(issue_number)) + r"\b")
+    out = []
+    for line in str(body or "").split("\n"):
+        if not pat.search(line):
+            out.append(line)
+            continue
+        refs = re.findall(r"#\d+", line)
+        if len(refs) != 1:
+            out.append(line)
+            continue
+        out.append(line.replace("- [ ]", "- [x]", 1))
+    return "\n".join(out)
+
+
 # --- release-command seams (#22; the cleanup half of close, shared core) ------
 
 def parse_worktree_porcelain(porcelain):
