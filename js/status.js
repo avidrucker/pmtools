@@ -128,9 +128,22 @@ function main(argv) {
     process.stderr.write('[status] pdd disabled — skipping marker scan.\n');
   }
   const worktrees = listWorktrees(args.branchPattern);
-  const provider = getProvider(args.host);
+  // An unknown host fails getProvider (usage error, 2); a not-yet-implemented
+  // host (gitlab) reaches a stub whose methods throw (operational, 1). Either
+  // way: a clean die, never a raw stack trace (#43).
+  let provider;
+  try {
+    provider = getProvider(args.host);
+  } catch {
+    die(`unknown host '${args.host}' (expected github or gitlab)`, 2);
+  }
   const numbers = [...new Set(grep.map((m) => m.issue))].sort((x, y) => x - y);
-  const issues = provider.issueStates(numbers);
+  let issues;
+  try {
+    issues = provider.issueStates(numbers);
+  } catch {
+    die(`host '${args.host}' not yet supported`, 1);
+  }
 
   const report = reconcile(grep, worktrees, issues);
   console.log(args.json ? JSON.stringify(report, null, 2) : renderTable(report));

@@ -1131,6 +1131,21 @@ assert_exit "$su_je" 2 "[js] status: unknown flag exits 2 (usage error)"
 assert_contains "$su_py" "unknown flag" "[py] status: names the unknown flag"
 assert_contains "$su_js" "unknown flag" "[js] status: names the unknown flag"
 
+# status --host gitlab clean-die (#43): the gitlab provider is a stub whose
+# methods throw; status must translate that into a clean
+# `[status] ✗ host 'gitlab' not yet supported` (exit 1, operational) in BOTH
+# ports — never a raw interpreter stack trace.
+HG_REPO="$(new_env)"
+hg_py="$TMPROOT/hg.py.$RANDOM"; hg_js="$TMPROOT/hg.js.$RANDOM"
+( cd "$HG_REPO" && python3 "$PY_STATUS" --host gitlab ) >"$hg_py" 2>&1; hg_pe=$?
+( cd "$HG_REPO" && node    "$JS_STATUS" --host gitlab ) >"$hg_js" 2>&1; hg_je=$?
+assert_exit "$hg_pe" 1 "[py] status --host gitlab exits 1 (not-yet-supported)"
+assert_exit "$hg_je" 1 "[js] status --host gitlab exits 1 (not-yet-supported)"
+assert_contains "$hg_py" "host 'gitlab' not yet supported" "[py] status --host gitlab: clean message"
+assert_contains "$hg_js" "host 'gitlab' not yet supported" "[js] status --host gitlab: clean message"
+if grep -q "Traceback" "$hg_py"; then fail "[py] status --host gitlab: leaks a Python traceback"; else pass "[py] status --host gitlab: no stack trace"; fi
+if grep -qE "node:internal|at [A-Za-z].*:[0-9]+:[0-9]+" "$hg_js"; then fail "[js] status --host gitlab: leaks a node stack trace"; else pass "[js] status --host gitlab: no stack trace"; fi
+
 # ---------------------------------------------------------------------------
 # exit-code convention (#44 thread 3): a structurally-invalid invocation
 # (unknown flag, unknown/missing subcommand, missing required arg, bad-typed
@@ -1162,6 +1177,7 @@ exit_both close     2 "close: unknown flag exits 2"            -- 5 --bogus
 exit_both close     2 "close: missing issue exits 2"           --
 exit_both release   2 "release: missing issue exits 2"         --
 exit_both status    2 "status: unknown flag exits 2"           -- --strrict
+exit_both status    2 "status: unknown --host value exits 2"   -- --host bogus
 # operational failures stay 1 (the well-formed invocation, bad data/world state)
 exit_both error     1 "error: invalid JSON content stays exit 1" -- log "{bad"
 [ "$FAILS" -eq 0 ]
