@@ -535,13 +535,18 @@ def main():
         die('branch "{}" does not match issue #{}. Wrong worktree?'.format(branch, issue))
 
     root = main_root()
-    fruit = claim_core.infer_fruit_from_branch(branch) or branch.split("/")[0]
-    wt_path = os.path.join(root, opts["worktreeDir"], claim_core.branch_to_worktree_name(branch))
+    fruit = claim_core.infer_fruit_from_branch(branch)
+    # Discover the worktree from git's own porcelain (as release does) rather than
+    # rebuilding the dir name — robust under a non-default --worktree-dir and odd
+    # branch shapes, and the single source of truth for where the worktree is (#51).
+    wt = core.find_worktree_for_issue(
+        core.parse_worktree_porcelain(sh("git worktree list --porcelain", True) or ""), issue)
+    wt_path = wt["path"] if wt else None
     if opts["branch"]:
-        try:
-            os.chdir(wt_path)
-        except OSError:
-            die("--branch supplied but worktree not found at {}. Is it still present?".format(wt_path))
+        if not wt_path or not os.path.isdir(wt_path):
+            die("--branch supplied but no worktree for issue #{} found via "
+                "`git worktree list`. Is it still present?".format(issue))
+        os.chdir(wt_path)
 
     closing_commit_sha = find_closing_commit_sha(issue)
     if not closing_commit_sha:

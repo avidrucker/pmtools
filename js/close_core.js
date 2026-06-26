@@ -275,12 +275,13 @@ function parseWorktreePorcelain(porcelain) {
   return rows;
 }
 
-// The worktree staked for issue N: branch `<agent>/issue-<N>` (optional trailing
-// slug) or path basename ending `-issue-<N>`. Skips the main entry (rows[0]).
-// The `(?:[^0-9]|$)` boundary keeps `issue-9` from matching `issue-99`. Pure:
-// rows + issue → {path, branch} | null.
+// The worktree staked for issue N: branch matching `[-/]issue-<N>` (so both
+// legacy `<agent>/issue-<N>` and new-scheme `…-issue-<N>` branches match by
+// branch, mirroring claimCore.worktreesWithIssue, #51) or path basename ending
+// `-issue-<N>`. Skips the main entry (rows[0]). The `(?:[^0-9]|$)` boundary
+// keeps `issue-9` from matching `issue-99`. Pure: rows + issue → {path, branch} | null.
 function findWorktreeForIssue(rows, issue) {
-  const reBranch = new RegExp(`/issue-${issue}(?:[^0-9]|$)`);
+  const reBranch = new RegExp(`[-/]issue-${issue}(?:[^0-9]|$)`);
   const rePath = new RegExp(`-issue-${issue}$`);
   for (const r of (rows || []).slice(1)) {
     const base = String(r.path).split('/').pop();
