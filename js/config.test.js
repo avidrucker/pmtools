@@ -37,6 +37,42 @@ function repoWithWorktree() {
   return { main, wt };
 }
 
+// #79: a temp repo whose .claude/orchestrate.json holds `cfg` (null = no file).
+function repoWithOrchestrate(cfg) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pmtools-enrich-'));
+  git(dir, 'init', '-q');
+  git(dir, 'config', 'user.email', 't@e.com');
+  git(dir, 'config', 'user.name', 't');
+  fs.mkdirSync(path.join(dir, '.claude'));
+  if (cfg !== null) fs.writeFileSync(path.join(dir, '.claude', 'orchestrate.json'), JSON.stringify(cfg));
+  fs.writeFileSync(path.join(dir, 'f.txt'), 'x');
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-qm', 'init');
+  return dir;
+}
+
+test('loadEnrichmentConfig: absent block → null defaults (#79)', () => {
+  const repo = repoWithOrchestrate({ storage: {} });
+  assert.deepEqual(config.loadEnrichmentConfig(repo), { statusCommand: null, clusterFile: null });
+});
+
+test('loadEnrichmentConfig: reads statusCommand (#79)', () => {
+  const repo = repoWithOrchestrate({ enrichment: { statusCommand: 'pmtools status' } });
+  const cfg = config.loadEnrichmentConfig(repo);
+  assert.equal(cfg.statusCommand, 'pmtools status');
+  assert.equal(cfg.clusterFile, null);
+});
+
+test('loadEnrichmentConfig: reads clusterFile (#79)', () => {
+  const repo = repoWithOrchestrate({ enrichment: { statusCommand: 'pmtools status', clusterFile: 'puzzle-clusters.csv' } });
+  assert.equal(config.loadEnrichmentConfig(repo).clusterFile, 'puzzle-clusters.csv');
+});
+
+test('loadEnrichmentConfig: no orchestrate.json → null defaults (#79)', () => {
+  const repo = repoWithOrchestrate(null);
+  assert.deepEqual(config.loadEnrichmentConfig(repo), { statusCommand: null, clusterFile: null });
+});
+
 test('repoRoot from a worktree returns the worktree (the misleading identity)', () => {
   const { wt } = repoWithWorktree();
   assert.equal(path.basename(config.repoRoot(wt)), 'wt-issue-99');

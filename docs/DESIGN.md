@@ -176,8 +176,12 @@ pmtools reads (tolerant of missing file/keys, falling back to defaults):
 - **`pdd`** — `{enabled, ignoreFile}`: gates status's marker scan and points at
   the consumer's ignore file (the generic-harness principle — pmtools reads it,
   never hard-codes it).
-- **Consumer/orchestration keys** — `pmtools.port`, `enrichment.*` (the resolved
-  status/claim/preflight/close commands a skill invokes), `languages`, and (with
+- **`enrichment`** — `{statusCommand, clusterFile}`: the status reconciler an
+  external ranker (e.g. the puzzle-triage skill) invokes, and the cluster
+  soft-lock map (reserved for LOCKED, #80). Both consumer-supplied, default unset.
+  Loaded by `config.load_enrichment_config` (#79).
+- **Consumer/orchestration keys** — `pmtools.port`, the rest of `enrichment.*`
+  (e.g. `claimCommand`/`preflightCommand` a skill invokes), `languages`, and (with
   §5) `project`. These are policy the consumer owns.
 
 pmtools **dogfoods itself**: this repo ships a tracked `.claude/orchestrate.json`

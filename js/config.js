@@ -30,6 +30,7 @@ const DEFAULTS = {
 // repo opts out with `"pdd": { "enabled": false }`. ignoreFile names the
 // gitignore-style exclude list (default .pddignore).
 const DEFAULTS_PDD = { enabled: true, ignoreFile: '.pddignore' };
+const DEFAULTS_ENRICHMENT = { statusCommand: null, clusterFile: null };
 
 function sh(cmd, args) {
   try {
@@ -163,6 +164,22 @@ function loadCloseConfig(cwd = null) {
   return { autoResolve: { unionFiles, markdownIndexes }, updateParentTrackers };
 }
 
+// Merged `enrichment` config: {statusCommand, clusterFile}. Read by external
+// rankers (e.g. the puzzle-triage skill) to resolve the status reconciler
+// (statusCommand, e.g. "pmtools status") and the cluster soft-lock map
+// (clusterFile, reserved for #80/LOCKED). Both consumer-supplied (#23 generic
+// rule), default null — absent → no reconciler / no cluster locking. Tolerant of
+// a missing repo / file / key / non-string value. (#79)
+function loadEnrichmentConfig(cwd = null) {
+  const raw = readOrchestrateBlock('enrichment', cwd);
+  const merged = { ...DEFAULTS_ENRICHMENT };
+  for (const k of ['statusCommand', 'clusterFile']) {
+    if (typeof raw[k] === 'string' && raw[k]) merged[k] = raw[k];
+  }
+  return merged;
+}
+
 module.exports = {
-  repoRoot, mainRepoRoot, defaultDbPath, loadStorageConfig, loadPddConfig, loadCloseConfig, expanduser,
+  repoRoot, mainRepoRoot, defaultDbPath, loadStorageConfig, loadPddConfig, loadCloseConfig,
+  loadEnrichmentConfig, expanduser,
 };

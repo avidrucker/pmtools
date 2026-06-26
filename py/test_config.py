@@ -7,6 +7,7 @@ build a real repo + worktree and pin the corrected resolution.
 
     python3 -m unittest discover -s py
 """
+import json
 import os
 import subprocess
 import tempfile
@@ -54,6 +55,49 @@ class MainRepoRoot(unittest.TestCase):
         _main, wt = _repo_with_worktree()
         db = config.default_db_path(config.main_repo_root(wt))
         self.assertEqual(os.path.basename(os.path.dirname(db)), "myrepo")
+
+
+def _repo_with_orchestrate(cfg):
+    """A temp git repo whose .claude/orchestrate.json holds `cfg` (None = no file)."""
+    d = tempfile.mkdtemp(prefix="pmtools-enrich-")
+    _git(d, "init", "-q")
+    _git(d, "config", "user.email", "t@e.com")
+    _git(d, "config", "user.name", "t")
+    os.makedirs(os.path.join(d, ".claude"))
+    if cfg is not None:
+        with open(os.path.join(d, ".claude", "orchestrate.json"), "w") as fh:
+            json.dump(cfg, fh)
+    with open(os.path.join(d, "f.txt"), "w") as fh:
+        fh.write("x")
+    _git(d, "add", "-A")
+    _git(d, "commit", "-qm", "init")
+    return d
+
+
+class Enrichment(unittest.TestCase):
+    """#79: load_enrichment_config reads enrichment.{statusCommand,clusterFile},
+    tolerant of absence (both default None → no reconciler / no cluster locking)."""
+
+    def test_absent_block_defaults_to_none(self):
+        repo = _repo_with_orchestrate({"storage": {}})
+        self.assertEqual(config.load_enrichment_config(repo),
+                         {"statusCommand": None, "clusterFile": None})
+
+    def test_status_command_is_read(self):
+        repo = _repo_with_orchestrate({"enrichment": {"statusCommand": "pmtools status"}})
+        cfg = config.load_enrichment_config(repo)
+        self.assertEqual(cfg["statusCommand"], "pmtools status")
+        self.assertIsNone(cfg["clusterFile"])
+
+    def test_cluster_file_is_read(self):
+        repo = _repo_with_orchestrate(
+            {"enrichment": {"statusCommand": "pmtools status", "clusterFile": "puzzle-clusters.csv"}})
+        self.assertEqual(config.load_enrichment_config(repo)["clusterFile"], "puzzle-clusters.csv")
+
+    def test_no_orchestrate_file_defaults(self):
+        repo = _repo_with_orchestrate(None)
+        self.assertEqual(config.load_enrichment_config(repo),
+                         {"statusCommand": None, "clusterFile": None})
 
 
 if __name__ == "__main__":
