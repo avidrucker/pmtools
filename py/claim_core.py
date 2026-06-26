@@ -239,6 +239,56 @@ def branch_to_worktree_name(branch):
     return "wt-" + flat if is_new else flat
 
 
+# Canonical self-describing name regexes (#72 — raise code to the published
+# CONTRACT/DESIGN spec). Tolerant of both new br-/wt- and legacy forms; the agent
+# group allows the -<N> collision-fallback suffix (#49) the published regex
+# omitted. Twin of js claim_core's CANONICAL_*_PATTERN.
+CANONICAL_BRANCH_PATTERN = (
+    r"^(?:br-)?(?P<agent>[a-z0-9]+(?:-[0-9]+)?)/"
+    r"(?:(?P<project>[a-z0-9]+)-(?P<lang>[a-z0-9]+)-)?issue-(?P<issue>\d+)"
+    r"(?:-(?P<theme>.+))?$"
+)
+CANONICAL_WORKTREE_PATTERN = (
+    r"^(?:wt-)?(?P<agent>[a-z0-9]+(?:-[0-9]+)?)-"
+    r"(?:(?P<project>[a-z0-9]+)-(?P<lang>[a-z0-9]+)-)?issue-(?P<issue>\d+)$"
+)
+
+
+def parse_branch_name(branch):
+    """{agent, project, lang, issue, theme} (project/lang/theme None when absent;
+    issue an int), or None if not a recognizable issue branch. The canonical
+    fixture-graded definition consumers mirror. Twin of js parseBranchName."""
+    if not branch:
+        return None
+    m = re.match(CANONICAL_BRANCH_PATTERN, branch)
+    if not m:
+        return None
+    return {
+        "agent": m.group("agent"),
+        "project": m.group("project"),
+        "lang": m.group("lang"),
+        "issue": int(m.group("issue")),
+        "theme": m.group("theme"),
+    }
+
+
+def parse_worktree_name(name):
+    """{agent, project, lang, issue} (project/lang None when absent; issue an int),
+    or None. The worktree analogue of parse_branch_name — worktree dir names never
+    carry the branch-only theme slug. Twin of js parseWorktreeName."""
+    if not name:
+        return None
+    m = re.match(CANONICAL_WORKTREE_PATTERN, name)
+    if not m:
+        return None
+    return {
+        "agent": m.group("agent"),
+        "project": m.group("project"),
+        "lang": m.group("lang"),
+        "issue": int(m.group("issue")),
+    }
+
+
 def sentinel_branch(fruit):
     """Return the <fruit>/session sentinel branch name."""
     return "{}/session".format(fruit)

@@ -52,6 +52,8 @@ DISPATCH = {
     "build_branch": claim_core.build_branch,
     "build_worktree_name": claim_core.build_worktree_name,
     "branch_to_worktree_name": claim_core.branch_to_worktree_name,
+    "parse_branch_name": claim_core.parse_branch_name,
+    "parse_worktree_name": claim_core.parse_worktree_name,
 }
 
 

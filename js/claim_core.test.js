@@ -49,6 +49,8 @@ const DISPATCH = {
   build_branch: claim.buildBranch,
   build_worktree_name: claim.buildWorktreeName,
   branch_to_worktree_name: claim.branchToWorktreeName,
+  parse_branch_name: claim.parseBranchName,
+  parse_worktree_name: claim.parseWorktreeName,
 };
 
 test('every claim fixture file has a dispatch entry (1:1)', () => {
