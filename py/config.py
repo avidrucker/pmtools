@@ -175,4 +175,6 @@ def load_close_config(cwd=None):
         ar = {}
     uf = ar.get("unionFiles")
     union_files = [s for s in uf if isinstance(s, str) and s] if isinstance(uf, list) else []
-    return {"autoResolve": {"unionFiles": union_files}}
+    mi = ar.get("markdownIndexes")
+    markdown_indexes = [s for s in mi if isinstance(s, str) and s] if isinstance(mi, list) else []
+    return {"autoResolve": {"unionFiles": union_files, "markdownIndexes": markdown_indexes}}

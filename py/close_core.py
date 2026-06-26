@@ -263,6 +263,38 @@ def is_velocity_csv_only_conflict(paths, csv_mirror):
     return len(items) > 0 and all(p == csv_mirror for p in items)
 
 
+def is_markdown_index_only_conflict(paths, files):
+    """A rebase whose ONLY conflicted paths are consumer-configured append-only
+    markdown indexes is auto-resolvable: each agent appended a row at the bottom,
+    a trivially mergeable conflict (keep both rows). Pure: conflicted paths + the
+    configured file list (repo-root-relative). False when the list is empty, no
+    paths conflicted, or any non-index file also conflicted. (#36 guard 4 / lccjs #971)"""
+    cfg = [f for f in (str(x).strip() for x in (files or [])) if f]
+    if not cfg:
+        return False
+    items = [p for p in (str(x).strip() for x in (paths or [])) if p]
+    return len(items) > 0 and all(p in cfg for p in items)
+
+
+def resolve_append_only_markdown_conflict(text):
+    """Resolve an append-only markdown conflict in text: drop git conflict-marker
+    lines (keeping both sides' appended rows), then collapse any adjacent
+    exact-duplicate non-blank line (two agents appending an identical row, which
+    lands adjacent once the `=======` separator is removed). Blank lines are never
+    deduped, so document spacing is preserved. The diff3 base marker (|||||||) is
+    stripped too; for an append-only file the base section is empty, so the result
+    is correct regardless of merge.conflictstyle. Pure text->text. (#36 guard 4 / lccjs #971)"""
+    markers = ("<<<<<<<", "|||||||", "=======", ">>>>>>>")
+    out = []
+    for line in str(text).split("\n"):
+        if any(line.startswith(m) for m in markers):
+            continue
+        if line != "" and out and out[-1] == line:
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 # --- release-command seams (#22; the cleanup half of close, shared core) ------
 
 def parse_worktree_porcelain(porcelain):

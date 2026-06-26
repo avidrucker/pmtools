@@ -385,14 +385,21 @@ paths baked into the shared harness — the #23 rule):
 - **union-file** (#290, #36 guard 2): a conflict confined to consumer-configured
   append-only logs (`close.autoResolve.unionFiles`, default empty) is union-merged
   (`git merge-file --union`, keeping both sides) and continues — **no committed
-  `.gitattributes` required**. Any conflict touching a non-union, non-CSV file is
-  still **blocking** (`classify_rebase_conflict`).
+  `.gitattributes` required**.
+- **append-only markdown index** (#971, #36 guard 4): a conflict confined to
+  consumer-configured markdown indexes (`close.autoResolve.markdownIndexes`,
+  default empty) is resolved by stripping the conflict markers (keep both
+  appended rows, collapse an adjacent identical row) and continues — the
+  generalized learnings-README resolver. Pure seams `is_markdown_index_only_conflict`
+  + `resolve_append_only_markdown_conflict` (fixture-graded, both ports).
 
-Still **omitted** (tracked under umbrella #36): the learnings-README conflict
-resolver (`isReadmeLearningsConflict` / `resolveReadmeConflict`, #971 / guard 4)
-and the parent-tracker checkbox scan (`scanParentTrackers`, #907 / guard 3), plus
-the lccjs *CSV-diff* parsers (`extractTicketFromCsvDiff` / `extractRowsFromCsvDiff`)
-which are lccjs-velocity-CSV-specific and unneeded.
+Any conflict touching a file outside the three configured sets is still
+**blocking** (`classify_rebase_conflict`).
+
+Still **omitted** (tracked under umbrella #36): the parent-tracker checkbox scan
+(`scanParentTrackers`, #907 / guard 3), plus the lccjs *CSV-diff* parsers
+(`extractTicketFromCsvDiff` / `extractRowsFromCsvDiff`) which are
+lccjs-velocity-CSV-specific and unneeded.
 
 ---
 
@@ -472,8 +479,9 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
 },
 "close": {                         // sibling block; gates `close`'s conflict auto-resolve
   "autoResolve": {
-    "unionFiles": []               // append-only logs to union-merge on a rebase
-  }                                //   conflict (default empty = off); #36 guard 2
+    "unionFiles": [],              // append-only logs to union-merge (#36 guard 2)
+    "markdownIndexes": []          // append-only markdown indexes to marker-strip
+  }                                //   (#36 guard 4); both default empty = off
 }
 ```
 
@@ -490,6 +498,11 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
   `.pddignore`) names the exclude list; enabled-but-absent → one-line stderr warn
   + scan everything. Loaded by `config.load_pdd_config` (twin). See `§status` and
   `.pddignore.example`.
+- `close.autoResolve.markdownIndexes` (**default `[]`** = off) lists append-only
+  markdown index files (repo-relative) that `close` resolves on a confined rebase
+  conflict by stripping the conflict markers — keep both appended rows, collapse an
+  adjacent identical row (#36 guard 4). Consumer-supplied. Loaded by
+  `config.load_close_config` (twin). See `§close` conflict auto-resolve.
 - `close.autoResolve.unionFiles` (**default `[]`** = off) lists append-only logs
   (repo-relative paths) that `close` union-merges (`git merge-file --union`, keep
   both sides) when a rebase conflict is confined to them — no committed

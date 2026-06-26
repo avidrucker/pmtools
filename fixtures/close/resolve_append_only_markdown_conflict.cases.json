@@ -1,0 +1,23 @@
+[
+  { "name": "strips conflict markers, keeps both appended rows",
+    "args": ["# Log\n<<<<<<< HEAD\nrow A\n=======\nrow B\n>>>>>>> theirs\n"],
+    "expected": "# Log\nrow A\nrow B\n" },
+  { "name": "collapses an adjacent exact-duplicate row (both agents appended the same)",
+    "args": ["# Log\n<<<<<<< HEAD\nrow X\n=======\nrow X\n>>>>>>> theirs\n"],
+    "expected": "# Log\nrow X\n" },
+  { "name": "diff3 base section (|||||||) is stripped; append-only base is empty",
+    "args": ["<<<<<<< HEAD\nA\n|||||||\n=======\nB\n>>>>>>>\n"],
+    "expected": "A\nB\n" },
+  { "name": "blank lines are preserved, never deduped (document spacing kept)",
+    "args": ["a\n\n\nb"],
+    "expected": "a\n\n\nb" },
+  { "name": "non-adjacent duplicate rows are NOT collapsed",
+    "args": ["row\nother\nrow"],
+    "expected": "row\nother\nrow" },
+  { "name": "a clean file with no conflict markers is unchanged",
+    "args": ["# Log\nrow A\nrow B\n"],
+    "expected": "# Log\nrow A\nrow B\n" },
+  { "name": "empty input → empty",
+    "args": [""],
+    "expected": "" }
+]

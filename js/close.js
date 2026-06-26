@@ -327,6 +327,35 @@ function unionMergeAndStage(file) {
   }
 }
 
+// Resolve an append-only markdown index that conflicted (each side appended a
+// row) by stripping the git conflict markers in place — keeping both rows, and
+// collapsing an adjacent identical row — then stage it. The decision logic is
+// the pure `resolveAppendOnlyMarkdownConflict`; this wraps it with file I/O.
+// (#36 guard 4 / #971)
+function resolveMarkdownIndexAndStage(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    sh('git rebase --abort', true);
+    die(`learnings-index conflict: could not read ${file} (${e.message}). ` +
+        'Aborted the rebase; your commit is safe and local.');
+  }
+  try {
+    fs.writeFileSync(file, core.resolveAppendOnlyMarkdownConflict(text));
+  } catch (e) {
+    sh('git rebase --abort', true);
+    die(`learnings-index conflict: could not write ${file} (${e.message}). ` +
+        'Aborted the rebase; your commit is safe and local.');
+  }
+  const staged = shCapture(`git add "${file}"`);
+  if (!staged.ok) {
+    sh('git rebase --abort', true);
+    die(`learnings-index conflict: resolved ${file} but git add failed. ` +
+        'Aborted the rebase; your commit is safe and local.');
+  }
+}
+
 // One fetch/rebase/push round. Returns 'ok' | 'race' | 'rejected-other', or
 // die()s on a blocking rebase conflict (not retryable). A conflict whose ONLY
 // path is the velocity CSV mirror auto-resolves via re-export (#57).
@@ -337,8 +366,10 @@ function tryLand() {
     const conflicted = conflictedPaths();
     let cfg = null;
     try { cfg = config.loadStorageConfig(); } catch (_) { cfg = null; }
-    let unionFiles = [];
-    try { unionFiles = config.loadCloseConfig().autoResolve.unionFiles; } catch (_) { unionFiles = []; }
+    let closeCfg = { autoResolve: { unionFiles: [], markdownIndexes: [] } };
+    try { closeCfg = config.loadCloseConfig(); } catch (_) { /* defaults */ }
+    const unionFiles = closeCfg.autoResolve.unionFiles;
+    const markdownIndexes = closeCfg.autoResolve.markdownIndexes;
     const csvMirror = cfg && cfg.velocity && cfg.velocity.enabled ? cfg.velocity.csvMirror : null;
     if (csvMirror && core.isVelocityCsvOnlyConflict(conflicted, csvMirror)) {
       // Two agents committed divergent full-table CSV exports. Re-export from the
@@ -363,6 +394,18 @@ function tryLand() {
             `failed: ${cont.out.trim()}. Your commit is safe and local.`);
       }
       log('union-file conflict auto-resolved (merge=union, kept both sides).');
+    } else if (markdownIndexes.length && core.isMarkdownIndexOnlyConflict(conflicted, markdownIndexes)) {
+      // Consumer-configured append-only markdown indexes diverged (each agent
+      // appended a row) — strip the conflict markers (keep both rows, dedup an
+      // adjacent identical row), stage, and continue. (#36 guard 4 / #971)
+      for (const f of conflicted) resolveMarkdownIndexAndStage(f);
+      const cont = shCapture('GIT_EDITOR=true git rebase --continue');
+      if (!cont.ok) {
+        sh('git rebase --abort', true);
+        die('learnings-index conflict: resolve + stage succeeded but rebase --continue ' +
+            `failed: ${cont.out.trim()}. Your commit is safe and local.`);
+      }
+      log('learnings-index conflict auto-resolved (kept both rows).');
     } else {
       sh('git rebase --abort', true);
       die('rebase hit a real conflict in: ' +
