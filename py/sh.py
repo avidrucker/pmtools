@@ -1,0 +1,62 @@
+"""sh.py — shared impure I/O helpers for the pmtools command CLIs (#41).
+
+One copy of sh / sh_capture / sh_trim + die/log factories, so the claim / close /
+release / ... wrappers stop drifting. The drift this consolidates:
+  - close's sh_capture returned {"ok","out"} while release's returned a trimmed
+    STRING under the same name — now {"ok","out"} owns ``sh_capture`` and the
+    string variant is ``sh_trim``;
+  - claim's sh discarded stderr (DEVNULL) where close/release captured it
+    (PIPE) — now all share one stderr-captured sh.
+Twin of js/sh.js. These run shell STRINGS (the lccjs lineage builds command
+strings); the arg-array git/gh exec added in #37 stays in each wrapper.
+"""
+import subprocess
+import sys
+
+
+def sh(cmd, allow_fail=False):
+    """Run a shell command, returning stdout text. allow_fail -> None on a
+    non-zero exit (else it raises). stderr is captured (PIPE), so it never leaks
+    to the terminal and is available on the raised error."""
+    try:
+        out = subprocess.run(
+            cmd, shell=True, check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        return out.stdout
+    except subprocess.CalledProcessError:
+        if allow_fail:
+            return None
+        raise
+
+
+def sh_capture(cmd):
+    """Like sh() but returns {"ok", "out"} with stdout+stderr merged, never raises."""
+    res = subprocess.run(
+        cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    return {"ok": res.returncode == 0, "out": (res.stdout or "") + (res.stderr or "")}
+
+
+def sh_trim(cmd):
+    """Like sh() but returns trimmed stdout, "" on any error (never raises). The
+    string-returning variant release.py used to call ``sh_capture`` — renamed so
+    the {"ok","out"} contract above unambiguously owns the ``sh_capture`` name (#41)."""
+    res = subprocess.run(
+        cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return (res.stdout or "").strip()
+
+
+def make_die(tag):
+    """die factory parameterized by the command tag — `die = make_die('close')`
+    yields the per-command `[close] ✗ <msg>` dialect uniformly."""
+    def die(msg, code=1):
+        sys.stderr.write("[{}] ✗ {}\n".format(tag, msg))
+        sys.exit(code)
+    return die
+
+
+def make_log(tag):
+    def log(msg):
+        print("[{}] {}".format(tag, msg))
+    return log

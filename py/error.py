@@ -24,14 +24,13 @@ import sys
 import config
 import store
 import store_core as core
+from sh import make_die
 
 TABLE = "errors"
 COLS = core.ERROR_COLS
 
 
-def die(msg, code=1):
-    sys.stderr.write("[error] ✗ {}\n".format(msg))
-    sys.exit(code)
+die = make_die("error")
 
 
 def _repo_basename(cwd=None):

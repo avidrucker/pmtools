@@ -38,28 +38,10 @@ from claim_core import (
     apply_marker_flip, build_banner_lines, classify_claim_push_result,
     build_claim_message, claim_push_action,
 )
+from sh import sh, make_die
 
 TODO_KW = "@" + "todo"
 INPROGRESS_KW = "@" + "inprogress"
-
-
-def sh(cmd, allow_fail=False):
-    """Run a shell command, returning stdout text. allow_fail -> None on error.
-
-    Uses shell=True to mirror claim.js's execSync semantics (the lccjs source
-    builds shell strings); callers pass already-quoted/built strings.
-    """
-    try:
-        out = subprocess.run(
-            cmd, shell=True, check=True,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        return out.stdout
-    except subprocess.CalledProcessError:
-        if allow_fail:
-            return None
-        raise
 
 
 def git(args, allow_fail=False):
@@ -87,9 +69,7 @@ def git_capture(args):
     return res.stdout or ""
 
 
-def die(msg, code=1):
-    sys.stderr.write("[claim] ✗ {}\n".format(msg))
-    sys.exit(code)
+die = make_die("claim")
 
 
 def main_root():

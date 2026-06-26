@@ -22,14 +22,12 @@ const config = require('./config');
 const store = require('./store');
 const core = require('./store_core');
 const { getProvider } = require('./provider');
+const { makeDie } = require('./sh');
 
 const TABLE = 'velocity';
 const COLS = core.VELOCITY_COLS;
 
-function die(msg, code = 1) {
-  process.stderr.write(`[velocity] ✗ ${msg}\n`);
-  process.exit(code);
-}
+const die = makeDie('velocity');
 
 function note(msg) {
   process.stderr.write(`[velocity] note: ${msg}\n`);

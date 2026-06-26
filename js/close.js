@@ -30,10 +30,11 @@
  *   node close.js <issue> --worktree-dir <dir>   # default .claude/worktrees
  */
 
-const { execSync, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { sh, shCapture, makeDie, makeLog } = require('./sh');
 const core = require('./close_core');
 const config = require('./config');
 const { getProvider } = require('./provider');
@@ -47,26 +48,6 @@ const {
   scopeAuditDiffCommand, velocityRowPresent, computeVelocityMismatch,
 } = core;
 
-function sh(cmd, allowFail = false) {
-  try {
-    return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (e) {
-    if (allowFail) return null;
-    throw e;
-  }
-}
-
-// Like sh() but always returns { ok, out } with stdout+stderr merged, never throws.
-function shCapture(cmd) {
-  try {
-    const out = execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    return { ok: true, out: out || '' };
-  } catch (e) {
-    const out = `${e.stdout || ''}${e.stderr || ''}`;
-    return { ok: false, out };
-  }
-}
-
 // arg-array git exec (#37): values are passed as argv and never re-parsed by a
 // shell. Returns { ok, out } like shCapture; used for teardown's `branch -D
 // <branch>`, where --branch is attacker-influenced.
@@ -75,14 +56,8 @@ function gitCapture(args) {
   return { ok: r.status === 0, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 
-function die(msg, code = 1) {
-  console.error(`[close] ✗ ${msg}`);
-  process.exit(code);
-}
-
-function log(msg) {
-  console.log(`[close] ${msg}`);
-}
+const die = makeDie('close');
+const log = makeLog('close');
 
 // The MAIN checkout's root, NOT the worktree we're closing — the worktree is
 // about to be removed, so the removal must run from a directory that survives.

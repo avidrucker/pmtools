@@ -40,6 +40,7 @@ import store
 import store_core
 import claim_core
 import provider as provider_mod
+from sh import sh, sh_capture, make_die, make_log
 from close_core import (
     DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
     claim_ref_delete_command, classify_claim_ref_delete,
@@ -47,28 +48,6 @@ from close_core import (
     extract_keywords, keywords_overlap, marker_still_present,
     scope_audit_diff_command, velocity_row_present, compute_velocity_mismatch,
 )
-
-
-def sh(cmd, allow_fail=False):
-    """Run a shell command, returning stdout text. allow_fail -> None on error."""
-    try:
-        out = subprocess.run(
-            cmd, shell=True, check=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
-        return out.stdout
-    except subprocess.CalledProcessError:
-        if allow_fail:
-            return None
-        raise
-
-
-def sh_capture(cmd):
-    """Like sh() but returns {"ok", "out"} with stdout+stderr merged, never raises."""
-    res = subprocess.run(
-        cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-    )
-    return {"ok": res.returncode == 0, "out": (res.stdout or "") + (res.stderr or "")}
 
 
 def git_capture(args):
@@ -80,13 +59,8 @@ def git_capture(args):
     return {"ok": res.returncode == 0, "out": (res.stdout or "") + (res.stderr or "")}
 
 
-def die(msg, code=1):
-    sys.stderr.write("[close] ✗ {}\n".format(msg))
-    sys.exit(code)
-
-
-def log(msg):
-    print("[close] {}".format(msg))
+die = make_die("close")
+log = make_log("close")
 
 
 def main_root():

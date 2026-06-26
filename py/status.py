@@ -19,16 +19,12 @@ from reconcile import reconcile
 from provider import get_provider
 from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored
 from config import load_pdd_config
+from sh import make_die
 
 DEFAULT_BRANCH_PATTERN = r"^(?:br-)?(?P<agent>[a-z0-9]+)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?P<issue>\d+)"
 
 
-def die(msg, code=1):
-    """Match the other fleet CLIs (claim/close/error/velocity): a bad flag is a
-    loud failure, not a silent no-op. Default exit 1 (operational); usage/argument
-    errors pass code=2 (the dispatcher's convention, adopted repo-wide in #44)."""
-    sys.stderr.write("[status] ✗ {}\n".format(msg))
-    sys.exit(code)
+die = make_die("status")
 
 
 def parse_args(argv):

@@ -26,14 +26,13 @@ import config
 import store
 import store_core as core
 from provider import get_provider
+from sh import make_die
 
 TABLE = "velocity"
 COLS = core.VELOCITY_COLS
 
 
-def die(msg, code=1):
-    sys.stderr.write("[velocity] ✗ {}\n".format(msg))
-    sys.exit(code)
+die = make_die("velocity")
 
 
 def note(msg):
