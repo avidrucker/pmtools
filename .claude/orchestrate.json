@@ -3,5 +3,6 @@
     "errors": { "enabled": true, "csvMirror": "docs/pmtools-errors.csv" },
     "velocity": { "enabled": true, "csvMirror": "docs/pmtools-velocity.csv" }
   },
-  "pdd": { "enabled": true, "ignoreFile": ".pddignore" }
+  "pdd": { "enabled": true, "ignoreFile": ".pddignore" },
+  "enrichment": { "statusCommand": "pmtools status" }
 }

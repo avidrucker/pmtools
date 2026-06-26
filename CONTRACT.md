@@ -533,6 +533,10 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
     "markdownIndexes": []          // append-only markdown indexes to marker-strip
   },                               //   (#36 guard 4); both default empty = off
   "updateParentTrackers": false    // tick parent tracker checkboxes on close (#36 guard 3)
+},
+"enrichment": {                    // sibling block; resolved by external rankers
+  "statusCommand": "pmtools status", // status reconciler a skill invokes (#79)
+  "clusterFile": null              // cluster soft-lock map (reserved, #80/LOCKED)
 }
 ```
 
@@ -549,6 +553,12 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
   `.pddignore`) names the exclude list; enabled-but-absent → one-line stderr warn
   + scan everything. Loaded by `config.load_pdd_config` (twin). See `§status` and
   `.pddignore.example`.
+- `enrichment.statusCommand` (default unset) names the status reconciler an
+  external ranker (e.g. the puzzle-triage skill) invokes to overlay claimed /
+  in-progress / locked work; `enrichment.clusterFile` (reserved for LOCKED,
+  #80) names the cluster soft-lock map. Both consumer-supplied, default unset
+  (no reconciler / no cluster locking). Loaded by `config.load_enrichment_config`
+  (twin). (#79)
 - `close.updateParentTrackers` (**default `false`**) — when true (or `close
   --update-trackers`), a successful close ticks the parent tracker issue's
   `- [ ] #N` checkbox for the closed child (#36 guard 3). Loaded by
