@@ -91,7 +91,7 @@ function listWorktrees(branchPattern) {
 }
 
 function renderTable(report) {
-  const glyph = { IDLE: '·', CLAIMED: '▶', STALE: '✗' };
+  const glyph = { IDLE: '·', CLAIMED: '▶', 'IN-PROGRESS': '↻', STALE: '✗' };
   const lines = report.markers.map((m) => {
     const wt = m.worktree ? ` [${m.worktree}]` : '';
     return `${glyph[m.status] || '?'} #${String(m.issue).padEnd(5)} ${m.status.padEnd(8)} `

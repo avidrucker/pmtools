@@ -23,6 +23,14 @@ class TestReconcile(unittest.TestCase):
         result = reconcile(data["grep"], data["worktrees"], data["issues"])
         self.assertEqual(result, expected)
 
+    def test_inprogress_fixture(self):
+        # #77: @inprogress + live worktree → IN-PROGRESS (distinct from a @todo
+        # CLAIMED), while @inprogress with no worktree stays STALE.
+        data = _load("inprogress.input.json")
+        expected = _load("inprogress.expected.json")
+        result = reconcile(data["grep"], data["worktrees"], data["issues"])
+        self.assertEqual(result, expected)
+
     def test_strict_helper_counts_stale(self):
         data = _load("basic.input.json")
         result = reconcile(data["grep"], data["worktrees"], data["issues"])

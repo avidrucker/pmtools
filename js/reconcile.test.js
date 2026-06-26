@@ -19,6 +19,14 @@ test('basic fixture matches golden output', () => {
   assert.deepEqual(result, expected);
 });
 
+test('inprogress fixture: @inprogress + live worktree → IN-PROGRESS (#77)', () => {
+  // Distinct from a @todo CLAIMED; @inprogress with no worktree stays STALE.
+  const input = load('inprogress.input.json');
+  const expected = load('inprogress.expected.json');
+  const result = reconcile(input.grep, input.worktrees, input.issues);
+  assert.deepEqual(result, expected);
+});
+
 test('strict helper counts stale', () => {
   const input = load('basic.input.json');
   const result = reconcile(input.grep, input.worktrees, input.issues);

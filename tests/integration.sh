@@ -903,6 +903,23 @@ run_status_pdd_suite() {
   else
     fail "[$lang] status: pdd on expected #252, got: [$issues]"; sed 's/^/      /' "$oo"
   fi
+
+  # (4) IN-PROGRESS end-to-end (#77): a canonical @inprogress marker whose issue
+  # has a LIVE worktree reconciles to IN-PROGRESS (distinct from a @todo CLAIMED;
+  # an @inprogress with no worktree would be STALE). Exercises the I/O glue
+  # grep_markers → list_worktrees → reconcile → --json, not just the pure core.
+  ( cd "$repo"
+    printf '// @inprogress #210:30m the active thing\n' > src/active.js
+    git add -A && git commit -qm "seed @inprogress marker for #210" ) >/dev/null 2>&1
+  git -C "$repo" worktree add -q -b apple/issue-210 "$TMPROOT/wt210.$lang.$RANDOM" HEAD >/dev/null 2>&1
+  local statusof='import json,sys; d=json.load(open(sys.argv[1])); print(next((m["status"] for m in d["markers"] if m["issue"]==210), "MISSING"))'
+  ( cd "$repo" && "${RUN[@]}" --json ) >"$oo" 2>/dev/null
+  local st210; st210="$(python3 -c "$statusof" "$oo" 2>/dev/null)"
+  if [ "$st210" = "IN-PROGRESS" ]; then
+    pass "[$lang] status: @inprogress + live worktree → IN-PROGRESS end-to-end (#77)"
+  else
+    fail "[$lang] status: expected IN-PROGRESS for #210, got: [$st210]"; sed 's/^/      /' "$oo"
+  fi
 }
 run_status_pdd_suite "py" python3 "$PY_STATUS"
 run_status_pdd_suite "js" node "$JS_STATUS"

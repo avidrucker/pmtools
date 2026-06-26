@@ -26,7 +26,9 @@ def reconcile(grep, worktrees, issues):
         worktree = agent_by_issue.get(issue)  # None if no live worktree
 
         if worktree is not None:
-            status = "CLAIMED"
+            # A live worktree exists: distinguish actively-in-progress work
+            # (@inprogress) from claimed-but-not-started (@todo). (#77)
+            status = "IN-PROGRESS" if m["keyword"] == "@inprogress" else "CLAIMED"
         elif state == "CLOSED" or m["keyword"] == "@inprogress":
             status = "STALE"
         else:
