@@ -10,7 +10,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { reconcile } = require('./reconcile');
 const { getProvider } = require('./provider');
-const { parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims } = require('./status_core');
+const { parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims,
+  parseArgs: coreParseArgs } = require('./status_core');
 const { parseClaimRefs } = require('./claim_core');
 const { loadPddConfig } = require('./config');
 const { makeDie } = require('./sh');
@@ -53,8 +54,10 @@ function loadIgnorePatterns(ignoreFile = '.pddignore', warnIfAbsent = false) {
 // when (a) its file is not .pddignore-excluded and (b) its text is a canonical
 // `@(todo|inprogress) #N:<estimate>` marker — incidental prose and estimate-less
 // mentions are dropped (the #1458 flood fix).
-function grepMarkers(ignorePatterns = []) {
-  const out = run('git', ['grep', '-nE', '@(todo|inprogress)']);
+// `rawOut` is injectable (#46): pass canned `git grep` output to unit-test the
+// parsing + .pddignore filter without shelling out; null → run git for real.
+function grepMarkers(ignorePatterns = [], rawOut = null) {
+  const out = rawOut !== null ? rawOut : run('git', ['grep', '-nE', '@(todo|inprogress)']);
   const markers = [];
   for (const raw of out.split('\n')) {
     if (!raw) continue;
@@ -75,11 +78,13 @@ function grepMarkers(ignorePatterns = []) {
   return markers;
 }
 
-function listWorktrees(branchPattern) {
+// `porcelain` is injectable (#46): pass canned `git worktree list --porcelain`
+// to unit-test the branch-pattern extraction; null → run git for real.
+function listWorktrees(branchPattern, porcelain = null) {
   const rx = new RegExp(branchPattern);
   // Reuse the canonical pure porcelain parser (#74); keep status's regex
   // extraction of issue/agent + null-safety (parser tolerates null/empty).
-  const porcelain = run('git', ['worktree', 'list', '--porcelain']);
+  if (porcelain === null) porcelain = run('git', ['worktree', 'list', '--porcelain']);
   const rows = [];
   for (const { branch } of parseWorktreePorcelain(porcelain)) {
     if (!branch) continue;
@@ -104,18 +109,15 @@ function renderTable(report) {
   return lines.length ? lines.join('\n') : '(no issue-linked markers found)';
 }
 
+// Thin impure wrapper over the shared pure parser (status_core, #46): an unknown
+// flag throws there; here we turn it into a usage die (exit 2) and substitute
+// this port's DEFAULT_BRANCH_PATTERN when none was supplied (the default's
+// named-group syntax is port-specific, so it lives here, not in the core).
 function parseArgs(argv) {
-  const a = { strict: false, json: false, host: 'github',
-    branchPattern: DEFAULT_BRANCH_PATTERN, limit: 50 };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i];
-    if (t === '--strict') a.strict = true;
-    else if (t === '--json') a.json = true;
-    else if (t === '--host') a.host = argv[++i];
-    else if (t === '--branch-pattern') a.branchPattern = argv[++i];
-    else if (t === '--limit') a.limit = parseInt(argv[++i], 10);
-    else if (t.startsWith('--')) die('unknown flag: ' + t, 2);
-  }
+  let a;
+  try { a = coreParseArgs(argv); }
+  catch (e) { return die(e.message, 2); }
+  if (!a.branchPattern) a.branchPattern = DEFAULT_BRANCH_PATTERN;
   return a;
 }
 

@@ -29,11 +29,15 @@ def _load(path):
 ERROR_DISPATCH = {
     "validate_error_row": store_core.validate_error_row,
     "csv_encode_row": store_core.csv_encode_row,
+    "parse_args": store_core.parse_store_args,
+    "resolve_csv": store_core.resolve_csv,
 }
 VELOCITY_DISPATCH = {
     "validate_velocity_row": store_core.validate_velocity_row,
     "derive_delta": store_core.derive_delta,
     "csv_encode_row": store_core.csv_encode_row,
+    "parse_args": store_core.parse_store_args,
+    "resolve_csv": store_core.resolve_csv,
 }
 
 

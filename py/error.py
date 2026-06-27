@@ -41,36 +41,12 @@ def _repo_basename(cwd=None):
 
 
 def parse_args(argv):
-    a = {"cmd": None, "json": None, "dbPath": None, "csv": None, "noCsv": False}
-    positionals = []
-    i = 0
-    n = len(argv)
-    while i < n:
-        t = argv[i]
-        if t == "--db-path":
-            i += 1; a["dbPath"] = argv[i] if i < n else None
-        elif t == "--csv":
-            i += 1; a["csv"] = argv[i] if i < n else None
-        elif t == "--no-csv":
-            a["noCsv"] = True
-        elif t.startswith("--"):
-            die("unknown flag: " + t, 2)
-        else:
-            positionals.append(t)
-        i += 1
-    a["cmd"] = positionals[0] if positionals else None
-    a["json"] = positionals[1] if len(positionals) > 1 else None
-    return a
-
-
-def _resolve_csv(args, store_cfg):
-    """The CSV mirror path to export to, or None. CLI --no-csv wins; then --csv;
-    then the project config's errors.csvMirror."""
-    if args["noCsv"]:
-        return None
-    if args["csv"]:
-        return args["csv"]
-    return store_cfg["csvMirror"]
+    # Thin impure wrapper over the shared pure parser (store_core, #46): an
+    # unknown flag raises there; here we turn it into a usage die (exit 2).
+    try:
+        return core.parse_store_args(argv)
+    except ValueError as e:
+        die(str(e), 2)
 
 
 def cmd_log(args, cfg):
@@ -108,7 +84,7 @@ def cmd_log(args, cfg):
     ticket_label = " (ticket #{})".format(row["ticket"]) if row.get("ticket") else ""
     print("Inserted error row id={}{}".format(rid, ticket_label))
 
-    csv_path = _resolve_csv(args, store_cfg)
+    csv_path = core.resolve_csv(args, store_cfg)
     if csv_path:
         nrows = store.export_csv(db_path, TABLE, csv_path, COLS)
         print("Exported {} rows -> {}".format(nrows, csv_path))

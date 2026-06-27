@@ -25,11 +25,15 @@ const load = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const ERROR_DISPATCH = {
   validate_error_row: core.validateErrorRow,
   csv_encode_row: core.csvEncodeRow,
+  parse_args: core.parseStoreArgs,
+  resolve_csv: core.resolveCsv,
 };
 const VELOCITY_DISPATCH = {
   validate_velocity_row: core.validateVelocityRow,
   derive_delta: core.deriveDelta,
   csv_encode_row: core.csvEncodeRow,
+  parse_args: core.parseStoreArgs,
+  resolve_csv: core.resolveCsv,
 };
 
 function fixtureStems(dir) {

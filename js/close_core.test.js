@@ -14,6 +14,7 @@ const close = require('./close_core');
 
 const ROOT = path.resolve(__dirname, '..');
 const CLOSE_FIXTURES = path.join(ROOT, 'fixtures', 'close');
+const RELEASE_FIXTURES = path.join(ROOT, 'fixtures', 'release');
 const load = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 
 // extract_keywords' optional 2nd arg is a stop set; the JSON encodes it as an
@@ -64,6 +65,29 @@ for (const [stem, fn] of Object.entries(DISPATCH)) {
   for (const c of cases) {
     test(`close:${stem} — ${c.name}`, () => {
       assert.deepEqual(fn(...c.args), c.expected);
+    });
+  }
+}
+
+// release shares close_core; its pure arg parser is graded from a separate
+// fixtures/release/ dir (#46). expected_error cases assert the parser throws (the
+// impure release.js wrapper turns the throw into a usage die).
+const RELEASE_DISPATCH = {
+  parse_args: close.parseReleaseArgs,
+};
+test('every release fixture file has a dispatch entry (1:1)', () => {
+  const stems = fs.readdirSync(RELEASE_FIXTURES)
+    .filter((f) => f.endsWith('.cases.json'))
+    .map((f) => f.replace('.cases.json', ''))
+    .sort();
+  assert.deepEqual(stems, Object.keys(RELEASE_DISPATCH).sort());
+});
+for (const [stem, fn] of Object.entries(RELEASE_DISPATCH)) {
+  const cases = load(path.join(RELEASE_FIXTURES, `${stem}.cases.json`));
+  for (const c of cases) {
+    test(`release:${stem} — ${c.name}`, () => {
+      if (c.expected_error) assert.throws(() => fn(...c.args));
+      else assert.deepEqual(fn(...c.args), c.expected);
     });
   }
 }

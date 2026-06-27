@@ -25,6 +25,7 @@ DISPATCH = {
     "is_pdd_ignored": status_core.is_pdd_ignored,
     "filter_open_claims": status_core.filter_open_claims,
     "is_blocked": status_core.is_blocked,
+    "parse_args": status_core.parse_args,
 }
 
 
@@ -37,7 +38,11 @@ class TestStatusCoreFixtures(unittest.TestCase):
         for stem, fn in DISPATCH.items():
             for case in _load(STATUS_FIXTURES / "{}.cases.json".format(stem)):
                 with self.subTest(fn=stem, case=case["name"]):
-                    self.assertEqual(fn(*case["args"]), case["expected"])
+                    if case.get("expected_error"):
+                        with self.assertRaises(ValueError):
+                            fn(*case["args"])
+                    else:
+                        self.assertEqual(fn(*case["args"]), case["expected"])
 
 
 if __name__ == "__main__":

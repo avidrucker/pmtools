@@ -1,0 +1,14 @@
+[
+  { "name": "--no-csv wins over an explicit --csv and the configured mirror → null",
+    "args": [{ "noCsv": true, "csv": "/tmp/explicit.csv" }, { "csvMirror": "docs/x.csv" }],
+    "expected": null },
+  { "name": "an explicit --csv wins over the configured mirror",
+    "args": [{ "noCsv": false, "csv": "/tmp/explicit.csv" }, { "csvMirror": "docs/x.csv" }],
+    "expected": "/tmp/explicit.csv" },
+  { "name": "no flags → falls back to the configured csvMirror",
+    "args": [{ "noCsv": false, "csv": null }, { "csvMirror": "docs/x.csv" }],
+    "expected": "docs/x.csv" },
+  { "name": "no flags and no configured mirror → null (nothing to export)",
+    "args": [{ "noCsv": false, "csv": null }, { "csvMirror": null }],
+    "expected": null }
+]

@@ -17,7 +17,8 @@ import sys
 
 from reconcile import reconcile
 from provider import get_provider
-from status_core import parse_canonical_marker, parse_pddignore, is_pdd_ignored, filter_open_claims
+from status_core import (parse_canonical_marker, parse_pddignore, is_pdd_ignored,
+                         filter_open_claims, parse_args as core_parse_args)
 from claim_core import parse_claim_refs
 from config import load_pdd_config
 from sh import make_die
@@ -31,31 +32,16 @@ die = make_die("status")
 
 
 def parse_args(argv):
-    """Hand-rolled, faithful twin of js/status.js parseArgs (was argparse, which
-    diverged from JS on unknown-flag handling + exit code). Unknown --flags die."""
-    a = {"strict": False, "json": False, "host": "github",
-         "branchPattern": DEFAULT_BRANCH_PATTERN, "limit": 50}
-    i = 0
-    n = len(argv)
-    while i < n:
-        t = argv[i]
-        if t == "--strict":
-            a["strict"] = True
-        elif t == "--json":
-            a["json"] = True
-        elif t == "--host":
-            i += 1; a["host"] = argv[i] if i < n else None
-        elif t == "--branch-pattern":
-            i += 1; a["branchPattern"] = argv[i] if i < n else DEFAULT_BRANCH_PATTERN
-        elif t == "--limit":
-            i += 1
-            try:
-                a["limit"] = int(argv[i]) if i < n else 50
-            except (TypeError, ValueError):
-                a["limit"] = 50
-        elif t.startswith("--"):
-            die("unknown flag: " + t, 2)
-        i += 1
+    """Thin impure wrapper over the shared pure parser (status_core, #46): an
+    unknown flag raises there; here we turn it into a usage die (exit 2) and
+    substitute this port's DEFAULT_BRANCH_PATTERN when none was supplied (the
+    default's named-group syntax is port-specific, so it lives here, not the core)."""
+    try:
+        a = core_parse_args(argv)
+    except ValueError as e:
+        die(str(e), 2)
+    if not a["branchPattern"]:
+        a["branchPattern"] = DEFAULT_BRANCH_PATTERN
     return a
 
 
@@ -89,14 +75,16 @@ def load_ignore_patterns(ignore_file=".pddignore", warn_if_absent=False):
         return []
 
 
-def grep_markers(ignore_patterns=None):
+def grep_markers(ignore_patterns=None, raw_out=None):
     """[{file,line,keyword,issue}] for canonical PDD markers, honoring .pddignore.
 
     A grep hit counts only when (a) its file is not .pddignore-excluded and
     (b) its text is a canonical `@(todo|inprogress) #N:<estimate>` marker —
     incidental prose and estimate-less mentions are dropped (the #1458 flood)."""
     ignore_patterns = ignore_patterns or []
-    out = _run(["git", "grep", "-nE", r"@(todo|inprogress)"])
+    # raw_out is injectable (#46): pass canned `git grep` output to unit-test the
+    # parsing + .pddignore filter without shelling out; None → run git for real.
+    out = raw_out if raw_out is not None else _run(["git", "grep", "-nE", r"@(todo|inprogress)"])
     markers = []
     for raw in out.splitlines():
         # git grep -n => "file:line:content"
@@ -118,12 +106,15 @@ def grep_markers(ignore_patterns=None):
     return markers
 
 
-def list_worktrees(branch_pattern):
-    """[{branch,issue,agent}] parsed from `git worktree list --porcelain`."""
+def list_worktrees(branch_pattern, porcelain=None):
+    """[{branch,issue,agent}] parsed from `git worktree list --porcelain`.
+
+    porcelain is injectable (#46): pass canned output to unit-test the
+    branch-pattern extraction; None → run git for real."""
     rx = re.compile(_js_to_py_named_groups(branch_pattern))
     # Reuse the canonical pure porcelain parser (#74); keep status's regex
     # extraction + null-safety (parser tolerates None/empty).
-    out = _run(["git", "worktree", "list", "--porcelain"])
+    out = porcelain if porcelain is not None else _run(["git", "worktree", "list", "--porcelain"])
     rows = []
     for r in parse_worktree_porcelain(out):
         branch = r["branch"]

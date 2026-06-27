@@ -326,6 +326,24 @@ function releaseGuardVerdict(ahead, dirty, force) {
   return 'ok';
 }
 
+// Pure arg parser for the release CLI (#46): `release <N> [--force]`. Accepts a
+// single numeric issue, a `--force` flag, and a bare `--` separator (skipped).
+// THROWS on a second issue number or any other token (the impure release.js
+// wrapper turns the throw into a usage die, exit 2). A missing issue yields
+// issue=null — the wrapper validates and dies, so the parser stays pure.
+function parseReleaseArgs(argv) {
+  const a = { issue: null, force: false };
+  for (const t of argv) {
+    if (t === '--force') a.force = true;
+    else if (t === '--') continue;
+    else if (/^\d+$/.test(t)) {
+      if (a.issue !== null) throw new Error(`unexpected extra arg: ${t} (usage: release <N> [--force])`);
+      a.issue = t;
+    } else throw new Error(`unknown arg: ${t} (usage: release <N> [--force])`);
+  }
+  return a;
+}
+
 module.exports = {
   DEFAULT_MAX_RETRIES, UNION_FILES, KEYWORD_STOP_SET, SHORT_TECH_WORDS,
   isSafeRef,
@@ -338,4 +356,5 @@ module.exports = {
   isVelocityCsvOnlyConflict, isMarkdownIndexOnlyConflict, resolveAppendOnlyMarkdownConflict,
   findParentTrackers, tickCheckboxForIssue,
   parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
+  parseReleaseArgs,
 };

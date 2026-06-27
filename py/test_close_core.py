@@ -13,6 +13,7 @@ import close_core
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CLOSE_FIXTURES = ROOT / "fixtures" / "close"
+RELEASE_FIXTURES = ROOT / "fixtures" / "release"
 
 
 def _load(path):
@@ -78,6 +79,31 @@ class TestCloseCoreFixtures(unittest.TestCase):
         # The pmtools port treats any rebase conflict as blocking; the lccjs
         # union auto-resolve set is out of scope.
         self.assertEqual(close_core.UNION_FILES, [])
+
+
+class TestReleaseParseArgsFixtures(unittest.TestCase):
+    """release shares close_core; its pure arg parser is graded from a separate
+    fixtures/release/ dir (#46). expected_error cases assert the parser raises
+    (the impure release.py wrapper turns the raise into a usage die)."""
+
+    RELEASE_DISPATCH = {
+        "parse_args": close_core.parse_release_args,
+    }
+
+    def test_every_fixture_has_a_dispatch_entry(self):
+        stems = {p.stem.replace(".cases", "") for p in RELEASE_FIXTURES.glob("*.cases.json")}
+        self.assertEqual(stems, set(self.RELEASE_DISPATCH), "fixture files and dispatch map must match 1:1")
+
+    def test_all_release_fixtures(self):
+        for stem, fn in self.RELEASE_DISPATCH.items():
+            cases = _load(RELEASE_FIXTURES / "{}.cases.json".format(stem))
+            for case in cases:
+                with self.subTest(fn=stem, case=case["name"]):
+                    if case.get("expected_error"):
+                        with self.assertRaises(ValueError):
+                            fn(*case["args"])
+                    else:
+                        self.assertEqual(fn(*case["args"]), case["expected"])
 
 
 if __name__ == "__main__":
