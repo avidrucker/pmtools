@@ -26,7 +26,9 @@ port="${PMTOOLS_PORT:-py}"
 
 # Pull out the dispatcher-level --port flag wherever it appears; keep the rest
 # (command + the tool's own args) intact and in order.
+# Also detect --help/-h before we case-dispatch on the command name.
 args=()
+show_help=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --port)
@@ -34,6 +36,8 @@ while [ $# -gt 0 ]; do
         echo "pmtools: --port requires a value (py|js)" >&2; exit 2
       fi
       port="$2"; shift 2 ;;
+    --help|-h)
+      show_help=true; shift ;;
     *) args+=("$1"); shift ;;
   esac
 done
@@ -41,14 +45,53 @@ done
 cmd="${args[0]:-}"
 rest=("${args[@]:1}")
 
+if $show_help || [ -z "$cmd" ]; then
+    cat <<'HELPTEXT'
+pmtools — project-management helpers for the fruit-agent workflow.
+
+USAGE
+  pmtools <command> [--port py|js] [args...]
+  pmtools --help
+
+COMMANDS
+  status      Reconcile @todo/@inprogress markers against worktrees + issue state.
+  claim       Stake a worktree under an agent identity for a given issue.
+  preflight   Stamp start time, run start-of-task reads, assert issue OPEN.
+  close       Land the close commit on origin/main, then tear down the worktree.
+  release     Abandon a claim + tear down its worktree (issue stays OPEN).
+  sweep       Delete stale refs/claims/issue-N whose issue is CLOSED.
+  error       Log an agent error into the SQLite errors store.
+  velocity    Log a velocity row into the SQLite velocity store.
+
+FLAGS
+  --port py|js   Port to run (default: py). Overrides $PMTOOLS_PORT.
+  --help, -h     Show this help message.
+  --json         Output machine-readable JSON (where supported).
+
+EXAMPLES
+  pmtools status --json
+  pmtools claim 42 --as apple
+  pmtools preflight 42
+  pmtools close 42
+  pmtools error log '{"occurred_iso":"...","error_type":"CLAIM_FAIL","message":"...","ticket":3}'
+  pmtools velocity log '{"role":"DEV","agent":"apple","ticket":3,"h_min":30,"actual_min":25}'
+
+CONFIG
+  ~/.config/pycats/settings.json   Per-project persisted preferences.
+  .claude/orchestrate.json          Fleet config (roster, worktree-dir, storage).
+  $PMTOOLS_HOME                    Override clone root (else self-resolved).
+  $PMTOOLS_PORT                    Override port (py|js).
+
+DOCS
+  CONTRACT.md   Language-neutral behavioral source of truth.
+  README.md     Install guide and project overview.
+HELPTEXT
+    exit 0
+fi
+
 case "$cmd" in
   status|claim|preflight|close|release|sweep|error|velocity) ;;
-  ""|-h|--help)
-    echo "usage: pmtools <status|claim|preflight|close|release|sweep|error|velocity> [--port py|js] [args...]"
-    echo "  clone root: \$PMTOOLS_HOME or self-resolved ($root)"
-    echo "  port:       --port / \$PMTOOLS_PORT / py (current: $port)"
-    exit 0 ;;
-  *) echo "pmtools: unknown command '$cmd' (expected status|claim|preflight|close|release|sweep|error|velocity)" >&2; exit 2 ;;
+  *) echo "pmtools: unknown command '$cmd' (run 'pmtools --help' for usage)" >&2; exit 2 ;;
 esac
 
 case "$port" in
