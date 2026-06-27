@@ -8,10 +8,33 @@ gitlab adapter would get the method in JS but not PY. These pin the parity.
 
     python3 -m unittest discover -s py
 """
+import json
 import unittest
 
 import provider
 import velocity
+
+
+class ParseIssueStateRow(unittest.TestCase):
+    """parse_issue_state_row: pure mapping of a `gh issue view
+    --json state,labels,blockedBy` payload to a reconcile-ready row (#87).
+    Tested with canned JSON, no gh shell-out. Mirrors js parseIssueStateRow."""
+
+    def test_surfaces_blocked_by_count(self):
+        out = json.dumps({"state": "OPEN", "labels": [{"name": "bug"}],
+                          "blockedBy": {"nodes": [], "totalCount": 2}})
+        self.assertEqual(provider.parse_issue_state_row(out, 7),
+                         {"number": 7, "state": "OPEN", "labels": ["bug"], "blockedByCount": 2})
+
+    def test_blocked_by_count_defaults_to_zero(self):
+        out = json.dumps({"state": "CLOSED", "labels": []})
+        self.assertEqual(provider.parse_issue_state_row(out, 9),
+                         {"number": 9, "state": "CLOSED", "labels": [], "blockedByCount": 0})
+
+    def test_null_garbage_or_non_open_closed_returns_none(self):
+        self.assertIsNone(provider.parse_issue_state_row(None, 1))
+        self.assertIsNone(provider.parse_issue_state_row("not json", 1))
+        self.assertIsNone(provider.parse_issue_state_row(json.dumps({"state": "DRAFT"}), 1))
 
 
 class IssueTitleParity(unittest.TestCase):

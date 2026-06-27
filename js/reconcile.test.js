@@ -36,6 +36,15 @@ test('blocked fixture: `blocked` label → blocked:true overlay, orthogonal to s
   assert.deepEqual(result, expected);
 });
 
+test('blocked-by fixture: a `blocked-by` relation (blockedByCount>0) sets blocked:true with no label (#87)', () => {
+  // 300 has no `blocked` label but blockedByCount:2 → blocked:true; 301 has
+  // neither → blocked:false. The overlay now reflects the relation, not just the label.
+  const input = load('blocked-by-relation.input.json');
+  const expected = load('blocked-by-relation.expected.json');
+  const result = reconcile(input.grep, input.worktrees, input.issues);
+  assert.deepEqual(result, expected);
+});
+
 test('strict helper counts stale', () => {
   const input = load('basic.input.json');
   const result = reconcile(input.grep, input.worktrees, input.issues);

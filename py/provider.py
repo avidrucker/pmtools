@@ -20,28 +20,43 @@ def _run(cmd, timeout=5):
         return None
 
 
+def parse_issue_state_row(out, number):
+    """Pure: map one `gh issue view --json state,labels,blockedBy` payload (the
+    raw stdout string, or None when offline) to a reconcile-ready row, or None
+    when the issue is absent / unparseable / not OPEN|CLOSED (-> UNKNOWN).
+    `blockedByCount` is the `blockedBy.totalCount` (active blocked-by relation
+    count, #87). Mirrors js parseIssueStateRow."""
+    if out is None:
+        return None
+    try:
+        data = json.loads(out)
+    except (ValueError, TypeError):
+        return None
+    state = str(data.get("state") or "").upper()
+    if state not in ("OPEN", "CLOSED"):
+        return None
+    labels = [lab.get("name") for lab in (data.get("labels") or [])
+              if isinstance(lab, dict)]
+    blocked_by = data.get("blockedBy") or {}
+    blocked_by_count = blocked_by.get("totalCount") or 0
+    return {"number": number, "state": state, "labels": labels,
+            "blockedByCount": blocked_by_count}
+
+
 class GitHubProvider:
     name = "github"
 
     def issue_states(self, numbers):
-        """[{number, state, labels:[<name>...]}] for the given issue numbers
-        (best-effort). `labels` drives the BLOCKED overlay (#78); it rides the
-        same per-issue lookup status already makes, so no extra gh calls."""
+        """[{number, state, labels:[<name>...], blockedByCount}] for the given
+        issue numbers (best-effort). `labels` + the `blockedBy` relation drive the
+        BLOCKED overlay (#78/#87); `blockedBy` rides the same per-issue lookup
+        status already makes — one extra json field, no extra gh calls."""
         rows = []
         for n in numbers:
-            out = _run(["gh", "issue", "view", str(n), "--json", "state,labels"])
-            if out is None:
-                continue  # offline / not found -> omit -> UNKNOWN
-            try:
-                data = json.loads(out)
-            except (ValueError, TypeError):
-                continue
-            state = str(data.get("state") or "").upper()
-            if state not in ("OPEN", "CLOSED"):
-                continue
-            labels = [lab.get("name") for lab in (data.get("labels") or [])
-                      if isinstance(lab, dict)]
-            rows.append({"number": n, "state": state, "labels": labels})
+            out = _run(["gh", "issue", "view", str(n), "--json", "state,labels,blockedBy"])
+            row = parse_issue_state_row(out, n)
+            if row:  # None -> offline / not found / non-OPEN|CLOSED -> UNKNOWN
+                rows.append(row)
         return rows
 
     def list_open_issues_with_bodies(self, limit):

@@ -157,15 +157,18 @@ For each grep marker, in this precedence:
 `state == "UNKNOWN"` never by itself makes a marker STALE (offline `gh` must not
 manufacture false staleness).
 
-**`blocked` overlay (#78).** Beyond the lifecycle `status`, each row carries a
-boolean `blocked` — `true` iff the issue holds the canonical `blocked` label. It
-is an **overlay, orthogonal to `status`**: an issue can be `IN-PROGRESS` *and*
-`blocked`. Labels ride the same per-issue provider lookup as `state` (`gh issue
-view N --json state,labels` — no extra calls); the `pure` decision is
-`is_blocked(labels)` (exact match on the lowercase label name). The table render
-appends `⛔` to blocked rows. Out of scope (→ #84): the `blocked-by` *relation*
-and **marker-less** blocked issues (rows derive from markers, so a `blocked`
-issue with no `@todo`/`@inprogress` produces no row).
+**`blocked` overlay (#78, #87).** Beyond the lifecycle `status`, each row carries a
+boolean `blocked` — `true` iff the issue holds the canonical `blocked` label **or**
+has an active `blocked-by` relation. It is an **overlay, orthogonal to `status`**:
+an issue can be `IN-PROGRESS` *and* `blocked`. Both signals ride the same per-issue
+provider lookup as `state` (`gh issue view N --json state,labels,blockedBy` — no
+extra calls); the provider surfaces `blockedByCount` = `blockedBy.totalCount`, and
+the `pure` decision is `is_blocked(labels, blockedByCount=0)` → label match (exact,
+lowercase) **OR** `blockedByCount > 0`. The table render appends `⛔` to blocked
+rows. **Limitation:** `totalCount` counts the relation links regardless of whether
+the blocker is open or closed (open-only semantics would need `blockedBy.nodes[].state`;
+deferred). Still out of scope (→ #88): **marker-less** blocked issues (rows derive
+from markers, so a `blocked` issue with no `@todo`/`@inprogress` produces no row).
 
 ### CLI behavior
 
