@@ -75,6 +75,20 @@ function parseClaimRefs(listing) {
   return [...issues].sort((a, b) => a - b);
 }
 
+// The subset of claim refs SAFE to sweep (#71): only those whose issue the provider
+// CONFIRMS as CLOSED. Deliberate complement of statusCore.filterOpenClaims, and
+// STRICTER than claimRefIsStale on purpose — an OPEN claim past its TTL is NOT
+// swept, because #71's guardrail forbids touching any OPEN/in-flight ref (it may be
+// an active worktree lock). OPEN, MERGED, or unknown (offline / no state row) is
+// never swept, so a lookup failure can never delete a live claim. Returns targets
+// in claimNumbers order. Pure; deletion is the caller's job. Mirrors py.
+function classifySweepTargets(claimNumbers, issueStates) {
+  const closed = new Set((issueStates || [])
+    .filter((s) => s && String((s && s.state) || '').trim().toUpperCase() === 'CLOSED')
+    .map((s) => s.number));
+  return (claimNumbers || []).filter((n) => closed.has(n));
+}
+
 function resolveIdentity(opts, env, branch = null) {
   if (opts.as) {
     return { name: normalizeIdentity(opts.as), source: 'as', modeLabel: 'reuse (--as)' };
@@ -368,7 +382,7 @@ module.exports = {
   isSafeRef,
   langTag, buildBranch, buildWorktreeName, branchToWorktreeName,
   parseBranchName, parseWorktreeName,
-  slugify, normalizeIdentity, inferFruitFromBranch, parseClaimRefs, resolveIdentity, parseArgs,
+  slugify, normalizeIdentity, inferFruitFromBranch, parseClaimRefs, classifySweepTargets, resolveIdentity, parseArgs,
   checkIdentityName, assessBaseStaleness, sentinelBranch, isSentinelStaleByAge,
   applyMarkerFlip, worktreesWithIssue, findLiveWorktreeForIssue, findSameIssueCollision,
   shouldBlockWorktreeGuard, shouldBlockClaim, needsAreaLabel, shouldBlockUncategorized,
