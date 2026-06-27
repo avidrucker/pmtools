@@ -16,6 +16,7 @@ source of truth; `fixtures/` are the golden cases every port is graded against.
 | `claim <issue> [slug] --as <name> [--base <ref>] [--dry-run] [--lane-check] [--copy-env] [--worktree-dir D] [--roster a,b,c]` | Stake a worktree under an agent identity | fleet-only |
 | `preflight <issue>` | Stamp start time, run start-of-task reads, assert issue OPEN | fleet-only |
 | `close <issue> [--branch N] [--max N] [--dry-run] [--keep] [--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] [--worktree-dir D]` | Land the close commit on `origin/main`, then (and only then) tear down the worktree | fleet-only |
+| `sweep [--dry-run] [--host github\|gitlab]` | Delete stale `refs/claims/issue-N` whose issue is CLOSED — the explicit, auditable alternative to `claim`'s nag | fleet-only |
 | `error <log\|export> '<json>' [--db-path P] [--csv P\|--no-csv]` | Log an agent error into the SQLite errors store (+ optional derived CSV mirror) | storage |
 | `velocity <log\|export> '<json>' [--db-path P] [--csv P\|--no-csv]` | Log a velocity row into the SQLite velocity store (+ optional derived CSV mirror) | storage |
 
@@ -530,6 +531,42 @@ unknown/extra arg) → `2`; an **operational** guard refusal (unpushed / dirty) 
 plus the shared `claim_ref_delete_command` / `classify_claim_ref_delete` from
 `close`. Host-agnostic: `release` never calls a provider, so github/gitlab work
 identically. (Port of lccjs#1437.)
+
+---
+
+## `sweep` (fleet-only) — ported (py + js)
+
+`sweep [--dry-run] [--host github|gitlab]` deletes stale claim refs — every
+`refs/claims/issue-N` on origin whose issue is **CONFIRMED CLOSED** — so they stop
+accumulating and a human never hand-runs the destructive `git push origin
+:refs/claims/issue-N`. It is the explicit, auditable counterpart to `claim`, which
+only ever **nagged** about a stale ref (#71).
+
+Flow: `parse_claim_refs` over `git ls-remote origin refs/claims/*` →
+`provider.issue_states(claimed)` → `classify_sweep_targets` (the CLOSED subset) →
+per-target `delete_claim_ref` (the shared best-effort arg-array exec from
+close/release) → re-list to confirm. `--dry-run` prints the `WOULD SWEEP …` plan
+plus the equivalent `git push origin :…` commands and deletes nothing.
+
+**Guardrail (destructive op, deliberately conservative):** only an issue the
+provider reports **CLOSED** is swept. OPEN, MERGED, or **unknown** (offline / not
+looked up) is **never** deleted — an active claim is a live worktree lock, and a
+host-lookup failure must never delete one. This is STRICTER than the existing
+`claim_ref_is_stale` seam (which also ages out OPEN-past-TTL claims); reaping
+abandoned-but-OPEN claims is a separate, riskier concern left to a future ticket.
+
+### Exit codes
+
+`0` on success or nothing-to-do (no refs, or none CLOSED); a **usage error**
+(unknown flag, stray positional, unknown `--host`) → `2`; a host not yet
+implemented (`gitlab`) or a delete that left a ref on origin → `1`.
+
+### Pure seam (`claim_core`, graded against `fixtures/claim/*`)
+
+`classify_sweep_targets(claim_numbers, issue_states)` — the CLOSED-only subset safe
+to delete; the deliberate complement of `status_core.filter_open_claims` (#81).
+`parse_claim_refs` (#70) supplies the claim list. The impure deletion + provider
+lookup live in `sweep.{py,js}`.
 
 ---
 

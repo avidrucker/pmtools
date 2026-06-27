@@ -1,0 +1,22 @@
+[
+  { "name": "CLOSED claim refs are swept; OPEN is kept",
+    "args": [[1, 5, 7], [{"number": 1, "state": "CLOSED"}, {"number": 5, "state": "CLOSED"}, {"number": 7, "state": "OPEN"}]],
+    "expected": [1, 5] },
+  { "name": "only the CLOSED one is swept",
+    "args": [[1, 2], [{"number": 1, "state": "OPEN"}, {"number": 2, "state": "CLOSED"}]],
+    "expected": [2] },
+  { "name": "unknown state (no row / offline) is NEVER swept",
+    "args": [[3], []], "expected": [] },
+  { "name": "OPEN is never swept, even though a sweep is requested (active lock)",
+    "args": [[4], [{"number": 4, "state": "OPEN"}]], "expected": [] },
+  { "name": "lowercase 'closed' tolerated → swept",
+    "args": [[8], [{"number": 8, "state": "closed"}]], "expected": [8] },
+  { "name": "MERGED is NOT swept (only exact CLOSED — conservative vs claim_ref_is_stale)",
+    "args": [[10], [{"number": 10, "state": "MERGED"}]], "expected": [] },
+  { "name": "single CLOSED → swept",
+    "args": [[9], [{"number": 9, "state": "CLOSED"}]], "expected": [9] },
+  { "name": "empty claims → empty", "args": [[], []], "expected": [] },
+  { "name": "state row for an unclaimed issue is ignored",
+    "args": [[1], [{"number": 1, "state": "CLOSED"}, {"number": 99, "state": "CLOSED"}]],
+    "expected": [1] }
+]

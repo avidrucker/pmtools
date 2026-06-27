@@ -91,6 +91,20 @@ def parse_claim_refs(listing):
     return sorted(issues)
 
 
+def classify_sweep_targets(claim_numbers, issue_states):
+    """The subset of claim refs SAFE to sweep (#71): only those whose issue the
+    provider CONFIRMS as CLOSED. This is the deliberate complement of
+    status_core.filter_open_claims, and is STRICTER than claim_ref_is_stale on
+    purpose — an OPEN claim past its TTL is NOT swept here, because #71's guardrail
+    forbids touching any OPEN/in-flight ref (it may be an active worktree lock).
+    OPEN, MERGED, or unknown (offline / no state row) is never swept, so a lookup
+    failure can never delete a live claim. Returns the targets in claim_numbers
+    order (already sorted by parse_claim_refs). Pure; deletion is the caller's job."""
+    closed = {s["number"] for s in (issue_states or [])
+              if s and str(s.get("state") or "").strip().upper() == "CLOSED"}
+    return [n for n in (claim_numbers or []) if n in closed]
+
+
 def resolve_identity(opts, env, branch=None):
     """Resolve agent identity by precedence: --as > env > branch-inferred > auto.
 
