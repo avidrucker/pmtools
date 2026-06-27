@@ -345,6 +345,8 @@ only), `claim_ref_delete_command` + `classify_claim_ref_delete`
 configured union files classifies as `union-only` and auto-resolves via
 `merge=union`, #36 guard 2), `body_closes_issue` (GitHub close-keyword matcher),
 `pushed_commit_references_issue` (#7 — references `#N` but does NOT close it),
+`unsupported_flag_hint` (#9 — teaching message for a sibling-command flag like
+`--as` that `close` does not accept; `None` for a truly unknown flag),
 `extract_keywords` + `keywords_overlap` (+ `KEYWORD_STOP_SET` / `SHORT_TECH_WORDS`),
 `marker_still_present`, `scope_audit_diff_command`, `velocity_row_present`
 (Check A — any row for the ticket), `velocity_ticket_mismatch` +
@@ -403,7 +405,10 @@ transform; and the parent-tracker seams `find_parent_trackers` +
 ### Exit codes
 
 `0` on success (close, recovery clean-close, dry-run, or `--keep`). A **usage
-error** (unknown flag, missing/invalid issue number) → `2`. Any **operational**
+error** (unknown flag, missing/invalid issue number) → `2` — including `--as`,
+which `close` does not accept (identity is branch-inferred); it stays a usage
+error (exit `2`) but `unsupported_flag_hint` gives it a targeted teaching message
+instead of the bare `unknown flag` text (#9). Any **operational**
 `die` → `1`: not a worktree branch / wrong issue, missing worktree under
 `--branch`, no `Closes #N` commit, blocking rebase conflict, `rejected-other`
 push, exhausted `--max` race retries, the on-origin-main gate failing, a missing/
