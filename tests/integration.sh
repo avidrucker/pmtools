@@ -26,7 +26,51 @@ JS_VELOCITY="$PMTOOLS_ROOT/js/velocity.js"
 FAILS=0
 PASSES=0
 TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/pmtools-it.XXXXXX")"
-trap 'rm -rf "$TMPROOT"' EXIT
+# Fail loudly rather than mkdir-ing a garbage path if mktemp produced nothing — an
+# empty temp-root once let the suite write throwaway repos INTO the work tree (#20).
+[ -n "$TMPROOT" ] && [ -d "$TMPROOT" ] || {
+  echo "FATAL: mktemp temp-root is empty/missing — refusing to run (#20)." >&2; exit 1; }
+
+# --- Hermeticity guard (#20) -------------------------------------------------
+# The suite must NEVER mutate the caller's repo, even when run from inside a
+# pmtools worktree while dogfooding. Two defenses:
+#   1) run entirely from inside $TMPROOT, so any git op that loses its `-C`/cd
+#      target falls back to a NON-repo cwd (a harmless "not a git repository"),
+#      never the caller's branch/index;
+#   2) snapshot the caller repo's HEAD + porcelain status now and assert it is
+#      byte-identical on exit — catching a leaked commit OR file, and failing the
+#      run loudly if the harness touched the caller's repo.
+CALLER_DIR="$PWD"
+CALLER_HEAD="$(git -C "$CALLER_DIR" rev-parse HEAD 2>/dev/null || true)"
+CALLER_STATUS="$(git -C "$CALLER_DIR" status --porcelain 2>/dev/null || true)"
+
+assert_caller_pristine() {
+  [ -n "$CALLER_HEAD" ] || return 0   # caller not in a git repo → nothing to protect
+  local head status
+  head="$(git -C "$CALLER_DIR" rev-parse HEAD 2>/dev/null || true)"
+  status="$(git -C "$CALLER_DIR" status --porcelain 2>/dev/null || true)"
+  if [ "$head" != "$CALLER_HEAD" ] || [ "$status" != "$CALLER_STATUS" ]; then
+    echo "" >&2
+    echo "FATAL (#20): the harness mutated the caller's repo at $CALLER_DIR" >&2
+    echo "  HEAD before: ${CALLER_HEAD:-<none>}" >&2
+    echo "  HEAD after : ${head:-<none>}" >&2
+    echo "  status delta (- before / + after):" >&2
+    diff <(printf '%s\n' "$CALLER_STATUS") <(printf '%s\n' "$status") | sed 's/^/    /' >&2
+    return 1
+  fi
+  return 0
+}
+
+_cleanup() {
+  local rc=$?
+  assert_caller_pristine || rc=1
+  rm -rf "$TMPROOT"
+  trap - EXIT
+  exit "$rc"
+}
+trap _cleanup EXIT
+
+cd "$TMPROOT" || { echo "FATAL: cannot cd into temp-root $TMPROOT (#20)." >&2; exit 1; }
 
 pass() { PASSES=$((PASSES + 1)); echo "  ok   - $1"; }
 fail() { FAILS=$((FAILS + 1)); echo "  FAIL - $1"; }
