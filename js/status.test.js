@@ -64,6 +64,20 @@ test('status --json schema: top-level keys are {markers, stale, claims} with doc
   assert.ok(Array.isArray(json.stale));
 });
 
+test('renderTable: a synthetic marker-less BLOCKED row shows "(no marker)" and a single ⛔ (#88)', () => {
+  const report = {
+    markers: [
+      { issue: 88, file: null, line: null, keyword: null, state: 'OPEN', worktree: null, status: 'BLOCKED', blocked: true },
+    ],
+    stale: [],
+  };
+  const line = renderTable(report).split('\n')[0];
+  assert.match(line, /\(no marker\)/, 'marker-less row should render (no marker), not null:null');
+  assert.match(line, /BLOCKED/, 'row should carry the BLOCKED status');
+  assert.equal((line.match(/⛔/g) || []).length, 1, 'BLOCKED glyph must not be doubled by the overlay');
+  assert.doesNotMatch(line, /null/, 'no literal null should leak into the rendered row');
+});
+
 test('renderTable: a blocked row carries the ⛔ overlay glyph; a non-blocked row does not (#78)', () => {
   const report = {
     markers: [

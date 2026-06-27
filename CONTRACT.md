@@ -167,8 +167,20 @@ the `pure` decision is `is_blocked(labels, blockedByCount=0)` → label match (e
 lowercase) **OR** `blockedByCount > 0`. The table render appends `⛔` to blocked
 rows. **Limitation:** `totalCount` counts the relation links regardless of whether
 the blocker is open or closed (open-only semantics would need `blockedBy.nodes[].state`;
-deferred). Still out of scope (→ #88): **marker-less** blocked issues (rows derive
-from markers, so a `blocked` issue with no `@todo`/`@inprogress` produces no row).
+deferred).
+
+**Marker-less blocked rows (#88).** Because rows are marker-derived, a `blocked`
+issue with no `@todo`/`@inprogress` marker would produce no row. `status` therefore
+runs one extra discovery call — `gh issue list --label blocked --state open
+--json number,state,labels` (count-independent; best-effort, `[]` offline) — and
+`reconcile` appends a **synthetic row** for each discovered issue **not** already
+represented by a marker, *after* the marker rows (which keep grep order). A
+synthetic row has `file/line/keyword = null` (rendered `(no marker)`), `status:
+"BLOCKED"` (its own `⛔` glyph; the orthogonal overlay `⛔` is suppressed to avoid
+doubling), and `blocked: true`. The blocked set is supplied by the caller, so the
+shared core carries no consumer path. Relation-only marker-less issues (blocked
+solely via `blocked-by`, no label) are not discoverable by label and remain out
+of scope.
 
 ### CLI behavior
 

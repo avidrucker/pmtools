@@ -48,6 +48,15 @@ class TestReconcile(unittest.TestCase):
         result = reconcile(data["grep"], data["worktrees"], data["issues"])
         self.assertEqual(result, expected)
 
+    def test_markerless_blocked_fixture(self):
+        # #88: 300 already has a marker (no synthetic dupe); 400 (with worktree)
+        # and 401 (no worktree) are marker-less blocked → synthetic BLOCKED rows
+        # appended after markers, with null file/line/keyword.
+        data = _load("markerless-blocked.input.json")
+        expected = _load("markerless-blocked.expected.json")
+        result = reconcile(data["grep"], data["worktrees"], data["issues"], data["blockedIssues"])
+        self.assertEqual(result, expected)
+
     def test_strict_helper_counts_stale(self):
         data = _load("basic.input.json")
         result = reconcile(data["grep"], data["worktrees"], data["issues"])

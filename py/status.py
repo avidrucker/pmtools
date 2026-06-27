@@ -133,13 +133,17 @@ def list_worktrees(branch_pattern, porcelain=None):
 
 def render_table(report):
     lines = []
-    glyph = {"IDLE": "·", "CLAIMED": "▶", "IN-PROGRESS": "↻", "STALE": "✗"}
+    glyph = {"IDLE": "·", "CLAIMED": "▶", "IN-PROGRESS": "↻", "STALE": "✗", "BLOCKED": "⛔"}
     for m in report["markers"]:
         wt = f" [{m['worktree']}]" if m["worktree"] else ""
-        blocked = " ⛔" if m.get("blocked") else ""  # overlay glyph (#78), orthogonal to status
+        # Overlay glyph (#78), orthogonal to status — but a BLOCKED row already
+        # shows ⛔ as its status glyph, so don't double it (#88).
+        blocked = " ⛔" if (m.get("blocked") and m["status"] != "BLOCKED") else ""
+        # Synthetic marker-less rows (#88) have no file/line/keyword.
+        loc = "(no marker)" if m["file"] is None else f"{m['file']}:{m['line']} ({m['keyword']})"
         lines.append(
             f"{glyph.get(m['status'], '?')} #{m['issue']:<5} {m['status']:<8} "
-            f"{m['state']:<8} {m['file']}:{m['line']} ({m['keyword']}){wt}{blocked}"
+            f"{m['state']:<8} {loc}{wt}{blocked}"
         )
     if report["stale"]:
         lines.append("")
@@ -174,7 +178,15 @@ def main(argv=None):
     except NotImplementedError:
         die("host '{}' not yet supported".format(args["host"]), 1)
 
-    report = reconcile(grep, worktrees, issues)
+    # Marker-less blocked issues (#88): a `blocked`-labelled issue with no marker
+    # would otherwise be invisible. One `gh issue list` call; best-effort (offline
+    # -> []). Host is guaranteed github here (gitlab/unknown died above).
+    try:
+        blocked_issues = provider.list_issues_by_label("blocked")
+    except NotImplementedError:
+        blocked_issues = []
+
+    report = reconcile(grep, worktrees, issues, blocked_issues)
     # Active claims (refs/claims/* on origin): the cross-clone-safe in-flight
     # signal an orchestrator should consume instead of git-worktree-list heuristics,
     # which miss sibling-clone worktrees and the br-/wt- naming scheme (#70).

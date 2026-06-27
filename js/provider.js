@@ -34,6 +34,25 @@ function parseIssueStateRow(out, number) {
   return { number, state, labels, blockedByCount };
 }
 
+// Pure: map a `gh issue list --json number,state,labels` payload (a JSON array,
+// or null when offline) to reconcile-ready rows (#88). Drops rows whose state is
+// not OPEN|CLOSED. `blockedByCount` defaults to 0 (the list query does not fetch
+// the relation; label-discovered rows are blocked via their label).
+function parseIssueListRows(out) {
+  if (out === null || out === undefined) return [];
+  let data;
+  try { data = JSON.parse(out); } catch { return []; }
+  if (!Array.isArray(data)) return [];
+  const rows = [];
+  for (const item of data) {
+    const state = String((item && item.state) || '').toUpperCase();
+    if (state !== 'OPEN' && state !== 'CLOSED') continue;
+    const labels = Array.isArray(item.labels) ? item.labels.map((l) => l && l.name) : [];
+    rows.push({ number: item.number, state, labels, blockedByCount: 0 });
+  }
+  return rows;
+}
+
 class GitHubProvider {
   constructor() { this.name = 'github'; }
 
@@ -50,6 +69,15 @@ class GitHubProvider {
       if (row) rows.push(row); // null → offline / not found / non-OPEN|CLOSED → UNKNOWN
     }
     return rows;
+  }
+
+  // Open issues carrying a given label — the discovery query for marker-less
+  // blocked rows (#88). One `gh issue list` call regardless of count. [] offline.
+  listIssuesByLabel(label) {
+    return parseIssueListRows(
+      run('gh', ['issue', 'list', '--label', String(label), '--state', 'open',
+        '--json', 'number,state,labels']),
+    );
   }
 
   // Open issues incl. each issue body — used by the parent-tracker scan
@@ -89,6 +117,7 @@ class GitLabProvider {
     throw new Error("gitlab adapter not yet implemented — only host:'github' is supported");
   }
   issueStates() { return this._stub(); }
+  listIssuesByLabel() { return this._stub(); }
   listOpenIssuesWithBodies() { return this._stub(); }
   editIssueBody() { return this._stub(); }
   issueTitle() { return this._stub(); }
@@ -100,4 +129,6 @@ function getProvider(host) {
   throw new Error(`unknown host '${host}' (expected 'github' or 'gitlab')`);
 }
 
-module.exports = { getProvider, GitHubProvider, GitLabProvider, parseIssueStateRow };
+module.exports = {
+  getProvider, GitHubProvider, GitLabProvider, parseIssueStateRow, parseIssueListRows,
+};
