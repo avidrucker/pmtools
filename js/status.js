@@ -96,12 +96,16 @@ function listWorktrees(branchPattern, porcelain = null) {
 }
 
 function renderTable(report) {
-  const glyph = { IDLE: '·', CLAIMED: '▶', 'IN-PROGRESS': '↻', STALE: '✗' };
+  const glyph = { IDLE: '·', CLAIMED: '▶', 'IN-PROGRESS': '↻', STALE: '✗', BLOCKED: '⛔' };
   const lines = report.markers.map((m) => {
     const wt = m.worktree ? ` [${m.worktree}]` : '';
-    const blocked = m.blocked ? ' ⛔' : ''; // overlay glyph (#78), orthogonal to status
+    // Overlay glyph (#78), orthogonal to status — but a BLOCKED row already shows
+    // ⛔ as its status glyph, so don't double it (#88).
+    const blocked = (m.blocked && m.status !== 'BLOCKED') ? ' ⛔' : '';
+    // Synthetic marker-less rows (#88) have no file/line/keyword.
+    const loc = m.file === null ? '(no marker)' : `${m.file}:${m.line} (${m.keyword})`;
     return `${glyph[m.status] || '?'} #${String(m.issue).padEnd(5)} ${m.status.padEnd(8)} `
-      + `${m.state.padEnd(8)} ${m.file}:${m.line} (${m.keyword})${wt}${blocked}`;
+      + `${m.state.padEnd(8)} ${loc}${wt}${blocked}`;
   });
   if (report.stale.length) {
     lines.push('', `${report.stale.length} STALE marker(s) — clean up.`);
@@ -150,7 +154,13 @@ function main(argv) {
     die(`host '${args.host}' not yet supported`, 1);
   }
 
-  const report = reconcile(grep, worktrees, issues);
+  // Marker-less blocked issues (#88): a `blocked`-labelled issue with no marker
+  // would otherwise be invisible. One `gh issue list` call; best-effort (offline
+  // → []). Host is guaranteed github here (gitlab/unknown died above).
+  let blockedIssues = [];
+  try { blockedIssues = provider.listIssuesByLabel('blocked'); } catch { /* best-effort */ }
+
+  const report = reconcile(grep, worktrees, issues, blockedIssues);
   // Active claims (refs/claims/* on origin): the cross-clone-safe in-flight
   // signal an orchestrator should consume instead of git-worktree-list heuristics,
   // which miss sibling-clone worktrees and the br-/wt- naming scheme (#70).

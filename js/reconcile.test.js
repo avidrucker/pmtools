@@ -45,6 +45,16 @@ test('blocked-by fixture: a `blocked-by` relation (blockedByCount>0) sets blocke
   assert.deepEqual(result, expected);
 });
 
+test('markerless-blocked fixture: blocked issues with no marker append as synthetic BLOCKED rows (#88)', () => {
+  // 300 already has a marker → no synthetic dupe; 400 (with worktree) and 401
+  // (no worktree) are marker-less blocked → synthetic rows appended after markers,
+  // status BLOCKED, null file/line/keyword.
+  const input = load('markerless-blocked.input.json');
+  const expected = load('markerless-blocked.expected.json');
+  const result = reconcile(input.grep, input.worktrees, input.issues, input.blockedIssues);
+  assert.deepEqual(result, expected);
+});
+
 test('strict helper counts stale', () => {
   const input = load('basic.input.json');
   const result = reconcile(input.grep, input.worktrees, input.issues);

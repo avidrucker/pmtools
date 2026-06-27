@@ -43,6 +43,32 @@ def parse_issue_state_row(out, number):
             "blockedByCount": blocked_by_count}
 
 
+def parse_issue_list_rows(out):
+    """Pure: map a `gh issue list --json number,state,labels` payload (a JSON
+    array, or None when offline) to reconcile-ready rows (#88). Drops rows whose
+    state is not OPEN|CLOSED. `blockedByCount` defaults to 0 (the list query does
+    not fetch the relation; label-discovered rows are blocked via their label).
+    Mirrors js parseIssueListRows."""
+    if out is None:
+        return []
+    try:
+        data = json.loads(out)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    rows = []
+    for item in data:
+        state = str((item or {}).get("state") or "").upper()
+        if state not in ("OPEN", "CLOSED"):
+            continue
+        labels = [lab.get("name") for lab in (item.get("labels") or [])
+                  if isinstance(lab, dict)]
+        rows.append({"number": item.get("number"), "state": state,
+                     "labels": labels, "blockedByCount": 0})
+    return rows
+
+
 class GitHubProvider:
     name = "github"
 
@@ -58,6 +84,14 @@ class GitHubProvider:
             if row:  # None -> offline / not found / non-OPEN|CLOSED -> UNKNOWN
                 rows.append(row)
         return rows
+
+    def list_issues_by_label(self, label):
+        """Open issues carrying a given label — the discovery query for
+        marker-less blocked rows (#88). One `gh issue list` call regardless of
+        count. [] offline."""
+        return parse_issue_list_rows(
+            _run(["gh", "issue", "list", "--label", str(label), "--state", "open",
+                  "--json", "number,state,labels"]))
 
     def list_open_issues_with_bodies(self, limit):
         """Open issues incl. each issue body — used by the parent-tracker
@@ -99,7 +133,7 @@ class GitLabProvider:
         )
 
     issue_states = issue_title = _stub
-    list_open_issues_with_bodies = edit_issue_body = _stub
+    list_issues_by_label = list_open_issues_with_bodies = edit_issue_body = _stub
 
 
 def get_provider(host):

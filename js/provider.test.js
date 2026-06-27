@@ -8,7 +8,26 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { GitHubProvider, GitLabProvider, parseIssueStateRow } = require('./provider');
+const { GitHubProvider, GitLabProvider, parseIssueStateRow, parseIssueListRows } = require('./provider');
+
+// parseIssueListRows: pure mapping of a `gh issue list --json number,state,labels`
+// payload (a JSON array) to reconcile-ready rows (#88). Tested with canned JSON.
+test('parseIssueListRows: maps a list payload to rows (labels flattened, count defaults 0)', () => {
+  const out = JSON.stringify([
+    { number: 5, state: 'OPEN', labels: [{ name: 'blocked' }, { name: 'bug' }] },
+    { number: 6, state: 'OPEN', labels: [{ name: 'blocked' }] },
+  ]);
+  assert.deepStrictEqual(parseIssueListRows(out), [
+    { number: 5, state: 'OPEN', labels: ['blocked', 'bug'], blockedByCount: 0 },
+    { number: 6, state: 'OPEN', labels: ['blocked'], blockedByCount: 0 },
+  ]);
+});
+
+test('parseIssueListRows: null / garbage / empty → [] (offline-tolerant)', () => {
+  assert.deepStrictEqual(parseIssueListRows(null), []);
+  assert.deepStrictEqual(parseIssueListRows('not json'), []);
+  assert.deepStrictEqual(parseIssueListRows('[]'), []);
+});
 
 // parseIssueStateRow: pure mapping of a `gh issue view --json state,labels,blockedBy`
 // payload to a reconcile-ready row (#87). Tested with canned JSON, no gh shell-out.

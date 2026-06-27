@@ -11,7 +11,7 @@ const { isBlocked } = require('./status_core');
  * @param {Array<{number,state,labels}>} issues
  * @returns {{markers: Array, stale: Array}}
  */
-function reconcile(grep, worktrees, issues) {
+function reconcile(grep, worktrees, issues, blockedIssues = []) {
   const stateByIssue = new Map(issues.map((r) => [r.number, r.state]));
   const labelsByIssue = new Map(issues.map((r) => [r.number, r.labels]));
   const blockedByCountByIssue = new Map(issues.map((r) => [r.number, r.blockedByCount]));
@@ -47,8 +47,31 @@ function reconcile(grep, worktrees, issues) {
     };
   });
 
-  const stale = markers.filter((m) => m.status === 'STALE');
-  return { markers, stale };
+  // Marker-less blocked issues (#88): a `blocked` issue with no @todo/@inprogress
+  // marker produces no marker row, so it is invisible to triage. Append a
+  // synthetic BLOCKED row for each blockedIssue NOT already represented by a
+  // marker — after the marker rows (which keep grep order). file/line/keyword are
+  // null (no marker site). Generic: the caller supplies the blocked set; the
+  // `blocked` label policy lives in isBlocked.
+  const markerIssues = new Set(grep.map((m) => m.issue));
+  const synthetic = [];
+  for (const b of blockedIssues) {
+    if (markerIssues.has(b.number)) continue;
+    synthetic.push({
+      issue: b.number,
+      file: null,
+      line: null,
+      keyword: null,
+      state: b.state,
+      worktree: agentByIssue.has(b.number) ? agentByIssue.get(b.number) : null,
+      status: 'BLOCKED',
+      blocked: isBlocked(b.labels, b.blockedByCount || 0),
+    });
+  }
+  const allMarkers = markers.concat(synthetic);
+
+  const stale = allMarkers.filter((m) => m.status === 'STALE');
+  return { markers: allMarkers, stale };
 }
 
 module.exports = { reconcile };

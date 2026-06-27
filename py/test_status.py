@@ -66,6 +66,24 @@ class StatusJsonSchema(unittest.TestCase):
         self.assertIsInstance(parsed["stale"], list)
 
 
+class RenderMarkerlessBlocked(unittest.TestCase):
+    def test_synthetic_row_shows_no_marker_and_single_glyph(self):
+        # #88: a synthetic marker-less BLOCKED row renders "(no marker)" (not
+        # None:None) and a single ⛔ (the BLOCKED status glyph, not doubled).
+        report = {
+            "markers": [
+                {"issue": 88, "file": None, "line": None, "keyword": None,
+                 "state": "OPEN", "worktree": None, "status": "BLOCKED", "blocked": True},
+            ],
+            "stale": [],
+        }
+        line = status.render_table(report).split("\n")[0]
+        self.assertIn("(no marker)", line)
+        self.assertIn("BLOCKED", line)
+        self.assertEqual(line.count("⛔"), 1, "BLOCKED glyph must not be doubled by the overlay")
+        self.assertNotIn("None", line)
+
+
 class RenderBlockedOverlay(unittest.TestCase):
     def test_blocked_row_shows_glyph_non_blocked_does_not(self):
         # #78: the ⛔ overlay is rendered per row from the `blocked` field,

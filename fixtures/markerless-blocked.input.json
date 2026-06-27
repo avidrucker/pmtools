@@ -1,0 +1,16 @@
+{
+  "grep": [
+    { "file": "a.js", "line": 1, "keyword": "@todo", "issue": 300 }
+  ],
+  "worktrees": [
+    { "branch": "grape/issue-400", "issue": 400, "agent": "grape" }
+  ],
+  "issues": [
+    { "number": 300, "state": "OPEN", "labels": ["blocked"], "blockedByCount": 0 }
+  ],
+  "blockedIssues": [
+    { "number": 300, "state": "OPEN", "labels": ["blocked"], "blockedByCount": 0 },
+    { "number": 400, "state": "OPEN", "labels": ["blocked"], "blockedByCount": 0 },
+    { "number": 401, "state": "OPEN", "labels": ["blocked"], "blockedByCount": 0 }
+  ]
+}

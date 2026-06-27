@@ -37,6 +37,26 @@ class ParseIssueStateRow(unittest.TestCase):
         self.assertIsNone(provider.parse_issue_state_row(json.dumps({"state": "DRAFT"}), 1))
 
 
+class ParseIssueListRows(unittest.TestCase):
+    """parse_issue_list_rows: pure mapping of a `gh issue list --json
+    number,state,labels` payload to reconcile-ready rows (#88). Mirrors js."""
+
+    def test_maps_list_payload_to_rows(self):
+        out = json.dumps([
+            {"number": 5, "state": "OPEN", "labels": [{"name": "blocked"}, {"name": "bug"}]},
+            {"number": 6, "state": "OPEN", "labels": [{"name": "blocked"}]},
+        ])
+        self.assertEqual(provider.parse_issue_list_rows(out), [
+            {"number": 5, "state": "OPEN", "labels": ["blocked", "bug"], "blockedByCount": 0},
+            {"number": 6, "state": "OPEN", "labels": ["blocked"], "blockedByCount": 0},
+        ])
+
+    def test_null_garbage_or_empty_returns_empty(self):
+        self.assertEqual(provider.parse_issue_list_rows(None), [])
+        self.assertEqual(provider.parse_issue_list_rows("not json"), [])
+        self.assertEqual(provider.parse_issue_list_rows("[]"), [])
+
+
 class IssueTitleParity(unittest.TestCase):
     def test_github_provider_exposes_issue_title(self):
         gh = provider.GitHubProvider()
