@@ -102,6 +102,18 @@ function bodyClosesIssue(text, issue) {
   return re.test(String(text || ''));
 }
 
+// True if the commit text REFERENCES #issue (e.g. `(#N)` or a bare `#N`) but does
+// NOT carry a close keyword for it — the already-pushed-without-`Closes #N` case
+// (#7). False when it closes the issue (bodyClosesIssue owns that), when #issue is
+// absent, or when text is empty/null. The `\b` after the number keeps `#250` from
+// matching issue 25. Mirrors py pushed_commit_references_issue.
+function pushedCommitReferencesIssue(text, issue) {
+  if (text === null || text === undefined) return false;
+  const s = String(text);
+  const references = new RegExp(`#${issue}\\b`).test(s);
+  return references && !bodyClosesIssue(s, issue);
+}
+
 // --- Guard 2: keyword extraction / overlap ---------------------------------
 
 // Stop-set for keyword extraction — role prefixes / filler with no signal.
@@ -305,7 +317,7 @@ module.exports = {
   isSafeRef,
   classifyPushError, shouldCleanup,
   claimRefDeleteCommand, classifyClaimRefDelete,
-  classifyRebaseConflict, bodyClosesIssue,
+  classifyRebaseConflict, bodyClosesIssue, pushedCommitReferencesIssue,
   extractKeywords, keywordsOverlap,
   markerStillPresent, scopeAuditDiffCommand,
   velocityRowPresent, velocityTicketMismatch, computeVelocityMismatch,

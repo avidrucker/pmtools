@@ -32,6 +32,7 @@ const DISPATCH = {
   classify_claim_ref_delete: close.classifyClaimRefDelete,
   classify_rebase_conflict: close.classifyRebaseConflict,
   body_closes_issue: close.bodyClosesIssue,
+  pushed_commit_references_issue: close.pushedCommitReferencesIssue,
   extract_keywords: extractKeywords,
   keywords_overlap: close.keywordsOverlap,
   marker_still_present: close.markerStillPresent,
