@@ -19,6 +19,21 @@ function run(cmd, args) {
   }
 }
 
+// Pure: map one `gh issue view --json state,labels,blockedBy` payload (the raw
+// stdout string, or null when offline) to a reconcile-ready row, or null when the
+// issue is absent / unparseable / not OPEN|CLOSED (→ UNKNOWN). `blockedByCount`
+// is the `blockedBy.totalCount` (the active blocked-by relation count, #87).
+function parseIssueStateRow(out, number) {
+  if (out === null || out === undefined) return null;
+  let data;
+  try { data = JSON.parse(out); } catch { return null; }
+  const state = String(data.state || '').toUpperCase();
+  if (state !== 'OPEN' && state !== 'CLOSED') return null;
+  const labels = Array.isArray(data.labels) ? data.labels.map((l) => l && l.name) : [];
+  const blockedByCount = (data.blockedBy && Number(data.blockedBy.totalCount)) || 0;
+  return { number, state, labels, blockedByCount };
+}
+
 class GitHubProvider {
   constructor() { this.name = 'github'; }
 
@@ -28,14 +43,11 @@ class GitHubProvider {
   issueStates(numbers) {
     const rows = [];
     for (const n of numbers) {
-      const out = run('gh', ['issue', 'view', String(n), '--json', 'state,labels']);
-      if (out === null) continue; // offline / not found -> UNKNOWN
-      let data;
-      try { data = JSON.parse(out); } catch { continue; }
-      const state = String(data.state || '').toUpperCase();
-      if (state !== 'OPEN' && state !== 'CLOSED') continue;
-      const labels = Array.isArray(data.labels) ? data.labels.map((l) => l && l.name) : [];
-      rows.push({ number: n, state, labels });
+      // `blockedBy` rides the same per-issue lookup — one extra json field, no
+      // extra gh call — feeding the BLOCKED overlay's relation signal (#87).
+      const out = run('gh', ['issue', 'view', String(n), '--json', 'state,labels,blockedBy']);
+      const row = parseIssueStateRow(out, n);
+      if (row) rows.push(row); // null → offline / not found / non-OPEN|CLOSED → UNKNOWN
     }
     return rows;
   }
@@ -88,4 +100,4 @@ function getProvider(host) {
   throw new Error(`unknown host '${host}' (expected 'github' or 'gitlab')`);
 }
 
-module.exports = { getProvider, GitHubProvider, GitLabProvider };
+module.exports = { getProvider, GitHubProvider, GitLabProvider, parseIssueStateRow };

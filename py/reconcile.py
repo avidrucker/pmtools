@@ -20,6 +20,7 @@ def reconcile(grep, worktrees, issues):
     """
     state_by_issue = {row["number"]: row["state"] for row in issues}
     labels_by_issue = {row["number"]: row.get("labels") for row in issues}
+    blocked_by_count_by_issue = {row["number"]: row.get("blockedByCount") for row in issues}
     agent_by_issue = {row["issue"]: row["agent"] for row in worktrees}
 
     markers = []
@@ -45,9 +46,10 @@ def reconcile(grep, worktrees, issues):
             "state": state,
             "worktree": worktree,
             "status": status,
-            # Overlay flag (#78), orthogonal to status: true iff the issue carries
-            # the `blocked` label. Missing labels (issue absent / none) -> false.
-            "blocked": is_blocked(labels_by_issue.get(issue)),
+            # Overlay flag (#78, extended #87), orthogonal to status: true iff the
+            # issue carries the `blocked` label OR has an active `blocked-by`
+            # relation. Missing labels/count (issue absent) -> false.
+            "blocked": is_blocked(labels_by_issue.get(issue), blocked_by_count_by_issue.get(issue) or 0),
         })
 
     stale = [m for m in markers if m["status"] == "STALE"]

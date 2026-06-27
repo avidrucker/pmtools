@@ -95,8 +95,13 @@ function filterOpenClaims(claimNumbers, issueStates) {
 // issue can be IN-PROGRESS *and* blocked). Exact match on the lowercase shared
 // label name; degrade-safe on a null/absent label list. Pure; the `blocked-by`
 // relation + marker-less blocked issues are out of scope here (→ #84).
-function isBlocked(labels) {
-  return Array.isArray(labels) && labels.includes('blocked');
+// The BLOCKED overlay decision (#78, extended #87). Blocked iff the issue carries
+// the canonical `blocked` label OR has an active `blocked-by` relation
+// (`blockedByCount > 0`, sourced from `gh issue view --json blockedBy`). An
+// overlay orthogonal to the lifecycle status; degrade-safe on null/absent labels.
+function isBlocked(labels, blockedByCount = 0) {
+  const labelBlocked = Array.isArray(labels) && labels.includes('blocked');
+  return labelBlocked || Number(blockedByCount) > 0;
 }
 
 // Pure CLI arg parser for `status [--strict] [--json] [--host H]

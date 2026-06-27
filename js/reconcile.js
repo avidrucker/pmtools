@@ -14,6 +14,7 @@ const { isBlocked } = require('./status_core');
 function reconcile(grep, worktrees, issues) {
   const stateByIssue = new Map(issues.map((r) => [r.number, r.state]));
   const labelsByIssue = new Map(issues.map((r) => [r.number, r.labels]));
+  const blockedByCountByIssue = new Map(issues.map((r) => [r.number, r.blockedByCount]));
   const agentByIssue = new Map(worktrees.map((r) => [r.issue, r.agent]));
 
   const markers = grep.map((m) => {
@@ -39,9 +40,10 @@ function reconcile(grep, worktrees, issues) {
       state,
       worktree,
       status,
-      // Overlay flag (#78), orthogonal to status: true iff the issue carries the
-      // `blocked` label. undefined labels (issue absent / no labels) → false.
-      blocked: isBlocked(labelsByIssue.get(m.issue)),
+      // Overlay flag (#78, extended #87), orthogonal to status: true iff the
+      // issue carries the `blocked` label OR has an active `blocked-by` relation.
+      // Absent labels / count (issue not in `issues`) → false.
+      blocked: isBlocked(labelsByIssue.get(m.issue), blockedByCountByIssue.get(m.issue) || 0),
     };
   });
 

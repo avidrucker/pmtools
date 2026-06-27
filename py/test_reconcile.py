@@ -40,6 +40,14 @@ class TestReconcile(unittest.TestCase):
         result = reconcile(data["grep"], data["worktrees"], data["issues"])
         self.assertEqual(result, expected)
 
+    def test_blocked_by_relation_fixture(self):
+        # #87: 300 has no `blocked` label but blockedByCount:2 → blocked:true;
+        # 301 has neither → blocked:false. The overlay reflects the relation.
+        data = _load("blocked-by-relation.input.json")
+        expected = _load("blocked-by-relation.expected.json")
+        result = reconcile(data["grep"], data["worktrees"], data["issues"])
+        self.assertEqual(result, expected)
+
     def test_strict_helper_counts_stale(self):
         data = _load("basic.input.json")
         result = reconcile(data["grep"], data["worktrees"], data["issues"])
