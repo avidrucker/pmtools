@@ -554,22 +554,8 @@ def main():
                 log("commit {} already on origin/main and #{} is {} — treating as clean close.".format(
                     already_landed[:12], issue, state.strip()))
                 delete_claim_ref(issue, log)
-                if opts["keep"]:
-                    report(issue, branch, wt_path, already_landed, already_landed, True, False)
-                    log_comment_prompt(issue, already_landed)
-                    return
-                os.chdir(root)
-                pull = sh_capture("git pull --ff-only origin main")
-                if pull["ok"]:
-                    log("main checkout synced.")
-                else:
-                    log("warn: ff pull of main skipped ({}). Sync manually: "
-                        'git -C "{}" pull --ff-only origin main'.format(
-                            pull["out"].strip().split(chr(10))[0][:80], root))
-                report(issue, branch, wt_path, already_landed, already_landed, False, False)
-                log("Shell re-root: cd \"{}\"".format(root))
-                log_comment_prompt(issue, already_landed)
-                _teardown(wt_path, branch, root)
+                finalize_close(issue, branch, wt_path, root,
+                               already_landed, already_landed, opts["keep"])
                 return
         # Diagnostic (#7): a close commit may already be on origin/main but lack the
         # `Closes #N` keyword (e.g. pushed as `(#N)`). Name it instead of the generic
@@ -672,25 +658,9 @@ def main():
     # --- best-effort: tick the parent tracker's checkbox for this child (#36 guard 3).
     scan_parent_trackers(issue, opts)
 
-    if opts["keep"]:
-        report(issue, branch, wt_path, closing_on_main, landed_sha, True, False)
-        log_comment_prompt(issue, closing_on_main or landed_sha)
-        return
-
-    # --- teardown: only reachable past the gate. Run from main root.
-    os.chdir(root)
-    pull = sh_capture("git pull --ff-only origin main")
-    if pull["ok"]:
-        log("main checkout synced.")
-    else:
-        log("warn: ff pull of main skipped ({}). Sync manually: "
-            'git -C "{}" pull --ff-only origin main'.format(
-                pull["out"].strip().split(chr(10))[0][:80], root))
-
-    report(issue, branch, wt_path, closing_on_main, landed_sha, False, False)
-    log("Shell re-root: cd \"{}\"".format(root))
-    log_comment_prompt(issue, closing_on_main or landed_sha)
-    _teardown(wt_path, branch, root)
+    # --- finalize: keep-vs-teardown tail, shared with the recovery path (#76).
+    finalize_close(issue, branch, wt_path, root,
+                   closing_on_main, landed_sha, opts["keep"])
 
 
 def _teardown(wt_path, branch, root):
@@ -704,6 +674,31 @@ def _teardown(wt_path, branch, root):
         git_capture(["worktree", "prune"])
     if not res["ok"]:
         sys.stderr.write("[close] warning: teardown may have failed — check: git worktree list\n")
+
+
+def finalize_close(issue, branch, wt_path, root, closing_sha, landed_sha, keep):
+    """The shared post-`delete_claim_ref` tail of close — identical between the
+    recovery (already-pushed) and normal land paths (#76). `keep` → report + the
+    closing-comment prompt only; otherwise chdir to the main root, ff-pull main,
+    report, re-root note, prompt, and tear down the worktree. The comment-prompt sha
+    falls back closing→landed. Twin of js finalizeClose."""
+    prompt_sha = closing_sha or landed_sha
+    if keep:
+        report(issue, branch, wt_path, closing_sha, landed_sha, True, False)
+        log_comment_prompt(issue, prompt_sha)
+        return
+    os.chdir(root)
+    pull = sh_capture("git pull --ff-only origin main")
+    if pull["ok"]:
+        log("main checkout synced.")
+    else:
+        log("warn: ff pull of main skipped ({}). Sync manually: "
+            'git -C "{}" pull --ff-only origin main'.format(
+                pull["out"].strip().split(chr(10))[0][:80], root))
+    report(issue, branch, wt_path, closing_sha, landed_sha, False, False)
+    log("Shell re-root: cd \"{}\"".format(root))
+    log_comment_prompt(issue, prompt_sha)
+    _teardown(wt_path, branch, root)
 
 
 if __name__ == "__main__":
