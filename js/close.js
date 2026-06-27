@@ -45,7 +45,7 @@ const claimCore = require('./claim_core');
 const {
   DEFAULT_MAX_RETRIES, isSafeRef, classifyPushError, shouldCleanup,
   claimRefDeleteCommand, classifyClaimRefDelete,
-  bodyClosesIssue, pushedCommitReferencesIssue, extractKeywords, keywordsOverlap, markerStillPresent,
+  bodyClosesIssue, pushedCommitReferencesIssue, unsupportedFlagHint, extractKeywords, keywordsOverlap, markerStillPresent,
   scopeAuditDiffCommand, velocityRowPresent, computeVelocityMismatch,
 } = core;
 
@@ -83,7 +83,13 @@ function parseArgs(argv) {
     else if (a === '--update-trackers') opts.updateTrackers = true;
     else if (a === '--branch') opts.branch = argv[++i];
     else if (a === '--worktree-dir') opts.worktreeDir = argv[++i];
-    else if (a.startsWith('--')) die(`unknown flag: ${a}`, 2);
+    else if (a.startsWith('--')) {
+      // A flag recognized on a sibling command but unsupported here (#9, e.g.
+      // `--as`) gets a teaching message; truly unknown flags keep the generic one.
+      // Both are usage errors → exit 2.
+      const hint = unsupportedFlagHint(a);
+      die(hint || `unknown flag: ${a}`, 2);
+    }
     else positionals.push(a);
   }
   opts.issue = positionals[0];

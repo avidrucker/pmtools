@@ -114,6 +114,20 @@ function pushedCommitReferencesIssue(text, issue) {
   return references && !bodyClosesIssue(s, issue);
 }
 
+// Targeted, teaching rejection for a flag recognized as meaningful on a SIBLING
+// command but genuinely unsupported on `close` (#9). Returns the guidance string,
+// or null for a truly unknown flag (keeps the generic 'unknown flag' rejection).
+// Both stay exit 2 (usage error) — this only improves the text. Currently `--as`:
+// claim takes it, but close infers identity from the worktree branch. Mirrors py
+// unsupported_flag_hint.
+function unsupportedFlagHint(flag) {
+  if (flag === '--as') {
+    return '`close` takes no --as; identity is inferred from the worktree branch ' +
+           '([br-]<agent>/issue-N). Just run: pmtools close <N> (from inside the worktree).';
+  }
+  return null;
+}
+
 // --- Guard 2: keyword extraction / overlap ---------------------------------
 
 // Stop-set for keyword extraction — role prefixes / filler with no signal.
@@ -317,7 +331,7 @@ module.exports = {
   isSafeRef,
   classifyPushError, shouldCleanup,
   claimRefDeleteCommand, classifyClaimRefDelete,
-  classifyRebaseConflict, bodyClosesIssue, pushedCommitReferencesIssue,
+  classifyRebaseConflict, bodyClosesIssue, pushedCommitReferencesIssue, unsupportedFlagHint,
   extractKeywords, keywordsOverlap,
   markerStillPresent, scopeAuditDiffCommand,
   velocityRowPresent, velocityTicketMismatch, computeVelocityMismatch,

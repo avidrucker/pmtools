@@ -33,6 +33,7 @@ const DISPATCH = {
   classify_rebase_conflict: close.classifyRebaseConflict,
   body_closes_issue: close.bodyClosesIssue,
   pushed_commit_references_issue: close.pushedCommitReferencesIssue,
+  unsupported_flag_hint: close.unsupportedFlagHint,
   extract_keywords: extractKeywords,
   keywords_overlap: close.keywordsOverlap,
   marker_still_present: close.markerStillPresent,

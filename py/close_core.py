@@ -161,6 +161,19 @@ def pushed_commit_references_issue(text, issue):
     return references and not body_closes_issue(s, issue)
 
 
+def unsupported_flag_hint(flag):
+    """Targeted, teaching rejection for a flag recognized as meaningful on a SIBLING
+    command but genuinely unsupported on `close` (#9). Returns the guidance message,
+    or None for a truly unknown flag (which keeps the generic 'unknown flag'
+    rejection). Both stay exit 2 (usage error) — this only improves the text.
+    Currently `--as`: `claim` takes it, but `close` infers identity from the
+    worktree branch, so it has no use for one."""
+    if flag == "--as":
+        return ("`close` takes no --as; identity is inferred from the worktree branch "
+                "([br-]<agent>/issue-N). Just run: pmtools close <N> (from inside the worktree).")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Guard 2: keyword extraction / overlap
 # ---------------------------------------------------------------------------

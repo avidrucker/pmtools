@@ -45,6 +45,7 @@ from claimref import delete_claim_ref
 from close_core import (
     DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
     classify_rebase_conflict, body_closes_issue, pushed_commit_references_issue,
+    unsupported_flag_hint,
     extract_keywords, keywords_overlap, marker_still_present,
     scope_audit_diff_command, velocity_row_present, compute_velocity_mismatch,
 )
@@ -107,7 +108,11 @@ def parse_args(argv):
             i += 1
             opts["worktreeDir"] = argv[i] if i < n else None
         elif a.startswith("--"):
-            die("unknown flag: " + a, 2)
+            # A flag recognized on a sibling command but unsupported here (#9, e.g.
+            # `--as`) gets a teaching message; truly unknown flags keep the generic
+            # one. Both are usage errors → exit 2.
+            hint = unsupported_flag_hint(a)
+            die(hint if hint else "unknown flag: " + a, 2)
         else:
             positionals.append(a)
         i += 1
