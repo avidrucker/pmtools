@@ -22,13 +22,20 @@ function run(cmd, args) {
 class GitHubProvider {
   constructor() { this.name = 'github'; }
 
+  // [{number, state, labels:[<name>...]}] for the given issue numbers
+  // (best-effort). `labels` drives the BLOCKED overlay (#78); it rides the same
+  // per-issue lookup status already makes, so adding it costs no extra gh calls.
   issueStates(numbers) {
     const rows = [];
     for (const n of numbers) {
-      const out = run('gh', ['issue', 'view', String(n), '--json', 'state', '-q', '.state']);
+      const out = run('gh', ['issue', 'view', String(n), '--json', 'state,labels']);
       if (out === null) continue; // offline / not found -> UNKNOWN
-      const state = out.trim().toUpperCase();
-      if (state === 'OPEN' || state === 'CLOSED') rows.push({ number: n, state });
+      let data;
+      try { data = JSON.parse(out); } catch { continue; }
+      const state = String(data.state || '').toUpperCase();
+      if (state !== 'OPEN' && state !== 'CLOSED') continue;
+      const labels = Array.isArray(data.labels) ? data.labels.map((l) => l && l.name) : [];
+      rows.push({ number: n, state, labels });
     }
     return rows;
   }

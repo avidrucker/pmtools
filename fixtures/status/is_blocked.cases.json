@@ -1,0 +1,20 @@
+[
+  { "name": "the `blocked` label present → true",
+    "args": [["bug", "blocked"]],
+    "expected": true },
+  { "name": "`blocked` is the only label → true",
+    "args": [["blocked"]],
+    "expected": true },
+  { "name": "no `blocked` label → false",
+    "args": [["bug", "enhancement", "area:status"]],
+    "expected": false },
+  { "name": "empty label list → false",
+    "args": [[]],
+    "expected": false },
+  { "name": "null labels (degrade-safe) → false",
+    "args": [null],
+    "expected": false },
+  { "name": "exact-match: capitalised `Blocked` is not the canonical label → false",
+    "args": [["Blocked"]],
+    "expected": false }
+]

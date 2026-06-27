@@ -24,16 +24,24 @@ class GitHubProvider:
     name = "github"
 
     def issue_states(self, numbers):
-        """[{number, state}] for the given issue numbers (best-effort)."""
+        """[{number, state, labels:[<name>...]}] for the given issue numbers
+        (best-effort). `labels` drives the BLOCKED overlay (#78); it rides the
+        same per-issue lookup status already makes, so no extra gh calls."""
         rows = []
         for n in numbers:
-            out = _run(["gh", "issue", "view", str(n), "--json", "state",
-                        "-q", ".state"])
+            out = _run(["gh", "issue", "view", str(n), "--json", "state,labels"])
             if out is None:
                 continue  # offline / not found -> omit -> UNKNOWN
-            state = out.strip().upper()
-            if state in ("OPEN", "CLOSED"):
-                rows.append({"number": n, "state": state})
+            try:
+                data = json.loads(out)
+            except (ValueError, TypeError):
+                continue
+            state = str(data.get("state") or "").upper()
+            if state not in ("OPEN", "CLOSED"):
+                continue
+            labels = [lab.get("name") for lab in (data.get("labels") or [])
+                      if isinstance(lab, dict)]
+            rows.append({"number": n, "state": state, "labels": labels})
         return rows
 
     def list_open_issues_with_bodies(self, limit):

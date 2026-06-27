@@ -156,6 +156,16 @@ For each grep marker, in this precedence:
 `state == "UNKNOWN"` never by itself makes a marker STALE (offline `gh` must not
 manufacture false staleness).
 
+**`blocked` overlay (#78).** Beyond the lifecycle `status`, each row carries a
+boolean `blocked` — `true` iff the issue holds the canonical `blocked` label. It
+is an **overlay, orthogonal to `status`**: an issue can be `IN-PROGRESS` *and*
+`blocked`. Labels ride the same per-issue provider lookup as `state` (`gh issue
+view N --json state,labels` — no extra calls); the `pure` decision is
+`is_blocked(labels)` (exact match on the lowercase label name). The table render
+appends `⛔` to blocked rows. Out of scope (→ #84): the `blocked-by` *relation*
+and **marker-less** blocked issues (rows derive from markers, so a `blocked`
+issue with no `@todo`/`@inprogress` produces no row).
+
 ### CLI behavior
 
 ```

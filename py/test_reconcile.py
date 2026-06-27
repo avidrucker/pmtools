@@ -31,6 +31,15 @@ class TestReconcile(unittest.TestCase):
         result = reconcile(data["grep"], data["worktrees"], data["issues"])
         self.assertEqual(result, expected)
 
+    def test_blocked_fixture(self):
+        # #78: the `blocked` label sets a blocked:true overlay, orthogonal to the
+        # lifecycle status (202 is IN-PROGRESS *and* blocked); a non-blocked row
+        # carries blocked:false (not only the true case).
+        data = _load("blocked.input.json")
+        expected = _load("blocked.expected.json")
+        result = reconcile(data["grep"], data["worktrees"], data["issues"])
+        self.assertEqual(result, expected)
+
     def test_strict_helper_counts_stale(self):
         data = _load("basic.input.json")
         result = reconcile(data["grep"], data["worktrees"], data["issues"])

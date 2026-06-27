@@ -145,9 +145,10 @@ def render_table(report):
     glyph = {"IDLE": "·", "CLAIMED": "▶", "IN-PROGRESS": "↻", "STALE": "✗"}
     for m in report["markers"]:
         wt = f" [{m['worktree']}]" if m["worktree"] else ""
+        blocked = " ⛔" if m.get("blocked") else ""  # overlay glyph (#78), orthogonal to status
         lines.append(
             f"{glyph.get(m['status'], '?')} #{m['issue']:<5} {m['status']:<8} "
-            f"{m['state']:<8} {m['file']}:{m['line']} ({m['keyword']}){wt}"
+            f"{m['state']:<8} {m['file']}:{m['line']} ({m['keyword']}){wt}{blocked}"
         )
     if report["stale"]:
         lines.append("")

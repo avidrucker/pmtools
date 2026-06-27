@@ -2,15 +2,18 @@
 // Mirrors py/reconcile.py exactly — both are graded against fixtures/.
 'use strict';
 
+const { isBlocked } = require('./status_core');
+
 /**
  * Join markers + worktrees + issue state into a status report.
  * @param {Array<{file,line,keyword,issue}>} grep
  * @param {Array<{branch,issue,agent}>} worktrees
- * @param {Array<{number,state}>} issues
+ * @param {Array<{number,state,labels}>} issues
  * @returns {{markers: Array, stale: Array}}
  */
 function reconcile(grep, worktrees, issues) {
   const stateByIssue = new Map(issues.map((r) => [r.number, r.state]));
+  const labelsByIssue = new Map(issues.map((r) => [r.number, r.labels]));
   const agentByIssue = new Map(worktrees.map((r) => [r.issue, r.agent]));
 
   const markers = grep.map((m) => {
@@ -36,6 +39,9 @@ function reconcile(grep, worktrees, issues) {
       state,
       worktree,
       status,
+      // Overlay flag (#78), orthogonal to status: true iff the issue carries the
+      // `blocked` label. undefined labels (issue absent / no labels) → false.
+      blocked: isBlocked(labelsByIssue.get(m.issue)),
     };
   });
 
