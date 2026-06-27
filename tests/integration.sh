@@ -366,6 +366,60 @@ run_close_suite() {
 run_close_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"
 run_close_suite "js" node "$JS_CLAIM" node "$JS_CLOSE"
 
+# Recovery path (#76 gate): the agent pushed the `Closes #N` commit to origin/main
+# BY HAND before running close. close finds nothing unpushed, scans origin/main,
+# sees the issue is non-OPEN, and treats it as a clean close (delete ref + ff-pull +
+# teardown) — the finalizeClose tail that previously had ZERO integration coverage.
+run_close_recovery_suite() {
+  local lang="$1" ci="$2" cs="$3" oi="$4" os="$5"
+  local -a CLAIM=("$ci" "$cs")
+  local -a CLOSE=("$oi" "$os")
+  echo "-- [$lang] close recovery (already-pushed) battery --"
+
+  local repo; repo="$(new_env)"
+  local o="$TMPROOT/recovout.$RANDOM"
+  local ghopen; ghopen="$(make_fake_gh_titled OPEN 'Fix the widget renderer')"
+  local ghclosed; ghclosed="$(make_fake_gh CLOSED '[]')"
+  local N=37
+
+  # 1) claim while the issue is OPEN.
+  ( cd "$repo" && PATH="$ghopen:$PATH" "${CLAIM[@]}" "$N" --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] recovery: claim $N exit 0"
+  local wt="$repo/.claude/worktrees/wt-apple-demo-js-issue-$N"
+  assert_dir "$wt" "[$lang] recovery: worktree staked"
+
+  # 2) commit `Closes #N`, then PUSH IT TO origin/main BY HAND — the pre-push the
+  #    recovery path exists to handle. git -C + dir guard (#55).
+  if [ -d "$wt" ]; then
+    git -C "$wt" config user.email tester@example.com
+    git -C "$wt" config user.name tester
+    git -C "$wt" config commit.gpgsign false
+    printf 'widget impl\n' > "$wt/widget.txt"
+    git -C "$wt" add widget.txt
+    git -C "$wt" commit -qm "feat: add widget renderer" -m "Closes #$N"
+    git -C "$wt" push -q origin HEAD:main
+  fi
+
+  # 3) close, with the issue now CLOSED on the host -> recovery clean-close.
+  ( cd "$repo" && PATH="$ghclosed:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] recovery: close exit 0"
+  assert_contains "$o" "clean close" "[$lang] recovery: prints 'treating as clean close'"
+
+  # 4) worktree + branch torn down (the finalizeClose teardown tail ran).
+  if [ -d "$wt" ]; then fail "[$lang] recovery: worktree removed"; else pass "[$lang] recovery: worktree removed"; fi
+  assert_no_branch "$repo" "br-apple/demo-js-issue-$N" "[$lang] recovery: branch deleted"
+
+  # 5) the claim ref was deleted on origin.
+  if git -C "$repo" ls-remote origin 'refs/claims/*' 2>/dev/null | grep -q "refs/claims/issue-$N"; then
+    fail "[$lang] recovery: refs/claims/issue-$N deleted (still present)"
+  else
+    pass "[$lang] recovery: refs/claims/issue-$N deleted on origin"
+  fi
+}
+
+run_close_recovery_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"
+run_close_recovery_suite "js" node "$JS_CLAIM" node "$JS_CLOSE"
+
 # ---------------------------------------------------------------------------
 # close worktree DISCOVERY (#51): close must locate the worktree via
 # `git worktree list` (the way release does), NOT by rebuilding the dir name.

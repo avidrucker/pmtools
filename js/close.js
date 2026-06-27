@@ -438,6 +438,29 @@ function teardown(wtPath, branch, root) {
   }
 }
 
+// The shared post-deleteClaimRef tail of close — identical between the recovery
+// (already-pushed) and normal land paths (#76). keep → report + the closing-comment
+// prompt only; otherwise chdir to the main root, ff-pull main, report, re-root note,
+// prompt, and tear down the worktree. The comment-prompt sha falls back
+// closing→landed. Twin of py finalize_close.
+function finalizeClose({ issue, branch, wtPath, root, closingSha, landedSha, keep }) {
+  const promptSha = closingSha || landedSha;
+  if (keep) {
+    report({ issue, branch, wtPath, closingSha, landedSha, kept: true, dry: false });
+    logCommentPrompt(issue, promptSha);
+    return;
+  }
+  process.chdir(root);
+  const pull = shCapture('git pull --ff-only origin main');
+  if (pull.ok) log('main checkout synced.');
+  else log(`warn: ff pull of main skipped (${pull.out.trim().split('\n')[0].slice(0, 80)}). ` +
+           `Sync manually: git -C "${root}" pull --ff-only origin main`);
+  report({ issue, branch, wtPath, closingSha, landedSha, kept: false, dry: false });
+  log(`Shell re-root: cd "${root}"`);
+  logCommentPrompt(issue, promptSha);
+  teardown(wtPath, branch, root);
+}
+
 // After a successful close, tick the parent tracker issue's checkbox for this
 // child (#36 guard 3 / lccjs #907). Opt-in: config `close.updateParentTrackers`
 // or the --update-trackers flag. Best-effort — every failure warns and skips; it
@@ -532,20 +555,8 @@ function main() {
       if (state && state.trim().toUpperCase() !== 'OPEN') {
         log(`commit ${alreadyLandedSha.slice(0, 12)} already on origin/main and #${issue} is ${state.trim()} — treating as clean close.`);
         deleteClaimRef(issue, { log });
-        if (opts.keep) {
-          report({ issue, branch, wtPath, closingSha: alreadyLandedSha, landedSha: alreadyLandedSha, kept: true, dry: false });
-          logCommentPrompt(issue, alreadyLandedSha);
-          return;
-        }
-        process.chdir(root);
-        const pull = shCapture('git pull --ff-only origin main');
-        if (pull.ok) log('main checkout synced.');
-        else log(`warn: ff pull of main skipped (${pull.out.trim().split('\n')[0].slice(0, 80)}). ` +
-                 `Sync manually: git -C "${root}" pull --ff-only origin main`);
-        report({ issue, branch, wtPath, closingSha: alreadyLandedSha, landedSha: alreadyLandedSha, kept: false, dry: false });
-        log(`Shell re-root: cd "${root}"`);
-        logCommentPrompt(issue, alreadyLandedSha);
-        teardown(wtPath, branch, root);
+        finalizeClose({ issue, branch, wtPath, root,
+          closingSha: alreadyLandedSha, landedSha: alreadyLandedSha, keep: opts.keep });
         return;
       }
     }
@@ -655,23 +666,9 @@ function main() {
   // --- best-effort: tick the parent tracker's checkbox for this child (#36 guard 3).
   scanParentTrackers(issue, opts);
 
-  if (opts.keep) {
-    report({ issue, branch, wtPath, closingSha: closingCommitOnMainSha, landedSha, kept: true, dry: false });
-    logCommentPrompt(issue, closingCommitOnMainSha || landedSha);
-    return;
-  }
-
-  // --- teardown: only reachable past the gate. Run from main root.
-  process.chdir(root);
-  const pull = shCapture('git pull --ff-only origin main');
-  if (pull.ok) log('main checkout synced.');
-  else log(`warn: ff pull of main skipped (${pull.out.trim().split('\n')[0].slice(0, 80)}). ` +
-           `Sync manually: git -C "${root}" pull --ff-only origin main`);
-
-  report({ issue, branch, wtPath, closingSha: closingCommitOnMainSha, landedSha, kept: false, dry: false });
-  log(`Shell re-root: cd "${root}"`);
-  logCommentPrompt(issue, closingCommitOnMainSha || landedSha);
-  teardown(wtPath, branch, root);
+  // --- finalize: keep-vs-teardown tail, shared with the recovery path (#76).
+  finalizeClose({ issue, branch, wtPath, root,
+    closingSha: closingCommitOnMainSha, landedSha, keep: opts.keep });
 }
 
 if (require.main === module) main();
