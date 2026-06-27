@@ -105,3 +105,37 @@ def is_blocked(labels):
     label name; degrade-safe on a None/absent label list. Pure; the `blocked-by`
     relation + marker-less blocked issues are out of scope here (-> #84)."""
     return isinstance(labels, list) and "blocked" in labels
+
+
+def parse_args(argv):
+    """Pure CLI arg parser for `status [--strict] [--json] [--host H]
+    [--branch-pattern RX] [--limit N]` (#46). An unknown --flag raises ValueError
+    (the impure status.py wrapper catches it and dies, exit 2). `branchPattern`
+    defaults to None — the wrapper substitutes its OWN DEFAULT_BRANCH_PATTERN,
+    whose named-group syntax differs per port (`(?<n>)` vs `(?P<n>)`), so the
+    default stays out of the shared fixtures. A value-taking flag with no
+    following token (or a non-numeric --limit) degrades to its default. Bare
+    positionals are ignored — status takes none."""
+    a = {"strict": False, "json": False, "host": "github", "branchPattern": None, "limit": 50}
+    i = 0
+    n = len(argv)
+    while i < n:
+        t = argv[i]
+        if t == "--strict":
+            a["strict"] = True
+        elif t == "--json":
+            a["json"] = True
+        elif t == "--host":
+            i += 1; a["host"] = argv[i] if i < n else None
+        elif t == "--branch-pattern":
+            i += 1; a["branchPattern"] = argv[i] if i < n else None
+        elif t == "--limit":
+            i += 1
+            try:
+                a["limit"] = int(argv[i]) if i < n else 50
+            except (TypeError, ValueError):
+                a["limit"] = 50
+        elif t.startswith("--"):
+            raise ValueError("unknown flag: " + t)
+        i += 1
+    return a

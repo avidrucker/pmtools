@@ -99,4 +99,31 @@ function isBlocked(labels) {
   return Array.isArray(labels) && labels.includes('blocked');
 }
 
-module.exports = { parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims, isBlocked };
+// Pure CLI arg parser for `status [--strict] [--json] [--host H]
+// [--branch-pattern RX] [--limit N]` (#46). An unknown --flag THROWS (the impure
+// status.js wrapper catches it and dies, exit 2). `branchPattern` defaults to
+// null — the wrapper substitutes its OWN DEFAULT_BRANCH_PATTERN, whose
+// named-group syntax differs per port (`(?<n>)` vs `(?P<n>)`), so the default
+// stays out of the shared fixtures. A value-taking flag with no following token
+// (or a non-numeric --limit) degrades to its default. Bare positionals are
+// ignored — status takes none.
+function parseArgs(argv) {
+  const a = { strict: false, json: false, host: 'github', branchPattern: null, limit: 50 };
+  for (let i = 0; i < argv.length; i++) {
+    const t = argv[i];
+    if (t === '--strict') a.strict = true;
+    else if (t === '--json') a.json = true;
+    else if (t === '--host') a.host = (i + 1 < argv.length) ? argv[++i] : null;
+    else if (t === '--branch-pattern') a.branchPattern = (i + 1 < argv.length) ? argv[++i] : null;
+    else if (t === '--limit') {
+      const n = (i + 1 < argv.length) ? parseInt(argv[++i], 10) : NaN;
+      a.limit = Number.isNaN(n) ? 50 : n;
+    } else if (t.startsWith('--')) throw new Error('unknown flag: ' + t);
+  }
+  return a;
+}
+
+module.exports = {
+  parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims, isBlocked,
+  parseArgs,
+};

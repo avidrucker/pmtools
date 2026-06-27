@@ -22,6 +22,7 @@ const DISPATCH = {
   is_pdd_ignored: core.isPddIgnored,
   filter_open_claims: core.filterOpenClaims,
   is_blocked: core.isBlocked,
+  parse_args: core.parseArgs,
 };
 
 test('every status fixture file has a dispatch entry (1:1)', () => {
@@ -36,7 +37,8 @@ for (const [stem, fn] of Object.entries(DISPATCH)) {
   const cases = load(path.join(STATUS_FIXTURES, `${stem}.cases.json`));
   for (const c of cases) {
     test(`status:${stem} — ${c.name}`, () => {
-      assert.deepEqual(fn(...c.args), c.expected);
+      if (c.expected_error) assert.throws(() => fn(...c.args));
+      else assert.deepEqual(fn(...c.args), c.expected);
     });
   }
 }

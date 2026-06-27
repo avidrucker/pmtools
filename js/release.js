@@ -23,21 +23,19 @@ const { sh, shTrim, gitTrim, makeDie, makeLog } = require('./sh');
 const { deleteClaimRef } = require('./claimref');
 const {
   isSafeRef, parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
+  parseReleaseArgs,
 } = require('./close_core');
 
 const log = makeLog('release');
 const die = makeDie('release');
 
+// Thin impure wrapper over the shared pure parser (close_core, #46): an unknown
+// or extra arg throws there; a missing issue yields issue=null — both become a
+// usage die (exit 2) here.
 function parseArgs(argv) {
-  const a = { issue: null, force: false };
-  for (const t of argv) {
-    if (t === '--force') a.force = true;
-    else if (t === '--') continue;
-    else if (/^\d+$/.test(t)) {
-      if (a.issue !== null) die(`unexpected extra arg: ${t} (usage: release <N> [--force])`, 2);
-      a.issue = t;
-    } else die(`unknown arg: ${t} (usage: release <N> [--force])`, 2);
-  }
+  let a;
+  try { a = parseReleaseArgs(argv); }
+  catch (e) { return die(e.message, 2); }
   if (a.issue === null) die('usage: release <issue-number> [--force]', 2);
   return a;
 }

@@ -400,3 +400,24 @@ def release_guard_verdict(ahead, dirty, force):
     if dirty:
         return "dirty"
     return "ok"
+
+
+def parse_release_args(argv):
+    """Pure arg parser for the release CLI (#46): `release <N> [--force]`. Accepts
+    a single numeric issue, a `--force` flag, and a bare `--` separator (skipped).
+    Raises ValueError on a second issue number or any other token (the impure
+    release.py wrapper turns the raise into a usage die, exit 2). A missing issue
+    yields issue=None — the wrapper validates and dies, so the parser stays pure."""
+    a = {"issue": None, "force": False}
+    for t in argv:
+        if t == "--force":
+            a["force"] = True
+        elif t == "--":
+            continue
+        elif re.match(r"^\d+$", t):
+            if a["issue"] is not None:
+                raise ValueError("unexpected extra arg: {} (usage: release <N> [--force])".format(t))
+            a["issue"] = t
+        else:
+            raise ValueError("unknown arg: {} (usage: release <N> [--force])".format(t))
+    return a

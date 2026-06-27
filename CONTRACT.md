@@ -197,9 +197,10 @@ Steps: (1) stamp `started_iso` to the scratch file; (2) start-of-task reads
 (`git status`, `git worktree list`, `gh issue view`); (2.5) surface in-repo
 evidence `<dir>/<N>-*` for every referenced `#N` (match anchored to the `<N>-`
 basename prefix); (3) assert the issue is OPEN — exit 1 otherwise, warn-and-proceed
-when `gh` is offline. Pure functions `preflightIssueGate` / `preflightEvidence`
-are unit-tested. Python twin: `py/preflight.py` (reuses `py/preflight_core.py`);
-same flags, same steps, graded against the same fixtures as the JS pure core.
+when `gh` is offline. The pure decision seams `preflightIssueGate` /
+`preflightEvidence` live in `preflight_core.{js,py}` — re-exported by the impure
+`preflight.{js,py}` — and are graded against the shared `fixtures/preflight/*`.
+The two language ports are faithful twins (#46).
 
 ## `claim` (fleet-only) — ported (py + js)
 

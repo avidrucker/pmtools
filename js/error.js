@@ -34,26 +34,11 @@ function repoBasename(cwd = null) {
   return root ? path.basename(root) : 'repo';
 }
 
+// Thin impure wrapper over the shared pure parser (store_core, #46): an unknown
+// flag throws there; here we turn it into a usage die (exit 2).
 function parseArgs(argv) {
-  const a = { cmd: null, json: null, dbPath: null, csv: null, noCsv: false };
-  const positionals = [];
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i];
-    if (t === '--db-path') { a.dbPath = (i + 1 < argv.length) ? argv[++i] : null; }
-    else if (t === '--csv') { a.csv = (i + 1 < argv.length) ? argv[++i] : null; }
-    else if (t === '--no-csv') { a.noCsv = true; }
-    else if (t.startsWith('--')) { die('unknown flag: ' + t, 2); }
-    else { positionals.push(t); }
-  }
-  a.cmd = positionals.length ? positionals[0] : null;
-  a.json = positionals.length > 1 ? positionals[1] : null;
-  return a;
-}
-
-function resolveCsv(args, storeCfg) {
-  if (args.noCsv) return null;
-  if (args.csv) return args.csv;
-  return storeCfg.csvMirror;
+  try { return core.parseStoreArgs(argv); }
+  catch (e) { return die(e.message, 2); }
 }
 
 function cmdLog(args, cfg) {
@@ -98,7 +83,7 @@ function cmdLog(args, cfg) {
   const ticketLabel = row.ticket ? ` (ticket #${row.ticket})` : '';
   console.log(`Inserted error row id=${rid}${ticketLabel}`);
 
-  const csvPath = resolveCsv(args, storeCfg);
+  const csvPath = core.resolveCsv(args, storeCfg);
   if (csvPath) {
     const nrows = store.exportCsv(dbPath, TABLE, csvPath, COLS);
     console.log(`Exported ${nrows} rows -> ${csvPath}`);

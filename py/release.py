@@ -22,7 +22,7 @@ import sys
 
 from close_core import (
     is_safe_ref, parse_worktree_porcelain, find_worktree_for_issue,
-    release_guard_verdict,
+    release_guard_verdict, parse_release_args,
 )
 from sh import sh, sh_trim, git_trim, make_die, make_log
 from claimref import delete_claim_ref
@@ -33,18 +33,13 @@ die = make_die("release")
 
 
 def parse_args(argv):
-    a = {"issue": None, "force": False}
-    for t in argv:
-        if t == "--force":
-            a["force"] = True
-        elif t == "--":
-            continue
-        elif re.match(r"^\d+$", t):
-            if a["issue"] is not None:
-                die("unexpected extra arg: {} (usage: release <N> [--force])".format(t), 2)
-            a["issue"] = t
-        else:
-            die("unknown arg: {} (usage: release <N> [--force])".format(t), 2)
+    # Thin impure wrapper over the shared pure parser (close_core, #46): an
+    # unknown or extra arg raises there; a missing issue yields issue=None —
+    # both become a usage die (exit 2) here.
+    try:
+        a = parse_release_args(argv)
+    except ValueError as e:
+        die(str(e), 2)
     if a["issue"] is None:
         die("usage: release <issue-number> [--force]", 2)
     return a
