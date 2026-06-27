@@ -36,6 +36,7 @@ DISPATCH = {
     "classify_claim_ref_delete": close_core.classify_claim_ref_delete,
     "classify_rebase_conflict": close_core.classify_rebase_conflict,
     "body_closes_issue": close_core.body_closes_issue,
+    "pushed_commit_references_issue": close_core.pushed_commit_references_issue,
     "extract_keywords": _extract_keywords,
     "keywords_overlap": close_core.keywords_overlap,
     "marker_still_present": close_core.marker_still_present,

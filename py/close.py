@@ -44,7 +44,7 @@ from sh import sh, sh_capture, git_capture, make_die, make_log
 from claimref import delete_claim_ref
 from close_core import (
     DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
-    classify_rebase_conflict, body_closes_issue,
+    classify_rebase_conflict, body_closes_issue, pushed_commit_references_issue,
     extract_keywords, keywords_overlap, marker_still_present,
     scope_audit_diff_command, velocity_row_present, compute_velocity_mismatch,
 )
@@ -149,6 +149,20 @@ def find_closing_commit_on_main(issue):
         body = sh("git show -s --format=%B {}".format(sha), True) or ""
         if body_closes_issue(body, issue):
             return sha
+    return None
+
+
+def find_pushed_reference_on_main(issue):
+    """Recovery diagnostic (#7): scan origin/main -100 for a commit that REFERENCES
+    #issue (e.g. `(#N)`) but lacks a close keyword. Returns (sha, subject) or None.
+    The impure twin of pushed_commit_references_issue."""
+    out = sh("git log origin/main -100 --format=%H", True) or ""
+    shas = [s.strip() for s in out.strip().split("\n") if s.strip()]
+    for sha in shas:
+        body = sh("git show -s --format=%B {}".format(sha), True) or ""
+        if pushed_commit_references_issue(body, issue):
+            subject = (sh("git show -s --format=%s {}".format(sha), True) or "").strip()
+            return (sha, subject)
     return None
 
 
@@ -552,6 +566,17 @@ def main():
                 log_comment_prompt(issue, already_landed)
                 _teardown(wt_path, branch, root)
                 return
+        # Diagnostic (#7): a close commit may already be on origin/main but lack the
+        # `Closes #N` keyword (e.g. pushed as `(#N)`). Name it instead of the generic
+        # "commit FIRST" message, which misdiagnoses an already-pushed commit.
+        ref = find_pushed_reference_on_main(issue)
+        if ref:
+            ref_sha, ref_subject = ref
+            die('Found pushed commit {} "{}" that references #{} but lacks the '
+                "`Closes #{}` keyword — GitHub will not auto-close it and close cannot "
+                "verify/teardown. Either amend the message to include `Closes #{}` "
+                "before pushing (if unshared), or close manually: gh issue close {}".format(
+                    ref_sha[:12], ref_subject, issue, issue, issue, issue))
         die('No unpushed commit references "Closes #{}". Commit the close '
             "(marker deletion + `Closes #N`) FIRST, then run close. "
             "This tool lands an existing close commit; it does not author one.".format(issue))

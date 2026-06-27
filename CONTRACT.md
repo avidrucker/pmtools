@@ -334,6 +334,7 @@ only), `claim_ref_delete_command` + `classify_claim_ref_delete`
 `close.autoResolve.unionFiles` (default **EMPTY** = off); a conflict confined to
 configured union files classifies as `union-only` and auto-resolves via
 `merge=union`, #36 guard 2), `body_closes_issue` (GitHub close-keyword matcher),
+`pushed_commit_references_issue` (#7 — references `#N` but does NOT close it),
 `extract_keywords` + `keywords_overlap` (+ `KEYWORD_STOP_SET` / `SHORT_TECH_WORDS`),
 `marker_still_present`, `scope_audit_diff_command`, `velocity_row_present`
 (Check A — any row for the ticket), `velocity_ticket_mismatch` +
@@ -351,7 +352,15 @@ transform; and the parent-tracker seams `find_parent_trackers` +
 2. `findClosingCommitSha`: scan `origin/main..HEAD` for a `Closes #N` body.
    Recovery path: if none, fetch + scan `origin/main -100` for an already-pushed
    close; if the issue is non-OPEN, treat as a clean close (delete claim ref,
-   sync main, teardown).
+   sync main, teardown). Diagnostic (#7): if still no close commit, scan
+   `origin/main -100` (`pushed_commit_references_issue` / impure
+   `find_pushed_reference_on_main`) for a commit that *references* `#N` (e.g.
+   `(#N)`) but lacks a close keyword; if found, die naming that pushed `<sha>
+   "<subject>"` and pointing to the two fixes (amend to add `Closes #N`, or
+   `gh issue close N`) instead of the generic "commit FIRST" message — which
+   misdiagnoses an already-landed commit. This is diagnostic-only: `body_closes_issue`
+   is NOT loosened to treat `(#N)` as a close keyword (that would corrupt GitHub
+   close-keyword semantics).
 3. Scope audit (skippable, **informational**): `git fetch origin main`; diff
    `merge-base..HEAD` (fallback `origin/main`).
 4. Velocity-row guard (skippable via `--skip-velocity-check`): **config-gated** —

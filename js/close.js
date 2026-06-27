@@ -45,7 +45,7 @@ const claimCore = require('./claim_core');
 const {
   DEFAULT_MAX_RETRIES, isSafeRef, classifyPushError, shouldCleanup,
   claimRefDeleteCommand, classifyClaimRefDelete,
-  bodyClosesIssue, extractKeywords, keywordsOverlap, markerStillPresent,
+  bodyClosesIssue, pushedCommitReferencesIssue, extractKeywords, keywordsOverlap, markerStillPresent,
   scopeAuditDiffCommand, velocityRowPresent, computeVelocityMismatch,
 } = core;
 
@@ -119,6 +119,22 @@ function findClosingCommitOnMain(issue) {
   for (const sha of shas) {
     const body = sh(`git show -s --format=%B ${sha}`, true) || '';
     if (bodyClosesIssue(body, issue)) return sha;
+  }
+  return null;
+}
+
+// Recovery diagnostic (#7): scan origin/main -100 for a commit that REFERENCES
+// #issue (e.g. `(#N)`) but lacks a close keyword. Returns { sha, subject } or null.
+// The impure twin of pushedCommitReferencesIssue.
+function findPushedReferenceOnMain(issue) {
+  const out = sh('git log origin/main -100 --format=%H', true) || '';
+  const shas = out.trim().split('\n').map((s) => s.trim()).filter(Boolean);
+  for (const sha of shas) {
+    const body = sh(`git show -s --format=%B ${sha}`, true) || '';
+    if (pushedCommitReferencesIssue(body, issue)) {
+      const subject = (sh(`git show -s --format=%s ${sha}`, true) || '').trim();
+      return { sha, subject };
+    }
   }
   return null;
 }
@@ -526,6 +542,16 @@ function main() {
         teardown(wtPath, branch, root);
         return;
       }
+    }
+    // Diagnostic (#7): a close commit may already be on origin/main but lack the
+    // `Closes #N` keyword (e.g. pushed as `(#N)`). Name it instead of the generic
+    // "commit FIRST" message, which misdiagnoses an already-pushed commit.
+    const ref = findPushedReferenceOnMain(issue);
+    if (ref) {
+      die(`Found pushed commit ${ref.sha.slice(0, 12)} "${ref.subject}" that references ` +
+          `#${issue} but lacks the \`Closes #${issue}\` keyword — GitHub will not auto-close ` +
+          `it and close cannot verify/teardown. Either amend the message to include ` +
+          `\`Closes #${issue}\` before pushing (if unshared), or close manually: gh issue close ${issue}`);
     }
     die(`No unpushed commit references "Closes #${issue}". Commit the close ` +
         '(marker deletion + `Closes #N`) FIRST, then run close. ' +

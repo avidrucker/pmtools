@@ -147,6 +147,20 @@ def body_closes_issue(text, issue):
     return bool(pat.search("" if text is None else str(text)))
 
 
+def pushed_commit_references_issue(text, issue):
+    """True if the commit text REFERENCES #issue (e.g. `(#N)` or a bare `#N`) but
+    does NOT carry a close keyword for it — the already-pushed-without-`Closes #N`
+    case (#7). False when the text closes the issue (body_closes_issue owns that),
+    when #issue is not mentioned at all, or when text is empty/None. The `\\b` after
+    the number keeps `#250` from matching issue 25.
+    """
+    if text is None:
+        return False
+    s = str(text)
+    references = re.search(r"#{}\b".format(issue), s) is not None
+    return references and not body_closes_issue(s, issue)
+
+
 # ---------------------------------------------------------------------------
 # Guard 2: keyword extraction / overlap
 # ---------------------------------------------------------------------------
