@@ -24,6 +24,7 @@ DISPATCH = {
     "parse_pddignore": status_core.parse_pddignore,
     "is_pdd_ignored": status_core.is_pdd_ignored,
     "filter_open_claims": status_core.filter_open_claims,
+    "is_blocked": status_core.is_blocked,
 }
 
 

@@ -27,6 +27,15 @@ test('inprogress fixture: @inprogress + live worktree → IN-PROGRESS (#77)', ()
   assert.deepEqual(result, expected);
 });
 
+test('blocked fixture: `blocked` label → blocked:true overlay, orthogonal to status (#78)', () => {
+  // 202 is IN-PROGRESS *and* blocked:true — the overlay is independent of the
+  // lifecycle status; a non-blocked row carries blocked:false (not the true case only).
+  const input = load('blocked.input.json');
+  const expected = load('blocked.expected.json');
+  const result = reconcile(input.grep, input.worktrees, input.issues);
+  assert.deepEqual(result, expected);
+});
+
 test('strict helper counts stale', () => {
   const input = load('basic.input.json');
   const result = reconcile(input.grep, input.worktrees, input.issues);

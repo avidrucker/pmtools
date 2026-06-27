@@ -94,8 +94,9 @@ function renderTable(report) {
   const glyph = { IDLE: '·', CLAIMED: '▶', 'IN-PROGRESS': '↻', STALE: '✗' };
   const lines = report.markers.map((m) => {
     const wt = m.worktree ? ` [${m.worktree}]` : '';
+    const blocked = m.blocked ? ' ⛔' : ''; // overlay glyph (#78), orthogonal to status
     return `${glyph[m.status] || '?'} #${String(m.issue).padEnd(5)} ${m.status.padEnd(8)} `
-      + `${m.state.padEnd(8)} ${m.file}:${m.line} (${m.keyword})${wt}`;
+      + `${m.state.padEnd(8)} ${m.file}:${m.line} (${m.keyword})${wt}${blocked}`;
   });
   if (report.stale.length) {
     lines.push('', `${report.stale.length} STALE marker(s) — clean up.`);
@@ -169,4 +170,4 @@ function main(argv) {
 if (require.main === module) {
   process.exit(main(process.argv.slice(2)));
 }
-module.exports = { main, grepMarkers, listWorktrees };
+module.exports = { main, grepMarkers, listWorktrees, renderTable };

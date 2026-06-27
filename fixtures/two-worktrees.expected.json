@@ -1,7 +1,7 @@
 {
   "markers": [
-    { "issue": 200, "file": "src/a.py", "line": 5, "keyword": "@todo", "state": "OPEN", "worktree": "apple", "status": "CLAIMED" },
-    { "issue": 201, "file": "src/b.py", "line": 12, "keyword": "@todo", "state": "OPEN", "worktree": "banana", "status": "CLAIMED" }
+    { "issue": 200, "file": "src/a.py", "line": 5, "keyword": "@todo", "state": "OPEN", "worktree": "apple", "status": "CLAIMED", "blocked": false },
+    { "issue": 201, "file": "src/b.py", "line": 12, "keyword": "@todo", "state": "OPEN", "worktree": "banana", "status": "CLAIMED", "blocked": false }
   ],
   "stale": []
 }

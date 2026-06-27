@@ -96,3 +96,12 @@ def filter_open_claims(claim_numbers, issue_states):
     closed = {s["number"] for s in (issue_states or [])
               if s and str(s.get("state")).upper() == "CLOSED"}
     return [n for n in (claim_numbers or []) if n not in closed]
+
+
+def is_blocked(labels):
+    """The BLOCKED overlay decision (#78). An issue is blocked iff it carries the
+    canonical `blocked` label — an OVERLAY orthogonal to the lifecycle status (an
+    issue can be IN-PROGRESS *and* blocked). Exact match on the lowercase shared
+    label name; degrade-safe on a None/absent label list. Pure; the `blocked-by`
+    relation + marker-less blocked issues are out of scope here (-> #84)."""
+    return isinstance(labels, list) and "blocked" in labels

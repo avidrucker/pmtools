@@ -21,6 +21,7 @@ const DISPATCH = {
   parse_pddignore: core.parsePddignore,
   is_pdd_ignored: core.isPddIgnored,
   filter_open_claims: core.filterOpenClaims,
+  is_blocked: core.isBlocked,
 };
 
 test('every status fixture file has a dispatch entry (1:1)', () => {

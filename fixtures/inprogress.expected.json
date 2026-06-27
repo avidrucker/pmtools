@@ -1,11 +1,11 @@
 {
   "markers": [
-    { "issue": 200, "file": "src/a.js", "line": 5, "keyword": "@todo", "state": "OPEN", "worktree": "apple", "status": "CLAIMED" },
-    { "issue": 201, "file": "src/b.js", "line": 8, "keyword": "@inprogress", "state": "OPEN", "worktree": "banana", "status": "IN-PROGRESS" },
-    { "issue": 202, "file": "src/c.js", "line": 12, "keyword": "@inprogress", "state": "OPEN", "worktree": null, "status": "STALE" },
-    { "issue": 203, "file": "src/d.js", "line": 20, "keyword": "@todo", "state": "OPEN", "worktree": null, "status": "IDLE" }
+    { "issue": 200, "file": "src/a.js", "line": 5, "keyword": "@todo", "state": "OPEN", "worktree": "apple", "status": "CLAIMED", "blocked": false },
+    { "issue": 201, "file": "src/b.js", "line": 8, "keyword": "@inprogress", "state": "OPEN", "worktree": "banana", "status": "IN-PROGRESS", "blocked": false },
+    { "issue": 202, "file": "src/c.js", "line": 12, "keyword": "@inprogress", "state": "OPEN", "worktree": null, "status": "STALE", "blocked": false },
+    { "issue": 203, "file": "src/d.js", "line": 20, "keyword": "@todo", "state": "OPEN", "worktree": null, "status": "IDLE", "blocked": false }
   ],
   "stale": [
-    { "issue": 202, "file": "src/c.js", "line": 12, "keyword": "@inprogress", "state": "OPEN", "worktree": null, "status": "STALE" }
+    { "issue": 202, "file": "src/c.js", "line": 12, "keyword": "@inprogress", "state": "OPEN", "worktree": null, "status": "STALE", "blocked": false }
   ]
 }

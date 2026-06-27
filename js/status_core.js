@@ -90,4 +90,13 @@ function filterOpenClaims(claimNumbers, issueStates) {
   return (claimNumbers || []).filter((n) => !closed.has(n));
 }
 
-module.exports = { parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims };
+// The BLOCKED overlay decision (#78). An issue is blocked iff it carries the
+// canonical `blocked` label — an OVERLAY orthogonal to the lifecycle status (an
+// issue can be IN-PROGRESS *and* blocked). Exact match on the lowercase shared
+// label name; degrade-safe on a null/absent label list. Pure; the `blocked-by`
+// relation + marker-less blocked issues are out of scope here (→ #84).
+function isBlocked(labels) {
+  return Array.isArray(labels) && labels.includes('blocked');
+}
+
+module.exports = { parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims, isBlocked };
