@@ -17,6 +17,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const core = require('./store_core');
+const iceCore = require('./ice_core');
 const { expanduser } = require('./config');
 
 // --- schema (verbatim from py/store.py) --------------------------------------
@@ -65,13 +66,39 @@ const VELOCITY_INDEXES = [
   + 'ON velocity(ticket, agent, started_iso) WHERE started_iso IS NOT NULL;',
 ];
 
-// Non-id columns, in schema order, per table — what insert() binds.
+// The ice store (#101): per-issue triage score keyed by a UNIQUE issue so a
+// re-score upserts (INSERT OR REPLACE) rather than appending. ice_rank is NOT
+// stored (derived at export). Mirrors ice_core.ICE_COLS / py CREATE_ICE.
+const CREATE_ICE = `CREATE TABLE IF NOT EXISTS ice (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue          INTEGER NOT NULL UNIQUE,
+  title          TEXT,
+  type           TEXT,
+  I              REAL,
+  C              REAL,
+  E              REAL,
+  ice_score      REAL,
+  tier           TEXT DEFAULT '',
+  yegor_priority INTEGER,
+  actionable     TEXT DEFAULT 'Y',
+  provisional    INTEGER DEFAULT 0,
+  labels         TEXT,
+  notes          TEXT,
+  updated_iso    TEXT
+);`;
+
+const ICE_INDEXES = [
+  'CREATE INDEX IF NOT EXISTS ice_score_idx ON ice (ice_score);',
+];
+
+// Non-id columns, in schema order, per table — what insert()/upsert() bind.
 const INSERT_COLS = {
   errors: core.ERROR_COLS.filter((c) => c !== 'id'),
   velocity: core.VELOCITY_COLS.filter((c) => c !== 'id'),
+  ice: iceCore.ICE_COLS.filter((c) => c !== 'id'),
 };
 
-const TABLES = ['errors', 'velocity'];
+const TABLES = ['errors', 'velocity', 'ice'];
 
 // expanduser + absolutise a DB path (mirrors py _resolve).
 function resolveDb(dbPath) {
@@ -110,6 +137,8 @@ const DDL_BASE = [
   CREATE_ERRORS,
   ...ERRORS_INDEXES,
   CREATE_VELOCITY,
+  CREATE_ICE,
+  ...ICE_INDEXES,
 ].join('\n');
 
 // True iff the velocity table already holds duplicate (ticket, agent,
@@ -165,6 +194,28 @@ function insert(dbPath, table, row) {
   return rid;
 }
 
+// INSERT OR REPLACE a (pre-validated) row keyed by the table's UNIQUE column —
+// for the ice store, where a re-score must REPLACE the prior row, not append.
+// Returns the resulting row id. Twin of py store.upsert.
+function upsert(dbPath, table, row) {
+  if (!TABLES.includes(table)) {
+    throw new Error(`unknown table ${JSON.stringify(table)}`);
+  }
+  const resolved = connect(dbPath);
+  const cols = INSERT_COLS[table];
+  const values = cols.map((c) => sqlLiteral(row[c]));
+  const sql = [
+    `INSERT OR REPLACE INTO ${table} (${cols.join(', ')}) VALUES (${values.join(', ')});`,
+    'SELECT last_insert_rowid();',
+  ].join('\n');
+  const out = runSql(resolved, sql).trim();
+  const rid = parseInt(out, 10);
+  if (!Number.isFinite(rid)) {
+    throw new Error(`could not read last_insert_rowid (got ${JSON.stringify(out)})`);
+  }
+  return rid;
+}
+
 // Return all rows of `table` ordered by id, as a list of plain objects.
 // sqlite3 -json emits [] for an empty result (newer builds emit nothing).
 function selectAll(dbPath, table) {
@@ -207,6 +258,6 @@ function exportCsv(dbPath, table, csvPath, cols) {
 }
 
 module.exports = {
-  connect, insert, selectAll, count, exportCsv,
-  CREATE_ERRORS, CREATE_VELOCITY,
+  connect, insert, upsert, selectAll, count, exportCsv,
+  CREATE_ERRORS, CREATE_VELOCITY, CREATE_ICE,
 };

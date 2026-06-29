@@ -14,6 +14,7 @@ import sqlite3
 import sys
 
 import store_core as core
+import ice_core
 
 # --- schema (verbatim from the lccjs seed scripts) ---------------------------
 
@@ -73,13 +74,41 @@ VELOCITY_DUP_CHECK = (
     "GROUP BY ticket, agent, started_iso HAVING COUNT(*) > 1 LIMIT 1"
 )
 
-# Non-id columns, in schema order, per table — what insert() binds.
+# The ice store (#101): a per-issue triage score, keyed by a UNIQUE issue so a
+# re-score upserts (INSERT OR REPLACE) rather than appending. Columns mirror
+# ice_core.ICE_COLS; ice_rank is NOT stored (derived at export).
+CREATE_ICE = """
+CREATE TABLE IF NOT EXISTS ice (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue          INTEGER NOT NULL UNIQUE,
+  title          TEXT,
+  type           TEXT,
+  I              REAL,
+  C              REAL,
+  E              REAL,
+  ice_score      REAL,
+  tier           TEXT DEFAULT '',
+  yegor_priority INTEGER,
+  actionable     TEXT DEFAULT 'Y',
+  provisional    INTEGER DEFAULT 0,
+  labels         TEXT,
+  notes          TEXT,
+  updated_iso    TEXT
+);
+""".strip()
+
+ICE_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS ice_score_idx ON ice (ice_score);",
+]
+
+# Non-id columns, in schema order, per table — what insert()/upsert() bind.
 _INSERT_COLS = {
     "errors": [c for c in core.ERROR_COLS if c != "id"],
     "velocity": [c for c in core.VELOCITY_COLS if c != "id"],
+    "ice": [c for c in ice_core.ICE_COLS if c != "id"],
 }
 
-_TABLES = ("errors", "velocity")
+_TABLES = ("errors", "velocity", "ice")
 
 
 def _resolve(db_path):
@@ -118,6 +147,9 @@ def connect(db_path):
     else:
         for idx in VELOCITY_INDEXES:
             conn.execute(idx)
+    conn.execute(CREATE_ICE)
+    for idx in ICE_INDEXES:
+        conn.execute(idx)
     conn.commit()
     return conn
 
@@ -129,6 +161,25 @@ def insert(db_path, table, row):
     cols = _INSERT_COLS[table]
     placeholders = ", ".join(":" + c for c in cols)
     sql = "INSERT INTO {} ({}) VALUES ({})".format(
+        table, ", ".join(cols), placeholders)
+    conn = connect(db_path)
+    try:
+        cur = conn.execute(sql, {c: row.get(c) for c in cols})
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def upsert(db_path, table, row):
+    """INSERT OR REPLACE a (pre-validated) row keyed by the table's UNIQUE
+    column — for the ice store, where a re-score must REPLACE the prior row, not
+    append. Returns the resulting row id. (`ice` is keyed by a UNIQUE issue.)"""
+    if table not in _TABLES:
+        raise ValueError("unknown table {!r}".format(table))
+    cols = _INSERT_COLS[table]
+    placeholders = ", ".join(":" + c for c in cols)
+    sql = "INSERT OR REPLACE INTO {} ({}) VALUES ({})".format(
         table, ", ".join(cols), placeholders)
     conn = connect(db_path)
     try:

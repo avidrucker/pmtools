@@ -19,11 +19,12 @@ import os
 import subprocess
 
 
-# Per-project default. errors enabled by default; velocity opt-in (disabled).
+# Per-project default. errors enabled by default; velocity + ice opt-in (disabled).
 _DEFAULTS = {
     "dbPath": None,
     "errors": {"enabled": True, "csvMirror": None, "logCommand": None},
     "velocity": {"enabled": False, "csvMirror": None, "logCommand": None},
+    "ice": {"enabled": False, "csvMirror": None, "logCommand": None},
 }
 
 # PDD marker scanning defaults ON (preserves status's historical behavior); a
@@ -134,6 +135,7 @@ def load_storage_config(cwd=None):
         "dbPath": db_path,
         "errors": _merge_store(_DEFAULTS["errors"], raw_storage.get("errors")),
         "velocity": _merge_store(_DEFAULTS["velocity"], raw_storage.get("velocity")),
+        "ice": _merge_store(_DEFAULTS["ice"], raw_storage.get("ice")),
     }
 
 
