@@ -1,0 +1,10 @@
+[
+  { "name": "massive/high/trivial", "args": [3, 1.0, 10], "expected": 30 },
+  { "name": "medium/medium/moderate", "args": [1, 0.8, 5], "expected": 4 },
+  { "name": "low/medium/easy", "args": [0.5, 0.8, 7], "expected": 2.8 },
+  { "name": "low/low/easy", "args": [0.5, 0.5, 7], "expected": 1.75 },
+  { "name": "high/medium/moderate", "args": [2, 0.8, 5], "expected": 8 },
+  { "name": "minimal/high/trivial", "args": [0.25, 1.0, 10], "expected": 2.5 },
+  { "name": "minimal/medium/hard", "args": [0.25, 0.8, 3], "expected": 0.6 },
+  { "name": "medium/high/very-hard", "args": [1, 1.0, 1], "expected": 1 }
+]
