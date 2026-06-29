@@ -19,11 +19,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-// Per-project default. errors enabled by default; velocity opt-in (disabled).
+// Per-project default. errors enabled by default; velocity + ice opt-in (disabled).
 const DEFAULTS = {
   dbPath: null,
   errors: { enabled: true, csvMirror: null, logCommand: null },
   velocity: { enabled: false, csvMirror: null, logCommand: null },
+  ice: { enabled: false, csvMirror: null, logCommand: null },
 };
 
 // PDD marker scanning defaults ON (preserves status's historical behavior); a
@@ -130,6 +131,7 @@ function loadStorageConfig(cwd = null) {
     dbPath,
     errors: mergeStore(DEFAULTS.errors, rawStorage.errors),
     velocity: mergeStore(DEFAULTS.velocity, rawStorage.velocity),
+    ice: mergeStore(DEFAULTS.ice, rawStorage.ice),
   };
 }
 
