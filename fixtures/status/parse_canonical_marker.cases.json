@@ -21,5 +21,10 @@
     "args": ["@todo #143 docs note"], "expected": null },
   { "name": "no marker at all → null", "args": ["just an ordinary comment"], "expected": null },
   { "name": "empty → null", "args": [""], "expected": null },
-  { "name": "null → null", "args": [null], "expected": null }
+  { "name": "null → null", "args": [null], "expected": null },
+  { "name": "flood: the second spec-fixture number is canonical when it carries an estimate (#3590)",
+    "args": ["expect(scan('@todo #3590:20m')).toBe(0)"],
+    "expected": { "keyword": "@todo", "issue": 3590, "estimate": "20m" } },
+  { "name": "flood: estimate-less prose naming two issues stays prose → null",
+    "args": ["@todo see #208 and #143 for the rationale"], "expected": null }
 ]
