@@ -1,0 +1,31 @@
+[
+  {
+    "name": "tier override first, then score desc, lower-issue tiebreak",
+    "args": [[
+      { "issue": 10, "ice_score": 2.0, "tier": "" },
+      { "issue": 20, "ice_score": 5.0, "tier": "" },
+      { "issue": 30, "ice_score": 5.0, "tier": "critical" },
+      { "issue": 25, "ice_score": 5.0, "tier": "" }
+    ]],
+    "expected": [
+      { "issue": 30, "ice_score": 5.0, "tier": "critical", "ice_rank": 1 },
+      { "issue": 20, "ice_score": 5.0, "tier": "", "ice_rank": 2 },
+      { "issue": 25, "ice_score": 5.0, "tier": "", "ice_rank": 3 },
+      { "issue": 10, "ice_score": 2.0, "tier": "", "ice_rank": 4 }
+    ]
+  },
+  {
+    "name": "critical > elevated > normal",
+    "args": [[
+      { "issue": 1, "ice_score": 1.0, "tier": "" },
+      { "issue": 2, "ice_score": 1.0, "tier": "elevated" },
+      { "issue": 3, "ice_score": 1.0, "tier": "critical" }
+    ]],
+    "expected": [
+      { "issue": 3, "ice_score": 1.0, "tier": "critical", "ice_rank": 1 },
+      { "issue": 2, "ice_score": 1.0, "tier": "elevated", "ice_rank": 2 },
+      { "issue": 1, "ice_score": 1.0, "tier": "", "ice_rank": 3 }
+    ]
+  },
+  { "name": "empty list", "args": [[]], "expected": [] }
+]

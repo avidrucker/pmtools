@@ -1,0 +1,8 @@
+[
+  { "name": "severity:high -> I=2, default E=5", "args": [[{ "name": "severity:high" }]], "expected": { "I": 2, "C": 0.8, "E": 5 } },
+  { "name": "severity:low + documentation -> I=0.5, E=7", "args": [[{ "name": "severity:low" }, { "name": "documentation" }]], "expected": { "I": 0.5, "C": 0.8, "E": 7 } },
+  { "name": "research (no severity) -> I=1, E=3", "args": [[{ "name": "research" }]], "expected": { "I": 1, "C": 0.8, "E": 3 } },
+  { "name": "severity:critical + chore -> I=3, E=7", "args": [[{ "name": "severity:critical" }, { "name": "chore" }]], "expected": { "I": 3, "C": 0.8, "E": 7 } },
+  { "name": "empty labels -> neutral defaults", "args": [[]], "expected": { "I": 1, "C": 0.8, "E": 5 } },
+  { "name": "null labels -> neutral defaults", "args": [null], "expected": { "I": 1, "C": 0.8, "E": 5 } }
+]
