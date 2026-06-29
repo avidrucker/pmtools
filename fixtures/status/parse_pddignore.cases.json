@@ -6,5 +6,8 @@
     "args": ["docs/**\r\n*.md\r\n"], "expected": ["docs/**", "*.md"] },
   { "name": "only comments → no patterns", "args": ["# a\n# b\n"], "expected": [] },
   { "name": "empty text → no patterns", "args": [""], "expected": [] },
-  { "name": "null → empty", "args": [null], "expected": [] }
+  { "name": "null → empty", "args": [null], "expected": [] },
+  { "name": "#370/lccjs#1458 flood policy: the full lccjs .pddignore parses to exactly its five globs",
+    "args": ["# lccjs ignore set\ntests/**\ndocs/**\n*.md\nstats/*.csv\n.claude/**\n"],
+    "expected": ["tests/**", "docs/**", "*.md", "stats/*.csv", ".claude/**"] }
 ]
