@@ -19,6 +19,7 @@ source of truth; `fixtures/` are the golden cases every port is graded against.
 | `sweep [--dry-run] [--host github\|gitlab]` | Delete stale `refs/claims/issue-N` whose issue is CLOSED — the explicit, auditable alternative to `claim`'s nag | fleet-only |
 | `error <log\|export> '<json>' [--db-path P] [--csv P\|--no-csv]` | Log an agent error into the SQLite errors store (+ optional derived CSV mirror) | storage |
 | `velocity <log\|export> '<json>' [--db-path P] [--csv P\|--no-csv]` | Log a velocity row into the SQLite velocity store (+ optional derived CSV mirror) | storage |
+| `ice <score\|list\|export> '<json>' [--auto] [--dry-run] [--label X] [--unscored] [--db-path P] [--csv P\|--no-csv]` | Score GitHub issues by ICE into the SQLite ice store (+ ranked CSV mirror) | storage |
 
 `status` is specified in full below; `claim`, `preflight`, and `close` are
 specified in their own sections (all now ported to py + js). See §claim /
@@ -585,20 +586,24 @@ lookup live in `sweep.{py,js}`.
 
 ---
 
-## storage (error + velocity stores) — ported (py + js)
+## storage (error + velocity + ice stores) — ported (py + js)
 
 A configurable SQLite-primary storage layer. **SQLite is the source of truth.**
 The CSV mirror is ONLY a derived, shallow full-table dump (atomic temp→rename,
 `# AUTO-GENERATED` preamble) — never written to directly; it is regenerated on
-every write and on demand via `export`. Two stores ship: **errors** (agent
-error log) and **velocity** (per-ticket time tracking). Seeded from lccjs
-`scripts/{errors,velocity}-seed.js` + `{error,velocity}-log.js` +
-`velocity-export.js`.
+every write and on demand via `export`. Three stores ship: **errors** (agent
+error log), **velocity** (per-ticket time tracking), and **ice** (per-issue
+triage score, #100). Seeded from lccjs `scripts/{errors,velocity}-seed.js` +
+`{error,velocity}-log.js` + `velocity-export.js` + `ice-score.js`.
 
 Pure seams live in `store_core.{py,…}` (constants, validators, delta derivation,
 CSV encoders — graded against `fixtures/{error,velocity}/*`). The impure sqlite
 engine is `store.{py,…}`; the per-project config loader is `config.{py,…}`; the
-CLIs are `error.{py,…}` / `velocity.{py,…}`.
+CLIs are `error.{py,…}` / `velocity.{py,…}`. **`ice` is a hybrid (#100):** its
+persistence reuses the same `store` engine (a `CREATE_ICE` table, upsert-by-issue),
+but its richer command logic — batch upsert, ranking, `--auto` label sweep —
+lives in its own pure seam `ice_core.{py,…}` (graded against `fixtures/ice/*`),
+NOT `store_core`, with the CLI in `ice.{py,…}`.
 
 ### Configuration — per-store, per-project (`.claude/orchestrate.json`)
 
@@ -606,7 +611,8 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
 "storage": {
   "dbPath": null,                  // null => ~/.pmtools/<repo>/pmtools.db
   "velocity": { "enabled": false, "csvMirror": null, "logCommand": null },
-  "errors":   { "enabled": true,  "csvMirror": null, "logCommand": null }
+  "errors":   { "enabled": true,  "csvMirror": null, "logCommand": null },
+  "ice":      { "enabled": false, "csvMirror": null, "logCommand": null }
 },
 "pdd": {                           // sibling block; gates `status`'s marker scan
   "enabled": true,                 // default true — false skips the PDD scan
@@ -630,7 +636,7 @@ CLIs are `error.{py,…}` / `velocity.{py,…}`.
   DB; same convention as `preflight`'s scratch dir and the `repo` data column, #26).
 - `enabled: false` → the store's `log`/`export` refuses with
   `"<store> store disabled for this project"` and **exits 0** (a disabled store is
-  not an error). **errors defaults enabled; velocity defaults disabled (opt-in).**
+  not an error). **errors defaults enabled; velocity and ice default disabled (opt-in).**
 - `csvMirror: "path"` → after each write (and on `export`) the full table is
   re-exported to that path (relative to cwd). `csvMirror: null` → DB only.
 - `pdd.enabled` (**default true**) gates only `status`'s marker scan; `false`
@@ -668,6 +674,9 @@ pmtools error    log '<json>' [--db-path P] [--csv P | --no-csv]
 pmtools error    export        [--db-path P] [--csv P]
 pmtools velocity log '<json>' [--db-path P] [--csv P | --no-csv]
 pmtools velocity export        [--db-path P] [--csv P]
+pmtools ice      score '<json>' [--auto] [--dry-run] [--db-path P] [--csv P | --no-csv]
+pmtools ice      list  [--label X] [--unscored] [--db-path P]
+pmtools ice      export        [--db-path P] [--csv P]
 ```
 
 - `--db-path P` overrides `storage.dbPath`. CSV target precedence: `--no-csv`
@@ -721,6 +730,39 @@ growth). When `title` is omitted and a `ticket` is present, the title is fetched
 best-effort via `gh issue view <N> --json title -q .title` (falls back to
 `#<N> (title unavailable)`).
 
+### ice schema (per-issue triage score, #100; pure seam = `ice_core`)
+
+```
+ice(
+  id INTEGER PK AUTOINCREMENT, issue INTEGER NOT NULL UNIQUE, title TEXT,
+  type TEXT, I REAL, C REAL, E REAL, ice_score REAL, tier TEXT DEFAULT '',
+  yegor_priority INTEGER, actionable TEXT DEFAULT 'Y', provisional INTEGER DEFAULT 0,
+  labels TEXT, notes TEXT, updated_iso TEXT)
+index: ice_score_idx ON (ice_score)
+```
+
+`issue` is **UNIQUE**, so a re-score is an `INSERT OR REPLACE` upsert-by-issue
+(not an append, unlike errors/velocity). `ice_rank` is **NOT** stored — it is
+derived at export time by `ice_core.rank_rows` (descending `ice_score`, tiebreak
+`+1/(issue×1000)`) and only appears in the ranked CSV (`ICE_CSV_COLS`), not the
+table (`ICE_COLS`).
+
+**Validation** (`validate_ice_row`): required `issue` a positive int; `I`, `C`,
+`E` must each be one of a closed set — `I ∈ {0.25, 0.5, 1, 2, 3}`,
+`C ∈ {0.5, 0.8, 1.0}`, `E ∈ {1, 3, 5, 7, 10}` (anything else is a hard reject).
+`ice_score` is **derived**: `round(I × C × E, 4)`. `provisional` defaults `0`
+(human score) — the `--auto` label sweep stamps `1`; `tier`/`actionable` default
+`''`/`'Y'`. `updated_iso` is stamped by the CLI at score time (py
+`datetime.now(tz).isoformat()` → `…+00:00`; js `new Date().toISOString()` → `…Z`).
+
+**Commands** (richer than the generic `store_cli` runner): `ice score '<json>'`
+batch-upserts `{ "<issue>": {"I":_,"C":_,"E":_, …} }` (provider fills title/labels
+best-effort, degrading to NULL offline); `ice score --auto [--dry-run]` sweeps
+unscored open issues, deriving provisional I/C/E from labels (`derive_auto_score`);
+`ice list [--label X] [--unscored]` is a ranked/filtered read; `ice export`
+re-emits the ranked CSV from the DB. Exit codes match the other stores (0 ok /
+disabled · 2 usage · 1 operational).
+
 ### CSV mirror semantics (derived, never authoritative)
 
 Fixed column order = the table's column order (the `*_COLS` constants). Line 1 =
@@ -734,10 +776,11 @@ a derived mirror, regenerated on write/on-demand and safe to delete.**
 ### Parity (py + js)
 
 `store_core` is pure and language-neutral; its fixtures (`fixtures/error/*`,
-`fixtures/velocity/*`) are shared `{name, args, expected}` cases. **Validation-
-failure** cases use the convention `{name, args, expected_error: true}` — every
-port asserts a raised/thrown error for those (rather than comparing a value). The
-JS port (`js/store_core.js` + a sqlite engine driving the **`sqlite3` CLI**, since
+`fixtures/velocity/*`) — and `ice_core`'s `fixtures/ice/*` — are shared
+`{name, args, expected}` cases. **Validation-failure** cases use the convention
+`{name, args, expected_error: true}` — every port asserts a raised/thrown error
+for those (rather than comparing a value). The JS port (`js/store_core.js` +
+`js/ice_core.js` + a sqlite engine driving the **`sqlite3` CLI**, since
 better-sqlite3 is not assumed) is **implemented**, graded against these same
 fixtures and verified byte-for-byte against the Python port (the cross-port
-parity check in `tests/integration.sh`).
+parity checks for errors, velocity, and ice in `tests/integration.sh`).

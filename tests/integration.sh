@@ -20,8 +20,10 @@ PY_RELEASE="$PMTOOLS_ROOT/py/release.py"
 JS_RELEASE="$PMTOOLS_ROOT/js/release.js"
 PY_ERROR="$PMTOOLS_ROOT/py/error.py"
 PY_VELOCITY="$PMTOOLS_ROOT/py/velocity.py"
+PY_ICE="$PMTOOLS_ROOT/py/ice.py"
 JS_ERROR="$PMTOOLS_ROOT/js/error.js"
 JS_VELOCITY="$PMTOOLS_ROOT/js/velocity.js"
+JS_ICE="$PMTOOLS_ROOT/js/ice.js"
 
 FAILS=0
 PASSES=0
@@ -1240,6 +1242,50 @@ if diff <(sed "s#${XV_PY_DB##*/}#DB#" "$XV_PY_CSV") \
 else
   fail "cross-port: py and js produce identical velocity CSV bytes (modulo db filename)"
   diff <(sed "s#${XV_PY_DB##*/}#DB#" "$XV_PY_CSV") <(sed "s#${XV_JS_DB##*/}#DB#" "$XV_JS_CSV") | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# cross-port parity (#103): the SAME `ice score` payload via py and js must
+# produce an identical sqlite row AND identical ranked-CSV bytes. Mirrors the
+# error/velocity blocks above, with ONE extra neutralization: unlike those
+# stores (whose timestamps are caller-supplied + identical), `ice` stamps
+# `updated_iso` ITSELF at score time — py as `…+00:00` (micros,
+# datetime.isoformat) vs js as `…Z` (millis, toISOString), and the value is
+# wall-clock — so it differs between ports AND run-to-run. It lives in BOTH
+# ICE_COLS (the row) and ICE_CSV_COLS (the export), so it's neutralized in both
+# diffs. Runs in a throwaway repo with no github remote, so the provider's
+# title/label lookups fail-fast → title/labels NULL in both ports (deterministic
+# + offline), exactly like the velocity block's gh-skip.
+# ---------------------------------------------------------------------------
+echo "-- cross-port parity (py vs js: identical ice DB row + CSV bytes) --"
+xi_repo="$(new_env)"
+mkdir -p "$xi_repo/.claude"
+cat > "$xi_repo/.claude/orchestrate.json" <<'EOF'
+{ "storage": { "ice": { "enabled": true } } }
+EOF
+XI_PAYLOAD='{"7":{"I":1,"C":0.8,"E":5}}'
+XI_PY_DB="$xi_repo/xi-py.db";  XI_JS_DB="$xi_repo/xi-js.db"
+XI_PY_CSV="$xi_repo/xi-py.csv"; XI_JS_CSV="$xi_repo/xi-js.csv"
+xio="$TMPROOT/xi.$RANDOM"
+( cd "$xi_repo" && python3 "$PY_ICE" score "$XI_PAYLOAD" --db-path "$XI_PY_DB" --csv "$XI_PY_CSV" ) >"$xio" 2>&1
+( cd "$xi_repo" && node    "$JS_ICE" score "$XI_PAYLOAD" --db-path "$XI_JS_DB" --csv "$XI_JS_CSV" ) >>"$xio" 2>&1
+# Row diff: every column EXCEPT the wall-clock updated_iso (selected as a constant).
+XI_COLS="id, issue, title, type, I, C, E, ice_score, tier, yegor_priority, actionable, provisional, labels, notes, 'TS' AS updated_iso"
+if diff <(sqlite3 -json "$XI_PY_DB" "SELECT $XI_COLS FROM ice ORDER BY id") \
+        <(sqlite3 -json "$XI_JS_DB" "SELECT $XI_COLS FROM ice ORDER BY id") >/dev/null 2>&1; then
+  pass "cross-port: py and js produce an identical ice sqlite row (modulo updated_iso)"
+else
+  fail "cross-port: py and js produce an identical ice sqlite row (modulo updated_iso)"; sed 's/^/      /' "$xio"
+fi
+# CSV diff: neutralize the per-port db filename (preamble) AND the wall-clock
+# updated_iso column (py `…+00:00` vs js `…Z`) before comparing.
+XI_TS_RE='s/[0-9]\{4\}-[0-9][0-9]-[0-9][0-9]T[0-9:.]*\(+00:00\|Z\)/TS/'
+if diff <(sed -e "s#${XI_PY_DB##*/}#DB#" -e "$XI_TS_RE" "$XI_PY_CSV") \
+        <(sed -e "s#${XI_JS_DB##*/}#DB#" -e "$XI_TS_RE" "$XI_JS_CSV") >/dev/null 2>&1; then
+  pass "cross-port: py and js produce identical ice CSV bytes (modulo db filename + updated_iso)"
+else
+  fail "cross-port: py and js produce identical ice CSV bytes (modulo db filename + updated_iso)"
+  diff <(sed -e "s#${XI_PY_DB##*/}#DB#" -e "$XI_TS_RE" "$XI_PY_CSV") <(sed -e "s#${XI_JS_DB##*/}#DB#" -e "$XI_TS_RE" "$XI_JS_CSV") | sed 's/^/      /'
 fi
 
 # ---------------------------------------------------------------------------
