@@ -100,6 +100,18 @@ class GitHubProvider:
                     "--limit", str(limit), "--json", "number,title,body"])
         return json.loads(out) if out else []
 
+    def list_open_issues_with_labels(self, limit):
+        """Open issues with title + label names — the `ice --auto` sweep source
+        (#102). Returns [{number, title, labels:[name,...]}]. Best-effort: [] offline."""
+        out = _run(["gh", "issue", "list", "--state", "open",
+                    "--limit", str(limit), "--json", "number,title,labels"])
+        if not out:
+            return []
+        return [{"number": i.get("number"), "title": i.get("title"),
+                 "labels": [l.get("name") for l in (i.get("labels") or [])
+                            if isinstance(l, dict)]}
+                for i in json.loads(out)]
+
     def edit_issue_body(self, number, body):
         """Write a new issue body via stdin (`gh issue edit <N> --body-file -`).
         Returns True on success, False on any failure (offline / missing gh /
