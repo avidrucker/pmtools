@@ -62,6 +62,7 @@ COMMANDS
   sweep       Delete stale refs/claims/issue-N whose issue is CLOSED.
   error       Log an agent error into the SQLite errors store.
   velocity    Log a velocity row into the SQLite velocity store.
+  ice         Score GitHub issues by ICE (Impact x Confidence x Ease).
 
 FLAGS
   --port py|js   Port to run (default: py). Overrides $PMTOOLS_PORT.
@@ -75,6 +76,9 @@ EXAMPLES
   pmtools close 42
   pmtools error log '{"occurred_iso":"...","error_type":"CLAIM_FAIL","message":"...","ticket":3}'
   pmtools velocity log '{"role":"DEV","agent":"apple","ticket":3,"h_min":30,"actual_min":25}'
+  pmtools ice score '{"42":{"I":1,"C":0.8,"E":5}}'
+  pmtools ice score --auto
+  pmtools ice list --json
 
 CONFIG
   ~/.config/pycats/settings.json   Per-project persisted preferences.
@@ -90,7 +94,7 @@ HELPTEXT
 fi
 
 case "$cmd" in
-  status|claim|preflight|close|release|sweep|error|velocity) ;;
+  status|claim|preflight|close|release|sweep|error|velocity|ice) ;;
   *) echo "pmtools: unknown command '$cmd' (run 'pmtools --help' for usage)" >&2; exit 2 ;;
 esac
 
