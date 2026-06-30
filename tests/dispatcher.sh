@@ -30,7 +30,7 @@ CLONE="$TMP/clone"
 mkdir -p "$CLONE/bin" "$CLONE/py" "$CLONE/js"
 cp "$REAL_BIN" "$CLONE/bin/pmtools"
 chmod +x "$CLONE/bin/pmtools"
-for c in status claim preflight close release error velocity; do
+for c in status claim preflight close release error velocity ice; do
   cat > "$CLONE/py/$c.py" <<EOF
 import sys
 print("PORT=py CMD=$c ARGS=" + " ".join(sys.argv[1:]))

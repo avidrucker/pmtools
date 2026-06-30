@@ -88,6 +88,19 @@ class GitHubProvider {
     return out ? JSON.parse(out) : [];
   }
 
+  // Open issues with title + label names — the `ice --auto` sweep source (#102).
+  // Returns [{number, title, labels:[name,...]}]. Best-effort: [] offline.
+  listOpenIssuesWithLabels(limit) {
+    const out = run('gh', ['issue', 'list', '--state', 'open', '--limit', String(limit),
+      '--json', 'number,title,labels']);
+    if (!out) return [];
+    return JSON.parse(out).map((i) => ({
+      number: i.number,
+      title: i.title,
+      labels: (i.labels || []).filter((l) => l && typeof l === 'object').map((l) => l.name),
+    }));
+  }
+
   // Write a new issue body via stdin (`gh issue edit <N> --body-file -`). Returns
   // true on success, false on any failure (offline / missing gh / permission).
   // The only provider WRITE; used by the parent-tracker auto-check (#36 guard 3).
