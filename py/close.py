@@ -17,8 +17,12 @@ learnings-README conflict resolver, union-file auto-resolve, and the
 parent-tracker scan. Any rebase conflict is blocking.
 
 Usage (after committing `Closes #N`):
-  close <issue>                    # from inside the worktree (statechart default)
-  close <issue> --branch <name>    # from the main checkout (branch supplied)
+  close <issue>                    # from the MAIN checkout (recommended, #104): the
+                                   #   worktree + branch resolve from the issue
+                                   #   number, so the caller's cwd is never the
+                                   #   directory being torn down. Also works from
+                                   #   inside the worktree (back-compat).
+  close <issue> --branch <name>    # override the resolved branch explicitly
   close <issue> --max 8            # more push-race retries (default 5)
   close <issue> --dry-run          # show the plan, change nothing
   close <issue> --keep             # land the commit but DON'T tear down
@@ -510,12 +514,35 @@ def main():
             "[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] "
             "[--skip-velocity-check] [--worktree-dir <dir>]", 2)
     issue = opts["issue"]
+    root = main_root()
 
-    # --- pre-flight: refuse to start unless the close is real and the tree sane.
-    branch = opts["branch"] or current_branch()
-    # Injection guard (#37): --branch is interpolated into teardown's `git branch
-    # -D <branch>`. Reject shell metacharacters, then require an ANCHORED branch
-    # shape bound to the issue token (the old guards were unanchored substring
+    # --- resolve the worktree + branch for issue #N CWD-INDEPENDENTLY (#104), so
+    # `close <N>` runs from the MAIN checkout — not only from inside the worktree
+    # it deletes (which strands the caller's shell in a removed cwd). Discover the
+    # worktree from git's own porcelain (as status/sweep/release do) rather than
+    # rebuilding the dir name — robust under a non-default --worktree-dir and odd
+    # branch shapes, and the single source of truth for where the worktree is (#51).
+    wt = core.find_worktree_for_issue(
+        core.parse_worktree_porcelain(sh("git worktree list --porcelain", True) or ""), issue)
+    wt_path = wt["path"] if wt else None
+    # Identity/branch inferred from the RESOLVED worktree's branch, not cwd:
+    # explicit --branch wins, else the worktree branch, else the cwd branch.
+    branch = core.resolve_close_branch(wt, opts["branch"], current_branch())
+
+    # A real worktree must exist to land against and tear down. Fail here — before
+    # the branch-shape guards — so a from-main run with no worktree gets an accurate
+    # message instead of the stale "run from inside the worktree" one.
+    if not wt_path or not os.path.isdir(wt_path):
+        if opts["branch"]:
+            die("--branch supplied but no worktree for issue #{} found via "
+                "`git worktree list`. Is it still present?".format(issue))
+        die("no worktree for issue #{} found via `git worktree list` — claim it "
+            "first (pmtools claim {} --as <name>), or run close from inside its "
+            "worktree.".format(issue, issue))
+
+    # Injection guard (#37): the resolved branch is interpolated into teardown's
+    # `git branch -D <branch>`. Reject shell metacharacters, then require an ANCHORED
+    # branch shape bound to the issue token (the old guards were unanchored substring
     # searches, so `x/issue-17; touch ...` slipped through). The anchored shape
     # tolerates the br-/<project>-<lang>- self-describing scheme (#17) as well as
     # legacy <fruit>/issue-N names — and, by anchoring, refuses a slug-embedded
@@ -524,24 +551,19 @@ def main():
         die('branch "{}" contains unsafe characters — '
             "only letters, digits, and . _ / - are allowed.".format(branch or "?"))
     if not re.match(r"^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-\d+(?:-[A-Za-z0-9._-]+)?$", branch):
-        die('current branch "{}" is not a [br-]<agent>/[<project>-<lang>-]issue-<N> worktree branch. '
-            "Run this from inside the puzzle's worktree, not the main checkout.".format(branch))
+        die('branch "{}" is not a [br-]<agent>/[<project>-<lang>-]issue-<N> worktree branch. '
+            "Wrong --branch, or a mislabeled worktree?".format(branch))
     if not re.match(r"^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-{}(?:-[A-Za-z0-9._-]+)?$".format(issue), branch):
         die('branch "{}" does not match issue #{}. Wrong worktree?'.format(branch, issue))
 
-    root = main_root()
     fruit = claim_core.infer_fruit_from_branch(branch)
-    # Discover the worktree from git's own porcelain (as release does) rather than
-    # rebuilding the dir name — robust under a non-default --worktree-dir and odd
-    # branch shapes, and the single source of truth for where the worktree is (#51).
-    wt = core.find_worktree_for_issue(
-        core.parse_worktree_porcelain(sh("git worktree list --porcelain", True) or ""), issue)
-    wt_path = wt["path"] if wt else None
-    if opts["branch"]:
-        if not wt_path or not os.path.isdir(wt_path):
-            die("--branch supplied but no worktree for issue #{} found via "
-                "`git worktree list`. Is it still present?".format(issue))
-        os.chdir(wt_path)
+    # Operate from INSIDE the worktree (git land/rebase/push target its branch);
+    # finalize_close then chdirs back to `root` before teardown. When the caller
+    # ran from the main checkout, its shell cwd was never inside the deleted
+    # worktree, so it is never stranded — the whole point of #104. A child process
+    # cannot chdir its parent, so this "run from a stable cwd" design, not a
+    # post-teardown repair, is the durable fix.
+    os.chdir(wt_path)
 
     closing_commit_sha = find_closing_commit_sha(issue)
     if not closing_commit_sha:

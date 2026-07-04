@@ -332,6 +332,20 @@ after** confirming it landed, tears down the worktree. The symmetric mirror of
 `close_core.{py,js}` (graded against `fixtures/close/*`), the impure
 orchestration in `close.{py,js}`. The two language ports are faithful twins.
 
+**Run it from the MAIN checkout (#104).** `close` resolves the worktree **and
+its branch** from the *issue number* — via `find_worktree_for_issue` over
+`git worktree list --porcelain`, the same way `status`/`sweep` resolve — and only
+then chdirs *into* that worktree to do its work, chdiring back to the main root
+before teardown. So the caller's cwd is never the directory being deleted, and a
+child process cannot chdir its parent shell (a Unix invariant) — running from a
+stable cwd is the fix, not a post-teardown repair. Branch precedence is the pure
+seam `resolve_close_branch(wt, explicitBranch, cwdBranch)`: explicit `--branch`
+wins, else the resolved worktree's branch, else the cwd branch. Running from
+*inside* the worktree still works (back-compat), but only the from-main form
+leaves the caller's shell in a valid directory (a `main` view, no `getcwd`
+error). Identity is still inferred from the resolved worktree's branch. Both
+ports behave identically.
+
 **Boundary:** `close` does NOT author the closing commit. The agent commits the
 marker deletion + `Closes #N` message FIRST; `close` owns only the racy push +
 the gated teardown — so it can never fabricate a close.
@@ -340,7 +354,7 @@ the gated teardown — so it can never fabricate a close.
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--branch <name>` | current branch | Supply the branch (e.g. `br-<agent>/<project>-<lang>-issue-N`, or legacy `<fruit>/issue-N`) when invoking from the main checkout; `close` chdirs into the worktree dir resolved by `branchToWorktreeName` (new `wt-…` or legacy `<fruit>-issue-N`). |
+| `--branch <name>` | resolved from the issue # | **Override** the auto-resolved branch (e.g. `br-<agent>/<project>-<lang>-issue-N`, or legacy `<fruit>/issue-N`). Rarely needed: `close` resolves the worktree + branch from the issue number (#104), so a bare `pmtools close <N>` works from the main checkout. Supply this only to force a specific branch. |
 | `--max N` | `5` | Push-race retry budget (invalid → default). |
 | `--dry-run` | off | Print the `WOULD CLOSE` plan, change nothing, exit 0. |
 | `--keep` | off | Land the commit but do NOT tear down the worktree/branch. |

@@ -62,7 +62,9 @@ can live anywhere and you never hardcode its path. Now from any cwd:
 pmtools status --json
 pmtools claim 42 --as apple
 pmtools preflight 42
-pmtools close 42                  # from inside the worktree, after committing `Closes #42`
+pmtools close 42                  # from the MAIN checkout, after committing `Closes #42`
+                                  #   (worktree resolves from the issue #; also works from
+                                  #   inside the worktree, but from-main never strands the shell)
 pmtools status --port js          # force the Node port (default: py)
 ```
 

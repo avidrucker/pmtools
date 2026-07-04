@@ -19,8 +19,12 @@
  * parent-tracker scan. Any rebase conflict is blocking.
  *
  * Usage (after committing `Closes #N`):
- *   node close.js <issue>                    # from inside the worktree
- *   node close.js <issue> --branch <name>    # from the main checkout
+ *   node close.js <issue>                    # from the MAIN checkout (recommended, #104):
+ *                                            #   worktree + branch resolve from the issue
+ *                                            #   number, so the caller's cwd is never the
+ *                                            #   dir being torn down. Also works from inside
+ *                                            #   the worktree (back-compat).
+ *   node close.js <issue> --branch <name>    # override the resolved branch explicitly
  *   node close.js <issue> --max 8            # more push-race retries (default 5)
  *   node close.js <issue> --dry-run          # show the plan, change nothing
  *   node close.js <issue> --keep             # land but DON'T tear down
@@ -507,12 +511,36 @@ function main() {
         '[--skip-velocity-check] [--worktree-dir <dir>]', 2);
   }
   const issue = opts.issue;
+  const root = mainRoot();
 
-  // --- pre-flight: refuse to start unless the close is real and the tree sane.
-  const branch = opts.branch || currentBranch();
-  // Injection guard (#37): --branch is interpolated into teardown's `git branch
-  // -D <branch>`. Reject shell metacharacters, then require an ANCHORED branch
-  // shape bound to the issue token (the old guards were unanchored substring
+  // --- resolve the worktree + branch for issue #N CWD-INDEPENDENTLY (#104), so
+  // `close <N>` runs from the MAIN checkout — not only from inside the worktree it
+  // deletes (which strands the caller's shell in a removed cwd). Discover the
+  // worktree from git's own porcelain (as status/sweep/release do) rather than
+  // rebuilding the dir name — robust under a non-default --worktree-dir and odd
+  // branch shapes, and the single source of truth for where the worktree is (#51).
+  const wtRow = core.findWorktreeForIssue(
+    core.parseWorktreePorcelain(sh('git worktree list --porcelain', true) || ''), issue);
+  const wtPath = wtRow ? wtRow.path : null;
+  // Identity/branch inferred from the RESOLVED worktree's branch, not cwd:
+  // explicit --branch wins, else the worktree branch, else the cwd branch.
+  const branch = core.resolveCloseBranch(wtRow, opts.branch, currentBranch());
+
+  // A real worktree must exist to land against and tear down. Fail here — before
+  // the branch-shape guards — so a from-main run with no worktree gets an accurate
+  // message instead of the stale "run from inside the worktree" one.
+  if (!wtPath || !fs.existsSync(wtPath)) {
+    if (opts.branch) {
+      die(`--branch supplied but no worktree for issue #${issue} found via ` +
+          '`git worktree list`. Is it still present?');
+    }
+    die(`no worktree for issue #${issue} found via \`git worktree list\` — claim it ` +
+        `first (pmtools claim ${issue} --as <name>), or run close from inside its worktree.`);
+  }
+
+  // Injection guard (#37): the resolved branch is interpolated into teardown's
+  // `git branch -D <branch>`. Reject shell metacharacters, then require an ANCHORED
+  // branch shape bound to the issue token (the old guards were unanchored substring
   // .test()s, so `x/issue-17; touch …` slipped through). The anchored shape
   // tolerates the br-/<project>-<lang>- self-describing scheme (#17) as well as
   // legacy <fruit>/issue-N names — and, by anchoring, refuses a slug-embedded
@@ -522,28 +550,21 @@ function main() {
         'only letters, digits, and . _ / - are allowed.');
   }
   if (!/^(?:br-)?[A-Za-z0-9._-]+\/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-\d+(?:-[A-Za-z0-9._-]+)?$/.test(branch)) {
-    die(`current branch "${branch}" is not a [br-]<agent>/[<project>-<lang>-]issue-<N> worktree branch. ` +
-        'Run this from inside the puzzle\'s worktree, not the main checkout.');
+    die(`branch "${branch}" is not a [br-]<agent>/[<project>-<lang>-]issue-<N> worktree branch. ` +
+        'Wrong --branch, or a mislabeled worktree?');
   }
   if (!new RegExp(`^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-${issue}(?:-[A-Za-z0-9._-]+)?$`).test(branch)) {
     die(`branch "${branch}" does not match issue #${issue}. Wrong worktree?`);
   }
 
-  const root = mainRoot();
   const fruit = claimCore.inferFruitFromBranch(branch);
-  // Discover the worktree from git's own porcelain (as release does) rather than
-  // rebuilding the dir name — robust under a non-default --worktree-dir and odd
-  // branch shapes, and the single source of truth for where the worktree is (#51).
-  const wtRow = core.findWorktreeForIssue(
-    core.parseWorktreePorcelain(sh('git worktree list --porcelain', true) || ''), issue);
-  const wtPath = wtRow ? wtRow.path : null;
-  if (opts.branch) {
-    if (!wtPath || !fs.existsSync(wtPath)) {
-      die(`--branch supplied but no worktree for issue #${issue} found via ` +
-          '`git worktree list`. Is it still present?');
-    }
-    process.chdir(wtPath);
-  }
+  // Operate from INSIDE the worktree (git land/rebase/push target its branch);
+  // finalizeClose then chdirs back to `root` before teardown. When the caller ran
+  // from the main checkout, its shell cwd was never inside the deleted worktree, so
+  // it is never stranded — the whole point of #104. A child process cannot chdir
+  // its parent, so this "run from a stable cwd" design, not a post-teardown repair,
+  // is the durable fix.
+  process.chdir(wtPath);
 
   const closingCommitSha = findClosingCommitSha(issue);
   if (!closingCommitSha) {

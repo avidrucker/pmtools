@@ -49,6 +49,7 @@ const DISPATCH = {
   tick_checkbox_for_issue: close.tickCheckboxForIssue,
   parse_worktree_porcelain: close.parseWorktreePorcelain,
   find_worktree_for_issue: close.findWorktreeForIssue,
+  resolve_close_branch: close.resolveCloseBranch,
   release_guard_verdict: close.releaseGuardVerdict,
 };
 

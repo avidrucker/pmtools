@@ -123,7 +123,8 @@ function pushedCommitReferencesIssue(text, issue) {
 function unsupportedFlagHint(flag) {
   if (flag === '--as') {
     return '`close` takes no --as; identity is inferred from the worktree branch ' +
-           '([br-]<agent>/issue-N). Just run: pmtools close <N> (from inside the worktree).';
+           '([br-]<agent>/issue-N), resolved from the issue number. Just run ' +
+           '(from the main checkout): cd <main> && pmtools close <N>.';
   }
   return null;
 }
@@ -316,6 +317,18 @@ function findWorktreeForIssue(rows, issue) {
   return null;
 }
 
+// The branch `close` operates on, resolved CWD-INDEPENDENTLY (#104): an explicit
+// --branch wins; otherwise the resolved worktree's branch — so `close <N>` runs
+// from the MAIN checkout, with identity inferred from that branch rather than
+// from cwd; otherwise the cwd branch as a last resort (the impure caller then
+// validates it and dies with guidance). `wt` is the findWorktreeForIssue result
+// ({path, branch}) or null. Pure.
+function resolveCloseBranch(wt, explicitBranch, cwdBranch) {
+  if (explicitBranch) return explicitBranch;
+  if (wt && wt.branch) return wt.branch;
+  return cwdBranch;
+}
+
 // The release data-loss guard decision (#22). ahead = commits on the branch not
 // on origin/main; dirty = worktree has uncommitted changes; force = --force.
 // Returns 'unpushed' | 'dirty' | 'ok' (ahead checked first). Pure.
@@ -355,6 +368,6 @@ module.exports = {
   velocityRowPresent, velocityTicketMismatch, computeVelocityMismatch,
   isVelocityCsvOnlyConflict, isMarkdownIndexOnlyConflict, resolveAppendOnlyMarkdownConflict,
   findParentTrackers, tickCheckboxForIssue,
-  parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
+  parseWorktreePorcelain, findWorktreeForIssue, resolveCloseBranch, releaseGuardVerdict,
   parseReleaseArgs,
 };

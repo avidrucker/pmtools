@@ -170,7 +170,8 @@ def unsupported_flag_hint(flag):
     worktree branch, so it has no use for one."""
     if flag == "--as":
         return ("`close` takes no --as; identity is inferred from the worktree branch "
-                "([br-]<agent>/issue-N). Just run: pmtools close <N> (from inside the worktree).")
+                "([br-]<agent>/issue-N), resolved from the issue number. Just run "
+                "(from the main checkout): cd <main> && pmtools close <N>.")
     return None
 
 
@@ -387,6 +388,20 @@ def find_worktree_for_issue(rows, issue):
         if (r.get("branch") and re_branch.search(r["branch"])) or re_path.search(base):
             return r
     return None
+
+
+def resolve_close_branch(wt, explicit_branch, cwd_branch):
+    """The branch `close` operates on, resolved CWD-INDEPENDENTLY (#104): an
+    explicit --branch wins; otherwise the resolved worktree's branch — so
+    `close <N>` runs from the MAIN checkout, with identity inferred from that
+    branch rather than from cwd; otherwise the cwd branch as a last resort (the
+    impure caller then validates it and dies with guidance). `wt` is the
+    find_worktree_for_issue result ({path, branch}) or None. Pure."""
+    if explicit_branch:
+        return explicit_branch
+    if wt and wt.get("branch"):
+        return wt["branch"]
+    return cwd_branch
 
 
 def release_guard_verdict(ahead, dirty, force):
