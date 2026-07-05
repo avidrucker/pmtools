@@ -166,9 +166,14 @@ def load_close_config(cwd=None):
     mi = ar.get("markdownIndexes")
     markdown_indexes = [s for s in mi if isinstance(s, str) and s] if isinstance(mi, list) else []
     update_parent_trackers = raw_close.get("updateParentTrackers") is True
+    # Pre-close verify gate (#106): pass the raw `verify` block through — the pure
+    # close_core.preclose_plan seam owns normalization (enabled/commands/cwd).
+    raw_verify = raw_close.get("verify")
+    verify = raw_verify if isinstance(raw_verify, dict) else {}
     return {
         "autoResolve": {"unionFiles": union_files, "markdownIndexes": markdown_indexes},
         "updateParentTrackers": update_parent_trackers,
+        "verify": verify,
     }
 
 

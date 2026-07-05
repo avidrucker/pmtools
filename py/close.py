@@ -31,6 +31,7 @@ Usage (after committing `Closes #N`):
   close <issue> --skip-keyword-check
   close <issue> --skip-scope-audit
   close <issue> --skip-velocity-check   # bypass the velocity-row guard
+  close <issue> --skip-verify           # bypass the config-driven pre-close verify gate
   close <issue> --worktree-dir <dir>   # default .claude/worktrees
 """
 import os
@@ -75,6 +76,7 @@ def parse_args(argv):
         "issue": None, "max": DEFAULT_MAX_RETRIES, "dryRun": False,
         "keep": False, "verifyIssue": True, "skipKeywordCheck": False,
         "skipMarkerCheck": False, "skipScopeAudit": False, "skipVelocityCheck": False,
+        "skipVerify": False,
         "updateTrackers": False, "branch": None, "worktreeDir": ".claude/worktrees",
     }
     positionals = []
@@ -103,6 +105,8 @@ def parse_args(argv):
             opts["skipScopeAudit"] = True
         elif a == "--skip-velocity-check":
             opts["skipVelocityCheck"] = True
+        elif a == "--skip-verify":
+            opts["skipVerify"] = True
         elif a == "--update-trackers":
             opts["updateTrackers"] = True
         elif a == "--branch":
@@ -231,6 +235,36 @@ def check_keyword_match(issue, closing_commit_sha):
         "  Paraphrased title? Add --skip-keyword-check to your close command.".format(
             issue, title.strip(), ", ".join(title_kws), len(all_subjects),
             ", ".join(all_subject_kws)))
+
+
+def run_preclose_verify(opts, wt_path, root):
+    """Pre-close verify gate (#106): run project-defined commands from
+    `close.verify` (lint/test/typecheck) and REFUSE to land if any exits non-zero.
+    Config-gated: no `close.verify.commands` → no-op (byte-identical to today).
+    Runs LAST — after the fast built-in gates, immediately before the land loop
+    (ruling Q2) — so a wrong-marker close fails in ~1s, not after a slow test run.
+    Each command runs in the worktree (default) or repo root; the first non-zero
+    exit prints the output and dies exit 1, leaving the worktree intact and NOTHING
+    pushed. `--dry-run` reports the commands without executing them."""
+    try:
+        vcfg = config.load_close_config().get("verify")
+    except Exception:
+        return  # config unreadable — never block on it.
+    plan = core.preclose_plan(vcfg)
+    if not plan["run"]:
+        return
+    verify_dir = root if plan["cwd"] == "root" else wt_path
+    for cmd in plan["commands"]:
+        if opts["dryRun"]:
+            log('verify (dry-run): would run "{}" in the {}'.format(cmd, plan["cwd"]))
+            continue
+        log('verify: {} (in the {})'.format(cmd, plan["cwd"]))
+        res = sh_capture(cmd, verify_dir)
+        if res["out"]:
+            sys.stdout.write(res["out"] if res["out"].endswith("\n") else res["out"] + "\n")
+        if not res["ok"]:
+            die('pre-close verify failed: `{}` exited non-zero. Nothing pushed, worktree '
+                "left intact — fix and re-run close, or bypass with --skip-verify.".format(cmd), 1)
 
 
 def check_marker_deleted(issue):
@@ -512,7 +546,7 @@ def main():
     if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
         die("usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] "
             "[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] "
-            "[--skip-velocity-check] [--worktree-dir <dir>]", 2)
+            "[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir>]", 2)
     issue = opts["issue"]
     root = main_root()
 
@@ -620,6 +654,10 @@ def main():
     if not tree_is_clean():
         die("working tree is not clean. Commit or stash everything into the close "
             "commit first (this tool only pushes what is already committed).")
+
+    # Pre-close verify gate (#106, ruling Q2: runs LAST, just before land; skippable).
+    if not opts["skipVerify"]:
+        run_preclose_verify(opts, wt_path, root)
 
     sha = head_sha()
 

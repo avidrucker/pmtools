@@ -163,7 +163,11 @@ function loadCloseConfig(cwd = null) {
     ? ar.markdownIndexes.filter((s) => typeof s === 'string' && s)
     : [];
   const updateParentTrackers = rawClose.updateParentTrackers === true;
-  return { autoResolve: { unionFiles, markdownIndexes }, updateParentTrackers };
+  // Pre-close verify gate (#106): pass the raw `verify` block through — the pure
+  // closeCore.preclosePlan seam owns normalization (enabled/commands/cwd).
+  const verify = (rawClose.verify && typeof rawClose.verify === 'object'
+                  && !Array.isArray(rawClose.verify)) ? rawClose.verify : {};
+  return { autoResolve: { unionFiles, markdownIndexes }, updateParentTrackers, verify };
 }
 
 // Merged `enrichment` config: {statusCommand, clusterFile}. Read by external

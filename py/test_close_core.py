@@ -54,6 +54,7 @@ DISPATCH = {
     "parse_worktree_porcelain": close_core.parse_worktree_porcelain,
     "find_worktree_for_issue": close_core.find_worktree_for_issue,
     "resolve_close_branch": close_core.resolve_close_branch,
+    "preclose_plan": close_core.preclose_plan,
     "release_guard_verdict": close_core.release_guard_verdict,
 }
 

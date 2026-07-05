@@ -50,6 +50,7 @@ const DISPATCH = {
   parse_worktree_porcelain: close.parseWorktreePorcelain,
   find_worktree_for_issue: close.findWorktreeForIssue,
   resolve_close_branch: close.resolveCloseBranch,
+  preclose_plan: close.preclosePlan,
   release_guard_verdict: close.releaseGuardVerdict,
 };
 

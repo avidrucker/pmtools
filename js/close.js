@@ -31,6 +31,7 @@
  *   node close.js <issue> --no-verify-issue  # skip the gh post-close check
  *   node close.js <issue> --skip-marker-check / --skip-keyword-check / --skip-scope-audit
  *   node close.js <issue> --skip-velocity-check  # bypass the velocity-row guard
+ *   node close.js <issue> --skip-verify          # bypass the config-driven pre-close verify gate
  *   node close.js <issue> --worktree-dir <dir>   # default .claude/worktrees
  */
 
@@ -71,6 +72,7 @@ function parseArgs(argv) {
     issue: null, max: DEFAULT_MAX_RETRIES, dryRun: false,
     keep: false, verifyIssue: true, skipKeywordCheck: false,
     skipMarkerCheck: false, skipScopeAudit: false, skipVelocityCheck: false,
+    skipVerify: false,
     updateTrackers: false, branch: null, worktreeDir: '.claude/worktrees',
   };
   const positionals = [];
@@ -84,6 +86,7 @@ function parseArgs(argv) {
     else if (a === '--skip-marker-check') opts.skipMarkerCheck = true;
     else if (a === '--skip-scope-audit') opts.skipScopeAudit = true;
     else if (a === '--skip-velocity-check') opts.skipVelocityCheck = true;
+    else if (a === '--skip-verify') opts.skipVerify = true;
     else if (a === '--update-trackers') opts.updateTrackers = true;
     else if (a === '--branch') opts.branch = argv[++i];
     else if (a === '--worktree-dir') opts.worktreeDir = argv[++i];
@@ -211,6 +214,32 @@ function checkMarkerDeleted(issue) {
     die(`puzzle marker for #${issue} still present — delete it in the closing commit first.\n` +
         lines.map((l) => `  Found: ${l}`).join('\n') + '\n' +
         '  Pass --skip-marker-check to bypass (no source marker ever existed).');
+  }
+}
+
+// Pre-close verify gate (#106): run project-defined commands from `close.verify`
+// (lint/test/typecheck) and REFUSE to land if any exits non-zero. Config-gated:
+// no `close.verify.commands` → no-op (byte-identical to today). Runs LAST — after
+// the fast built-in gates, immediately before the land loop (ruling Q2) — so a
+// wrong-marker close fails in ~1s, not after a slow test run. Each command runs in
+// the worktree (default) or repo root; the first non-zero exit prints the output
+// and dies exit 1, leaving the worktree intact and NOTHING pushed. `--dry-run`
+// reports the commands without executing them.
+function runPreCloseVerify(opts, wtPath, root) {
+  let closeCfg;
+  try { closeCfg = config.loadCloseConfig(); } catch (_) { return; }
+  const plan = core.preclosePlan(closeCfg && closeCfg.verify);
+  if (!plan.run) return;
+  const verifyDir = plan.cwd === 'root' ? root : wtPath;
+  for (const cmd of plan.commands) {
+    if (opts.dryRun) { log(`verify (dry-run): would run "${cmd}" in the ${plan.cwd}`); continue; }
+    log(`verify: ${cmd} (in the ${plan.cwd})`);
+    const res = shCapture(cmd, verifyDir);
+    if (res.out) process.stdout.write(res.out.endsWith('\n') ? res.out : res.out + '\n');
+    if (!res.ok) {
+      die(`pre-close verify failed: \`${cmd}\` exited non-zero. Nothing pushed, worktree ` +
+          'left intact — fix and re-run close, or bypass with --skip-verify.', 1);
+    }
   }
 }
 
@@ -508,7 +537,7 @@ function main() {
   if (!opts.issue || !/^\d+$/.test(opts.issue)) {
     die('usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] ' +
         '[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] ' +
-        '[--skip-velocity-check] [--worktree-dir <dir>]', 2);
+        '[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir>]', 2);
   }
   const issue = opts.issue;
   const root = mainRoot();
@@ -623,6 +652,9 @@ function main() {
     die('working tree is not clean. Commit or stash everything into the close ' +
         'commit first (this tool only pushes what is already committed).');
   }
+
+  // Pre-close verify gate (#106, ruling Q2: runs LAST, just before land; skippable).
+  if (!opts.skipVerify) runPreCloseVerify(opts, wtPath, root);
 
   const sha = headSha();
 

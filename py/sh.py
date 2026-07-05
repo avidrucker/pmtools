@@ -30,10 +30,12 @@ def sh(cmd, allow_fail=False):
         raise
 
 
-def sh_capture(cmd):
-    """Like sh() but returns {"ok", "out"} with stdout+stderr merged, never raises."""
+def sh_capture(cmd, cwd=None):
+    """Like sh() but returns {"ok", "out"} with stdout+stderr merged, never raises.
+    Optional `cwd` runs the command in that directory (the #106 pre-close verify
+    gate runs project commands in the worktree or repo root)."""
     res = subprocess.run(
-        cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cmd, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
     return {"ok": res.returncode == 0, "out": (res.stdout or "") + (res.stderr or "")}
 

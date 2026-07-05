@@ -26,9 +26,11 @@ function sh(cmd, allowFail = false) {
 }
 
 // Like sh() but always returns { ok, out } with stdout+stderr merged, never throws.
-function shCapture(cmd) {
+function shCapture(cmd, cwd = undefined) {
+  // Optional `cwd` runs the command in that directory (the #106 pre-close verify
+  // gate runs project commands in the worktree or repo root).
   try {
-    const out = execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = execSync(cmd, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     return { ok: true, out: out || '' };
   } catch (e) {
     return { ok: false, out: `${e.stdout || ''}${e.stderr || ''}` };

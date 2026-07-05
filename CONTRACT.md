@@ -363,6 +363,7 @@ the gated teardown — so it can never fabricate a close.
 | `--skip-keyword-check` | off | Skip the Guard 2 issue-title keyword spot-check. |
 | `--skip-scope-audit` | off | Suppress the informational `git diff --stat` scope summary. |
 | `--skip-velocity-check` | off | Skip the velocity-row guard (PM/triage closes without a logged session). |
+| `--skip-verify` | off | Skip the config-driven pre-close verify gate (`close.verify.commands`). #106. |
 | `--update-trackers` | off | After a successful close, tick the parent tracker's `- [ ] #N` checkbox (also enabled by `close.updateParentTrackers`). #36 guard 3. |
 | `--worktree-dir <dir>` | `.claude/worktrees` | **Parameterized** (lccjs hardcoded it). Worktree parent dir, relative to main repo root. |
 
@@ -419,17 +420,25 @@ transform; and the parent-tracker seams `find_parent_trackers` +
 6. Marker-deleted guard (skippable): `git grep` for `@todo/@inprogress #N` over
    **all tracked files** (language-agnostic — not just `*.js/*.ts`).
 7. No rebase/merge in progress; working tree clean.
-8. `--dry-run` → print the `WOULD CLOSE` plan, return.
-9. Land loop: up to `--max` rounds of `tryLand()` = fetch → `git rebase
-   origin/main` (any conflict → abort + die "resolve manually"; the commit is
-   safe/local) → `git push origin HEAD:main`. Exit 0 ⇒ `ok`; else
-   `classifyPushError` → retry `race`, abort `rejected-other`.
-10. Gate: `git fetch origin main`; `shouldCleanup({onOriginMain})` where
+8. Pre-close verify gate (skippable via `--skip-verify`): **config-gated** — runs
+   `close.verify.commands` (the pure `preclose_plan` seam normalizes
+   `{enabled, commands, cwd}`; absent/empty → no-op, byte-identical to today) in
+   the worktree (default) or repo `root`. Runs **last** of the pre-land gates
+   (#106 ruling: after the ~1s built-in gates, so a wrong-marker close fails fast
+   instead of after a slow test run). The first command to exit non-zero prints
+   its output and dies **exit 1** with the worktree intact and nothing pushed.
+   `--dry-run` reports each command without executing it.
+9. `--dry-run` → print the `WOULD CLOSE` plan, return.
+10. Land loop: up to `--max` rounds of `tryLand()` = fetch → `git rebase
+    origin/main` (any conflict → abort + die "resolve manually"; the commit is
+    safe/local) → `git push origin HEAD:main`. Exit 0 ⇒ `ok`; else
+    `classifyPushError` → retry `race`, abort `rejected-other`.
+11. Gate: `git fetch origin main`; `shouldCleanup({onOriginMain})` where
     `onOriginMain` checks `git branch -r --contains <sha>` ⊇ `origin/main`. Not
     on origin/main → die (refuse teardown).
-11. `deleteClaimRef` (best-effort, idempotent).
-12. Verify-issue (skippable): if `gh issue view N` still OPEN → `gh issue close`.
-13. Teardown (unless `--keep`): chdir to main root; `git pull --ff-only origin
+12. `deleteClaimRef` (best-effort, idempotent).
+13. Verify-issue (skippable): if `gh issue view N` still OPEN → `gh issue close`.
+14. Teardown (unless `--keep`): chdir to main root; `git pull --ff-only origin
     main`; `git worktree remove` + `git branch -D` + `git worktree prune`. Run
     synchronously (no detached-subprocess trick needed; there is no npm getcwd
     bug to dodge), but always chdir to root first.
@@ -637,7 +646,12 @@ NOT `store_core`, with the CLI in `ice.{py,…}`.
     "unionFiles": [],              // append-only logs to union-merge (#36 guard 2)
     "markdownIndexes": []          // append-only markdown indexes to marker-strip
   },                               //   (#36 guard 4); both default empty = off
-  "updateParentTrackers": false    // tick parent tracker checkboxes on close (#36 guard 3)
+  "updateParentTrackers": false,   // tick parent tracker checkboxes on close (#36 guard 3)
+  "verify": {                      // pre-close verify gate (#106); absent/empty => no gate
+    "commands": ["ruff check ."],  // run in order, in the worktree, just before land;
+    "cwd": "worktree",             //   first non-zero exit aborts (exit 1, nothing pushed)
+    "enabled": true                // "worktree" (default) | "root"; enabled defaults on
+  }                                //   when commands present, only explicit false disables
 },
 "enrichment": {                    // sibling block; resolved by external rankers
   "statusCommand": "pmtools status", // status reconciler a skill invokes (#79)

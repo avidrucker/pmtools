@@ -723,6 +723,91 @@ run_close_velocity_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE" python3 "$
 run_close_velocity_suite "js" node "$JS_CLAIM" node "$JS_CLOSE" node "$JS_VELOCITY"
 
 # ---------------------------------------------------------------------------
+# close pre-close verify gate (#106): config-driven `close.verify.commands` run
+# in the worktree just before land. A non-zero exit ABORTS (worktree intact,
+# nothing pushed). --dry-run reports but does not execute; --skip-verify bypasses;
+# no `close.verify` config → no gate. Hermetic; mirrors run_close_velocity_suite.
+# ---------------------------------------------------------------------------
+run_close_verify_suite() {
+  local lang="$1" ci="$2" cs="$3" oi="$4" os="$5"
+  local -a CLAIM=("$ci" "$cs") CLOSE=("$oi" "$os")
+  echo "-- [$lang] close pre-close verify gate battery (#106) --"
+  local o="$TMPROOT/closeverify.$RANDOM"
+  local gh; gh="$(make_fake_gh_titled OPEN 'Fix the widget renderer')"
+
+  # === Env A: a FAILING verify command — dry-run reports, real aborts, skip bypasses ===
+  local repo; repo="$(new_env)"
+  local N=41
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLAIM[@]}" "$N" --as apple --allow-stale-main ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] verify: claim $N exit 0"
+  local wt="$repo/.claude/worktrees/wt-apple-demo-js-issue-$N"
+  if [ -d "$wt" ]; then
+    git -C "$wt" config user.email tester@example.com; git -C "$wt" config user.name tester
+    git -C "$wt" config commit.gpgsign false
+    mkdir -p "$wt/.claude"
+    printf 'echo VERIFY_BLOCKED_TOKEN; exit 1\n' > "$wt/verify_fail.sh"
+    cat > "$wt/.claude/orchestrate.json" <<'JSON'
+{ "close": { "verify": { "commands": ["sh verify_fail.sh"] } } }
+JSON
+    printf 'widget impl\n' > "$wt/widget.txt"
+    git -C "$wt" add .claude/orchestrate.json verify_fail.sh widget.txt
+    git -C "$wt" commit -qm "feat: add widget renderer" -m "Closes #$N"
+  fi
+
+  # 1) --dry-run: the gate REPORTS the command but does NOT execute it → exit 0,
+  #    nothing landed, worktree intact.
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" --dry-run ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] verify: --dry-run + failing command → exit 0 (not executed)"
+  assert_contains "$o" "would run" "[$lang] verify: --dry-run reports the command"
+  if grep -q "VERIFY_BLOCKED_TOKEN" "$o"; then
+    fail "[$lang] verify: --dry-run did NOT execute the command"; else
+    pass "[$lang] verify: --dry-run did NOT execute the command"; fi
+
+  # 2) real close: failing command ABORTS → exit 1, surfaces output, nothing landed,
+  #    worktree intact.
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" ) >"$o" 2>&1
+  assert_exit "$?" 1 "[$lang] verify: failing command → close exits 1"
+  assert_contains "$o" "VERIFY_BLOCKED_TOKEN" "[$lang] verify: surfaces the command's output"
+  assert_contains "$o" "pre-close verify failed" "[$lang] verify: prints the gate-failed message"
+  assert_dir "$wt" "[$lang] verify: worktree left intact after gate failure"
+  if git --git-dir="$(dirname "$repo")/origin.git" log main --format=%s 2>/dev/null | grep -q "add widget renderer"; then
+    fail "[$lang] verify: blocked close did NOT land on origin/main"; else
+    pass "[$lang] verify: blocked close did NOT land on origin/main"; fi
+
+  # 3) --skip-verify bypasses the failing gate → close proceeds, lands, tears down.
+  ( cd "$repo" && PATH="$gh:$PATH" "${CLOSE[@]}" "$N" --branch "br-apple/demo-js-issue-$N" --skip-verify ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] verify: --skip-verify bypasses the gate → exits 0"
+  assert_contains "$o" "CLOSED" "[$lang] verify: --skip-verify close prints CLOSED"
+  if [ -d "$wt" ]; then fail "[$lang] verify: worktree removed after --skip-verify close"; else pass "[$lang] verify: worktree removed after --skip-verify close"; fi
+
+  # === Env B: a PASSING verify command → close runs it and lands ===
+  local repo2; repo2="$(new_env)"
+  local M=42
+  ( cd "$repo2" && PATH="$gh:$PATH" "${CLAIM[@]}" "$M" --as apple --allow-stale-main ) >"$o" 2>&1
+  local wt2="$repo2/.claude/worktrees/wt-apple-demo-js-issue-$M"
+  if [ -d "$wt2" ]; then
+    git -C "$wt2" config user.email tester@example.com; git -C "$wt2" config user.name tester
+    git -C "$wt2" config commit.gpgsign false
+    mkdir -p "$wt2/.claude"
+    printf 'echo VERIFY_RAN_OK; exit 0\n' > "$wt2/verify_ok.sh"
+    cat > "$wt2/.claude/orchestrate.json" <<'JSON'
+{ "close": { "verify": { "commands": ["sh verify_ok.sh"] } } }
+JSON
+    printf 'widget impl\n' > "$wt2/widget.txt"
+    git -C "$wt2" add .claude/orchestrate.json verify_ok.sh widget.txt
+    git -C "$wt2" commit -qm "feat: add widget renderer" -m "Closes #$M"
+  fi
+  ( cd "$repo2" && PATH="$gh:$PATH" "${CLOSE[@]}" "$M" --branch "br-apple/demo-js-issue-$M" ) >"$o" 2>&1
+  assert_exit "$?" 0 "[$lang] verify: passing command → close exits 0"
+  assert_contains "$o" "verify: sh verify_ok.sh" "[$lang] verify: ran the configured command"
+  assert_contains "$o" "CLOSED" "[$lang] verify: passing-gate close prints CLOSED"
+  if [ -d "$wt2" ]; then fail "[$lang] verify: worktree removed after passing-gate close"; else pass "[$lang] verify: worktree removed after passing-gate close"; fi
+}
+
+run_close_verify_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"
+run_close_verify_suite "js" node "$JS_CLAIM" node "$JS_CLOSE"
+
+# ---------------------------------------------------------------------------
 # close parent-tracker guard (#36 guard 3 / #907): config-gated. With
 # `close.updateParentTrackers` ENABLED, a successful close ticks the parent
 # tracker issue's checkbox for the closed child — but only a box whose SOLE

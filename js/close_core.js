@@ -317,6 +317,23 @@ function findWorktreeForIssue(rows, issue) {
   return null;
 }
 
+// Pure pre-close verify plan from the `close.verify` config block (#106).
+// Returns {run, commands, cwd}: `run` is true only when the gate is enabled AND
+// at least one non-empty string command is configured; `commands` is that
+// sanitized list (original strings, blanks/non-strings dropped); `cwd` is 'root'
+// only when explicitly set, else 'worktree' (default — verify exactly what's
+// about to merge). `verifyCfg` is the object under `close.verify`, or null/absent
+// → run false (100% backward-compatible; today's behavior). `enabled` defaults on
+// when commands are present; only an explicit `false` disables. Pure.
+function preclosePlan(verifyCfg) {
+  const vc = (verifyCfg && typeof verifyCfg === 'object' && !Array.isArray(verifyCfg)) ? verifyCfg : {};
+  const commands = Array.isArray(vc.commands)
+    ? vc.commands.filter((s) => typeof s === 'string' && s.trim()) : [];
+  const cwd = vc.cwd === 'root' ? 'root' : 'worktree';
+  const enabled = vc.enabled !== false;
+  return { run: Boolean(enabled && commands.length), commands, cwd };
+}
+
 // The branch `close` operates on, resolved CWD-INDEPENDENTLY (#104): an explicit
 // --branch wins; otherwise the resolved worktree's branch — so `close <N>` runs
 // from the MAIN checkout, with identity inferred from that branch rather than
@@ -368,6 +385,6 @@ module.exports = {
   velocityRowPresent, velocityTicketMismatch, computeVelocityMismatch,
   isVelocityCsvOnlyConflict, isMarkdownIndexOnlyConflict, resolveAppendOnlyMarkdownConflict,
   findParentTrackers, tickCheckboxForIssue,
-  parseWorktreePorcelain, findWorktreeForIssue, resolveCloseBranch, releaseGuardVerdict,
+  parseWorktreePorcelain, findWorktreeForIssue, resolveCloseBranch, preclosePlan, releaseGuardVerdict,
   parseReleaseArgs,
 };
