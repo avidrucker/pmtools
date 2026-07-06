@@ -90,7 +90,7 @@ function main() {
   if (branch) gitTrim(['branch', '-D', branch]);
   gitTrim(['worktree', 'prune']);
   if (gitTrim(['worktree', 'list', '--porcelain']).includes(wtPath)) {
-    console.error('[release] warning: teardown may have failed — check: git worktree list');
+    console.error('[release] note: teardown may have failed — check: git worktree list');
   }
   log(`Shell re-root: cd "${root}"`);
 }

@@ -735,7 +735,7 @@ def _teardown(wt_path, branch, root):
     if res["ok"]:
         git_capture(["worktree", "prune"])
     if not res["ok"]:
-        sys.stderr.write("[close] warning: teardown may have failed — check: git worktree list\n")
+        sys.stderr.write("[close] note: teardown may have failed — check: git worktree list\n")
 
 
 def finalize_close(issue, branch, wt_path, root, closing_sha, landed_sha, keep):

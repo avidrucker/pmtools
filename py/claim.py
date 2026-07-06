@@ -194,7 +194,7 @@ def flip_marker(issue, wt_path):
         with open(abs_file, "r", encoding="utf-8") as f:
             content = f.read()
     except OSError as e:
-        sys.stderr.write("[claim] warn: could not read {}: {}\n".format(rel_file, e))
+        sys.stderr.write("[claim] note: could not read {}: {}\n".format(rel_file, e))
         return
     res = apply_marker_flip(content, issue)
     if not res["flipped"]:
@@ -204,7 +204,7 @@ def flip_marker(issue, wt_path):
         with open(abs_file, "w", encoding="utf-8") as f:
             f.write(res["updated"])
     except OSError as e:
-        sys.stderr.write("[claim] warn: could not write {}: {}\n".format(rel_file, e))
+        sys.stderr.write("[claim] note: could not write {}: {}\n".format(rel_file, e))
         return
     print("[claim] flipped {} #{} → {} in {}:{}".format(
         TODO_KW, issue, INPROGRESS_KW, rel_file, res["line"]))

@@ -99,7 +99,7 @@ def main():
         git_trim(["branch", "-D", branch])
     git_trim(["worktree", "prune"])
     if wt_path in git_trim(["worktree", "list", "--porcelain"]):
-        sys.stderr.write("[release] warning: teardown may have failed — check: git worktree list\n")
+        sys.stderr.write("[release] note: teardown may have failed — check: git worktree list\n")
     log('Shell re-root: cd "{}"'.format(root))
 
 

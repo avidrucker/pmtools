@@ -172,7 +172,7 @@ function flipMarker(issue, wtPath) {
   const absFile = path.join(wtPath, relFile);
   let content;
   try { content = fs.readFileSync(absFile, 'utf8'); } catch (e) {
-    console.error(`[claim] warn: could not read ${relFile}: ${e.message}`);
+    console.error(`[claim] note: could not read ${relFile}: ${e.message}`);
     return;
   }
   const { updated, flipped, line } = applyMarkerFlip(content, issue);
@@ -181,7 +181,7 @@ function flipMarker(issue, wtPath) {
     return;
   }
   try { fs.writeFileSync(absFile, updated, 'utf8'); } catch (e) {
-    console.error(`[claim] warn: could not write ${relFile}: ${e.message}`);
+    console.error(`[claim] note: could not write ${relFile}: ${e.message}`);
     return;
   }
   console.log(`[claim] flipped ${todoKw} #${issue} → ${inprogressKw} in ${relFile}:${line}`);

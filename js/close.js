@@ -469,7 +469,7 @@ function teardown(wtPath, branch, root) {
   if (res.ok) res = gitCapture(['branch', '-D', branch]);
   if (res.ok) gitCapture(['worktree', 'prune']);
   if (!res.ok) {
-    console.error('[close] warning: teardown may have failed — check: git worktree list');
+    console.error('[close] note: teardown may have failed — check: git worktree list');
   }
 }
 

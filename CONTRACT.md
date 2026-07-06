@@ -44,10 +44,11 @@ failure (and every warning) across all tiers and both ports (#44):
   commands, which previously stamped a bare `error:` / `velocity:` that the
   glyph-grep missed.
 - **Warning / note** (non-fatal) → a stderr line `[<cmd>] note: <message>`
-  (e.g. `[velocity] note: model "x" is new or non-canonical …`). *Residual:*
-  `claim` still emits a few `[claim] warn:` and `close`/`release` a
-  `[<cmd>] warning:` line on best-effort I/O / teardown paths; migrating those
-  to `note:` is a tracked follow-up, not part of this change.
+  (e.g. `[velocity] note: model "x" is new or non-canonical …`). Every non-fatal
+  warn line uses this one channel: `claim`'s best-effort marker-file read/write
+  notices and `close`/`release`'s teardown-may-have-failed notices were migrated
+  off the old `[claim] warn:` / `[<cmd>] warning:` spellings (#62), so a single
+  `grep -F '] note:'` finds them all.
 - **Unknown-subcommand render** is byte-identical across ports: the offending
   token is rendered as a **JSON literal** — `got "foo"`, `got null` (JS
   `JSON.stringify`, Python `json.dumps`) — never a language-native repr
