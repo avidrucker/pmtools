@@ -32,7 +32,7 @@ Usage (after committing `Closes #N`):
   close <issue> --skip-scope-audit
   close <issue> --skip-velocity-check   # bypass the velocity-row guard
   close <issue> --skip-verify           # bypass the config-driven pre-close verify gate
-  close <issue> --worktree-dir <dir>   # default .claude/worktrees
+  close <issue> --worktree-dir <dir>   # DEPRECATED: back-compat only, ignored post-#51 (close self-discovers)
 """
 import os
 import re
@@ -112,6 +112,8 @@ def parse_args(argv):
         elif a == "--branch":
             i += 1
             opts["branch"] = argv[i] if i < n else None
+        # --worktree-dir: accepted for back-compat but intentionally IGNORED post-#51
+        # (close self-discovers the worktree via `git worktree list`). Do not use. (#73)
         elif a == "--worktree-dir":
             i += 1
             opts["worktreeDir"] = argv[i] if i < n else None
@@ -546,7 +548,7 @@ def main():
     if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
         die("usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] "
             "[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] "
-            "[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir>]", 2)
+            "[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]", 2)
     issue = opts["issue"]
     root = main_root()
 

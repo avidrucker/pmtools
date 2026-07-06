@@ -32,7 +32,7 @@
  *   node close.js <issue> --skip-marker-check / --skip-keyword-check / --skip-scope-audit
  *   node close.js <issue> --skip-velocity-check  # bypass the velocity-row guard
  *   node close.js <issue> --skip-verify          # bypass the config-driven pre-close verify gate
- *   node close.js <issue> --worktree-dir <dir>   # default .claude/worktrees
+ *   node close.js <issue> --worktree-dir <dir>   # DEPRECATED: back-compat only, ignored post-#51 (close self-discovers)
  */
 
 const { spawnSync } = require('node:child_process');
@@ -89,6 +89,8 @@ function parseArgs(argv) {
     else if (a === '--skip-verify') opts.skipVerify = true;
     else if (a === '--update-trackers') opts.updateTrackers = true;
     else if (a === '--branch') opts.branch = argv[++i];
+    // --worktree-dir: accepted for back-compat but intentionally IGNORED post-#51
+    // (close self-discovers the worktree via `git worktree list`). Do not use. (#73)
     else if (a === '--worktree-dir') opts.worktreeDir = argv[++i];
     else if (a.startsWith('--')) {
       // A flag recognized on a sibling command but unsupported here (#9, e.g.
@@ -537,7 +539,7 @@ function main() {
   if (!opts.issue || !/^\d+$/.test(opts.issue)) {
     die('usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] ' +
         '[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] ' +
-        '[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir>]', 2);
+        '[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]', 2);
   }
   const issue = opts.issue;
   const root = mainRoot();

@@ -165,6 +165,11 @@ canonical name parsers — #72), plus the prefix-tolerant
 consumers (lccjs) **call pmtools** rather than re-templating the scheme — keeping
 pmtools the single canonical definition. Consumer follow-on: avidrucker/lccjs#1461.
 
+Since #51, `close` **self-discovers** the worktree from the issue/branch via
+`git worktree list` (it no longer rebuilds the path from `--worktree-dir`), so
+`close --worktree-dir` is accepted for back-compat only and **ignored** (#73).
+`claim --worktree-dir` remains functional and is not deprecated.
+
 ## 6. Configuration
 
 Per-project config lives in the consumer's **`.claude/orchestrate.json`**.
