@@ -31,7 +31,8 @@ _DEFAULTS = {
 # repo opts out with `"pdd": {"enabled": false}`. ignoreFile names the
 # gitignore-style exclude list (default .pddignore).
 _DEFAULTS_PDD = {"enabled": True, "ignoreFile": ".pddignore"}
-_DEFAULTS_ENRICHMENT = {"statusCommand": None, "clusterFile": None}
+_DEFAULTS_ENRICHMENT = {"statusCommand": None, "clusterFile": None,
+                        "claimCommand": None, "closeCommand": None}
 
 
 def _sh(cmd):
@@ -178,16 +179,18 @@ def load_close_config(cwd=None):
 
 
 def load_enrichment_config(cwd=None):
-    """Return the merged `enrichment` config: {statusCommand, clusterFile}. Reads
-    the top-level `enrichment` block of orchestrate.json (sibling to `storage`).
-    Used by external rankers (e.g. the puzzle-triage skill) to resolve the status
-    reconciler (`statusCommand`, e.g. "pmtools status") and the cluster soft-lock
-    map (`clusterFile`, reserved for #80/LOCKED). Both consumer-supplied (the #23
-    generic rule) and default to None — absent → no reconciler / no cluster
-    locking. Tolerant of a missing repo / file / key / non-string value."""
+    """Return the merged `enrichment` config: {statusCommand, clusterFile,
+    claimCommand, closeCommand}. Reads the top-level `enrichment` block of
+    orchestrate.json (sibling to `storage`). Used by external rankers (e.g. the
+    puzzle-triage skill) to resolve the status reconciler (`statusCommand`, e.g.
+    "pmtools status") and the cluster soft-lock map (`clusterFile`, reserved for
+    #80/LOCKED); `claimCommand` / `closeCommand` name the consumer's claim/close
+    verbs, read by preflight for the config-coherence check (#63). All
+    consumer-supplied (the #23 generic rule) and default to None. Tolerant of a
+    missing repo / file / key / non-string value."""
     raw = _read_orchestrate_block("enrichment", cwd)
     merged = dict(_DEFAULTS_ENRICHMENT)
-    for k in ("statusCommand", "clusterFile"):
+    for k in ("statusCommand", "clusterFile", "claimCommand", "closeCommand"):
         v = raw.get(k)
         if isinstance(v, str) and v:
             merged[k] = v

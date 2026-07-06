@@ -31,7 +31,7 @@ const DEFAULTS = {
 // repo opts out with `"pdd": { "enabled": false }`. ignoreFile names the
 // gitignore-style exclude list (default .pddignore).
 const DEFAULTS_PDD = { enabled: true, ignoreFile: '.pddignore' };
-const DEFAULTS_ENRICHMENT = { statusCommand: null, clusterFile: null };
+const DEFAULTS_ENRICHMENT = { statusCommand: null, clusterFile: null, claimCommand: null, closeCommand: null };
 
 function sh(cmd, args) {
   try {
@@ -170,16 +170,17 @@ function loadCloseConfig(cwd = null) {
   return { autoResolve: { unionFiles, markdownIndexes }, updateParentTrackers, verify };
 }
 
-// Merged `enrichment` config: {statusCommand, clusterFile}. Read by external
-// rankers (e.g. the puzzle-triage skill) to resolve the status reconciler
-// (statusCommand, e.g. "pmtools status") and the cluster soft-lock map
-// (clusterFile, reserved for #80/LOCKED). Both consumer-supplied (#23 generic
-// rule), default null — absent → no reconciler / no cluster locking. Tolerant of
-// a missing repo / file / key / non-string value. (#79)
+// Merged `enrichment` config: {statusCommand, clusterFile, claimCommand,
+// closeCommand}. Read by external rankers (e.g. the puzzle-triage skill) to
+// resolve the status reconciler (statusCommand, e.g. "pmtools status") and the
+// cluster soft-lock map (clusterFile, reserved for #80/LOCKED). claimCommand /
+// closeCommand name the consumer's claim/close verbs — preflight reads them for
+// the config-coherence check (#63). All consumer-supplied (#23 generic rule),
+// default null. Tolerant of a missing repo / file / key / non-string value. (#79)
 function loadEnrichmentConfig(cwd = null) {
   const raw = readOrchestrateBlock('enrichment', cwd);
   const merged = { ...DEFAULTS_ENRICHMENT };
-  for (const k of ['statusCommand', 'clusterFile']) {
+  for (const k of ['statusCommand', 'clusterFile', 'claimCommand', 'closeCommand']) {
     if (typeof raw[k] === 'string' && raw[k]) merged[k] = raw[k];
   }
   return merged;

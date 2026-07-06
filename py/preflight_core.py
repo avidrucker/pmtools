@@ -46,3 +46,36 @@ def preflight_evidence(text, file_list, evidence_dirs=None):
         if prefix and prefix.group(1) in refs:
             hits.add(p)
     return sorted(hits)
+
+
+def resolves_to_pmtools(cmd, verb):
+    """Does `cmd` invoke pmtools-<verb>? True iff it contains the token
+    `pmtools <verb>` (case-insensitive substring), so a full path like
+    `/usr/local/bin/pmtools close` still matches. (#63)"""
+    if not isinstance(cmd, str) or not cmd:
+        return False
+    return "pmtools {}".format(str(verb).lower()) in cmd.lower()
+
+
+def preflight_close_coherence(claim_command, close_command):
+    """Config-coherence check (#63). When a consumer claims with pmtools (which
+    mints self-describing br-/wt- branch names, #17) but its closeCommand is a
+    DIFFERENT, non-pmtools close, that close may not parse the br-/wt- names and
+    will reject the branch at close time — after the work is done. Surface a
+    non-blocking note at preflight instead. Returns {"warn": ...} to print, or
+    None when there is nothing to say:
+      - claimCommand does not resolve to pmtools-claim -> None (not on pmtools claim)
+      - closeCommand is unset/empty                    -> None (no conflicting close)
+      - closeCommand already resolves to pmtools-close -> None (coherent)
+    The substring match cannot tell a capable non-pmtools close (one taught the
+    br-/wt- form) from an incapable one, so a capable close draws a harmless false
+    note — acceptable because this only ever prints a note, never blocks."""
+    if not resolves_to_pmtools(claim_command, "claim"):
+        return None
+    if not isinstance(close_command, str) or not close_command:
+        return None
+    if resolves_to_pmtools(close_command, "close"):
+        return None
+    return {"warn": 'claiming with pmtools (br-/wt- branch names) but closeCommand '
+            'is "{}"; ensure it accepts br-/wt- branch names or the close will be '
+            'rejected.'.format(close_command)}

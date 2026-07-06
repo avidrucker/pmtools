@@ -214,11 +214,33 @@ parameterized:
 Steps: (1) stamp `started_iso` to the scratch file; (2) start-of-task reads
 (`git status`, `git worktree list`, `gh issue view`); (2.5) surface in-repo
 evidence `<dir>/<N>-*` for every referenced `#N` (match anchored to the `<N>-`
-basename prefix); (3) assert the issue is OPEN — exit 1 otherwise, warn-and-proceed
-when `gh` is offline. The pure decision seams `preflightIssueGate` /
-`preflightEvidence` live in `preflight_core.{js,py}` — re-exported by the impure
-`preflight.{js,py}` — and are graded against the shared `fixtures/preflight/*`.
-The two language ports are faithful twins (#46).
+basename prefix); (2.7) config-coherence note (#63); (3) assert the issue is
+OPEN — exit 1 otherwise, warn-and-proceed when `gh` is offline. The pure decision
+seams `preflightIssueGate` / `preflightEvidence` / `preflightCloseCoherence` live
+in `preflight_core.{js,py}` — re-exported by the impure `preflight.{js,py}` — and
+are graded against the shared `fixtures/preflight/*`. The two language ports are
+faithful twins (#46).
+
+**Config-coherence note (#63).** When the consumer claims with pmtools (which
+mints self-describing `br-`/`wt-` branch names, #17) but its `closeCommand` is a
+different, non-pmtools close, that close may not parse the `br-`/`wt-` names and
+will reject the branch at close time — after the work is done. `preflight` reads
+`enrichment.claimCommand` / `enrichment.closeCommand` and prints one
+`[preflight] note:` to **stderr** (never blocks, still exits 0) iff:
+
+- `claimCommand` resolves to pmtools-claim — a command **resolves to
+  pmtools-`<verb>`** iff its string contains the token `pmtools <verb>`
+  (case-insensitive substring, so a full path like `/usr/local/bin/pmtools close`
+  matches), **and**
+- `closeCommand` is a **non-empty** command that does **not** resolve to
+  pmtools-close.
+
+An unset/empty `closeCommand` prints nothing (no conflicting close configured);
+so does pmtools' own `orchestrate.json` (it sets neither command). The substring
+match cannot tell a capable non-pmtools close (one taught the `br-`/`wt-` form)
+from an incapable one, so a capable close draws a **harmless false note** — the
+consumer confirms their close handles the names and proceeds. The predicate is
+the pure `preflightCloseCoherence` seam (fixture-graded).
 
 ## `claim` (fleet-only) — ported (py + js)
 
@@ -667,7 +689,9 @@ NOT `store_core`, with the CLI in `ice.{py,…}`.
 },                                 //   number >0 kills on timeout (process-group), 0/unset = none
 "enrichment": {                    // sibling block; resolved by external rankers
   "statusCommand": "pmtools status", // status reconciler a skill invokes (#79)
-  "clusterFile": null              // cluster soft-lock map (reserved, #80/LOCKED)
+  "clusterFile": null,             // cluster soft-lock map (reserved, #80/LOCKED)
+  "claimCommand": "pmtools claim", // consumer's claim verb — preflight coherence (#63)
+  "closeCommand": "pmtools close"  // consumer's close verb — preflight coherence (#63)
 }
 ```
 
@@ -687,9 +711,11 @@ NOT `store_core`, with the CLI in `ice.{py,…}`.
 - `enrichment.statusCommand` (default unset) names the status reconciler an
   external ranker (e.g. the puzzle-triage skill) invokes to overlay claimed /
   in-progress / locked work; `enrichment.clusterFile` (reserved for LOCKED,
-  #80) names the cluster soft-lock map. Both consumer-supplied, default unset
-  (no reconciler / no cluster locking). Loaded by `config.load_enrichment_config`
-  (twin). (#79)
+  #80) names the cluster soft-lock map. `enrichment.claimCommand` /
+  `enrichment.closeCommand` (both default unset) name the consumer's claim/close
+  verbs; `preflight` reads them for its config-coherence note (see §preflight,
+  #63). All consumer-supplied, default unset. Loaded by
+  `config.load_enrichment_config` (twin). (#79)
 - `close.updateParentTrackers` (**default `false`**) — when true (or `close
   --update-trackers`), a successful close ticks the parent tracker issue's
   `- [ ] #N` checkbox for the closed child (#36 guard 3). Loaded by

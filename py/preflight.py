@@ -20,7 +20,8 @@ import subprocess
 import sys
 
 import config
-from preflight_core import preflight_issue_gate, preflight_evidence, DEFAULT_EVIDENCE_DIRS
+from preflight_core import (preflight_issue_gate, preflight_evidence,
+                            preflight_close_coherence, DEFAULT_EVIDENCE_DIRS)
 from sh import make_die
 
 
@@ -148,6 +149,13 @@ def main(argv):
     else:
         out("    (none found for referenced tickets)")
     out("")
+
+    # Config-coherence note (#63): claiming with pmtools but closing with a
+    # non-pmtools close that may not parse br-/wt- branch names. Non-blocking.
+    enrich = config.load_enrichment_config()
+    coherence = preflight_close_coherence(enrich.get("claimCommand"), enrich.get("closeCommand"))
+    if coherence:
+        sys.stderr.write("[preflight] note: {}\n".format(coherence["warn"]))
 
     gate = preflight_issue_gate(info.get("state") if info else None)
     if gate.get("warn"):

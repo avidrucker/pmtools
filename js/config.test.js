@@ -51,9 +51,11 @@ function repoWithOrchestrate(cfg) {
   return dir;
 }
 
+const ENRICH_ALL_NULL = { statusCommand: null, clusterFile: null, claimCommand: null, closeCommand: null };
+
 test('loadEnrichmentConfig: absent block → null defaults (#79)', () => {
   const repo = repoWithOrchestrate({ storage: {} });
-  assert.deepEqual(config.loadEnrichmentConfig(repo), { statusCommand: null, clusterFile: null });
+  assert.deepEqual(config.loadEnrichmentConfig(repo), ENRICH_ALL_NULL);
 });
 
 test('loadEnrichmentConfig: reads statusCommand (#79)', () => {
@@ -68,9 +70,16 @@ test('loadEnrichmentConfig: reads clusterFile (#79)', () => {
   assert.equal(config.loadEnrichmentConfig(repo).clusterFile, 'puzzle-clusters.csv');
 });
 
+test('loadEnrichmentConfig: reads claimCommand/closeCommand (#63)', () => {
+  const repo = repoWithOrchestrate({ enrichment: { claimCommand: 'pmtools claim', closeCommand: 'npm run close' } });
+  const cfg = config.loadEnrichmentConfig(repo);
+  assert.equal(cfg.claimCommand, 'pmtools claim');
+  assert.equal(cfg.closeCommand, 'npm run close');
+});
+
 test('loadEnrichmentConfig: no orchestrate.json → null defaults (#79)', () => {
   const repo = repoWithOrchestrate(null);
-  assert.deepEqual(config.loadEnrichmentConfig(repo), { statusCommand: null, clusterFile: null });
+  assert.deepEqual(config.loadEnrichmentConfig(repo), ENRICH_ALL_NULL);
 });
 
 test('repoRoot from a worktree returns the worktree (the misleading identity)', () => {

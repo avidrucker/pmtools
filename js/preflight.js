@@ -22,7 +22,7 @@ const path = require('node:path');
 
 const config = require('./config');
 const { makeDie } = require('./sh');
-const { preflightIssueGate, preflightEvidence, DEFAULT_EVIDENCE_DIRS } = require('./preflight_core');
+const { preflightIssueGate, preflightEvidence, preflightCloseCoherence, DEFAULT_EVIDENCE_DIRS } = require('./preflight_core');
 
 function sh(cmd) {
   try {
@@ -116,6 +116,12 @@ function main(argv) {
   else { out('    (none found for referenced tickets)'); }
   out('');
 
+  // Config-coherence note (#63): claiming with pmtools but closing with a
+  // non-pmtools close that may not parse br-/wt- branch names. Non-blocking.
+  const enrich = config.loadEnrichmentConfig();
+  const coherence = preflightCloseCoherence(enrich.claimCommand, enrich.closeCommand);
+  if (coherence) process.stderr.write(`[preflight] note: ${coherence.warn}\n`);
+
   const gate = preflightIssueGate(info && info.state);
   if (gate.warn) out(`  ⚠ ${gate.warn}`);
   if (!gate.ok) die(gate.error);
@@ -128,4 +134,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2));
 
-module.exports = { preflightIssueGate, preflightEvidence, defaultScratchDir };
+module.exports = { preflightIssueGate, preflightEvidence, preflightCloseCoherence, defaultScratchDir };

@@ -40,4 +40,35 @@ function preflightEvidence(text, fileList, evidenceDirs = DEFAULT_EVIDENCE_DIRS)
   return Array.from(hits).sort();
 }
 
-module.exports = { preflightIssueGate, preflightEvidence, DEFAULT_EVIDENCE_DIRS };
+// Pure: does `cmd` invoke pmtools-<verb>? True iff the string contains the token
+// `pmtools <verb>` (case-insensitive substring), so a full path like
+// `/usr/local/bin/pmtools close` still matches. (#63)
+function resolvesToPmtools(cmd, verb) {
+  if (typeof cmd !== 'string' || !cmd) return false;
+  return cmd.toLowerCase().includes(`pmtools ${String(verb).toLowerCase()}`);
+}
+
+// Pure: config-coherence check (#63). When a consumer claims with pmtools (which
+// mints self-describing `br-`/`wt-` branch names, #17) but its closeCommand is a
+// DIFFERENT, non-pmtools close, that close may not parse the `br-`/`wt-` names and
+// will reject the branch at close time — after the work is done. Surface a
+// non-blocking note at preflight instead. Returns { warn } to print, or null when
+// there is nothing to say:
+//   - claimCommand does not resolve to pmtools-claim → null (consumer isn't on pmtools claim)
+//   - closeCommand is unset/empty                    → null (no conflicting close configured)
+//   - closeCommand already resolves to pmtools-close → null (coherent)
+// The substring match cannot tell a capable non-pmtools close (one taught the
+// `br-`/`wt-` form) from an incapable one, so a capable close draws a harmless
+// false note — acceptable because this only ever prints a note, never blocks.
+function preflightCloseCoherence(claimCommand, closeCommand) {
+  if (!resolvesToPmtools(claimCommand, 'claim')) return null;
+  if (typeof closeCommand !== 'string' || !closeCommand) return null;
+  if (resolvesToPmtools(closeCommand, 'close')) return null;
+  return { warn: 'claiming with pmtools (br-/wt- branch names) but closeCommand is '
+    + `"${closeCommand}"; ensure it accepts br-/wt- branch names or the close will be rejected.` };
+}
+
+module.exports = {
+  preflightIssueGate, preflightEvidence, resolvesToPmtools, preflightCloseCoherence,
+  DEFAULT_EVIDENCE_DIRS,
+};

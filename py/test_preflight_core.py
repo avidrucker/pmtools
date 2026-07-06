@@ -9,7 +9,7 @@ import json
 import pathlib
 import unittest
 
-from preflight_core import preflight_issue_gate, preflight_evidence
+from preflight_core import preflight_issue_gate, preflight_evidence, preflight_close_coherence
 
 FIXTURES = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "preflight"
 
@@ -21,6 +21,7 @@ def _load(name):
 DISPATCH = {
     "issue_gate": preflight_issue_gate,
     "evidence": preflight_evidence,
+    "close_coherence": preflight_close_coherence,
 }
 
 

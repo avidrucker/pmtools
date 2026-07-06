@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { preflightIssueGate, preflightEvidence } = require('./preflight_core');
+const { preflightIssueGate, preflightEvidence, preflightCloseCoherence } = require('./preflight_core');
 
 const FIXTURES = path.resolve(__dirname, '..', 'fixtures', 'preflight');
 const load = (name) => JSON.parse(fs.readFileSync(path.join(FIXTURES, name), 'utf8'));
@@ -19,6 +19,7 @@ const load = (name) => JSON.parse(fs.readFileSync(path.join(FIXTURES, name), 'ut
 const DISPATCH = {
   issue_gate: preflightIssueGate,
   evidence: preflightEvidence,
+  close_coherence: preflightCloseCoherence,
 };
 
 for (const [stem, fn] of Object.entries(DISPATCH)) {

@@ -75,13 +75,16 @@ def _repo_with_orchestrate(cfg):
 
 
 class Enrichment(unittest.TestCase):
-    """#79: load_enrichment_config reads enrichment.{statusCommand,clusterFile},
-    tolerant of absence (both default None → no reconciler / no cluster locking)."""
+    """#79/#63: load_enrichment_config reads enrichment.{statusCommand,clusterFile,
+    claimCommand,closeCommand}, tolerant of absence (all default None → no
+    reconciler / no cluster locking / no coherence note)."""
+
+    ALL_NONE = {"statusCommand": None, "clusterFile": None,
+                "claimCommand": None, "closeCommand": None}
 
     def test_absent_block_defaults_to_none(self):
         repo = _repo_with_orchestrate({"storage": {}})
-        self.assertEqual(config.load_enrichment_config(repo),
-                         {"statusCommand": None, "clusterFile": None})
+        self.assertEqual(config.load_enrichment_config(repo), self.ALL_NONE)
 
     def test_status_command_is_read(self):
         repo = _repo_with_orchestrate({"enrichment": {"statusCommand": "pmtools status"}})
@@ -94,10 +97,17 @@ class Enrichment(unittest.TestCase):
             {"enrichment": {"statusCommand": "pmtools status", "clusterFile": "puzzle-clusters.csv"}})
         self.assertEqual(config.load_enrichment_config(repo)["clusterFile"], "puzzle-clusters.csv")
 
+    def test_claim_and_close_commands_are_read(self):
+        # #63: preflight's config-coherence check reads these two verbs.
+        repo = _repo_with_orchestrate(
+            {"enrichment": {"claimCommand": "pmtools claim", "closeCommand": "npm run close"}})
+        cfg = config.load_enrichment_config(repo)
+        self.assertEqual(cfg["claimCommand"], "pmtools claim")
+        self.assertEqual(cfg["closeCommand"], "npm run close")
+
     def test_no_orchestrate_file_defaults(self):
         repo = _repo_with_orchestrate(None)
-        self.assertEqual(config.load_enrichment_config(repo),
-                         {"statusCommand": None, "clusterFile": None})
+        self.assertEqual(config.load_enrichment_config(repo), self.ALL_NONE)
 
 
 if __name__ == "__main__":
