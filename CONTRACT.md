@@ -423,12 +423,22 @@ transform; and the parent-tracker seams `find_parent_trackers` +
 7. No rebase/merge in progress; working tree clean.
 8. Pre-close verify gate (skippable via `--skip-verify`): **config-gated** — runs
    `close.verify.commands` (the pure `preclose_plan` seam normalizes
-   `{enabled, commands, cwd}`; absent/empty → no-op, byte-identical to today) in
-   the worktree (default) or repo `root`. Runs **last** of the pre-land gates
-   (#106 ruling: after the ~1s built-in gates, so a wrong-marker close fails fast
-   instead of after a slow test run). The first command to exit non-zero prints
+   `{enabled, commands, cwd, timeoutSec}`; absent/empty → no-op, byte-identical to
+   today) in the worktree (default) or repo `root`. Runs **last** of the pre-land
+   gates (#106 ruling: after the ~1s built-in gates, so a wrong-marker close fails
+   fast instead of after a slow test run). The first command to exit non-zero prints
    its output and dies **exit 1** with the worktree intact and nothing pushed.
-   `--dry-run` reports each command without executing it.
+   **Per-command timeout (#107):** `close.verify.timeoutSec` (a number > 0; unset/0 =
+   no limit, today's behavior) kills any command exceeding it and treats the timeout
+   as a gate failure (same abort → exit 1 → preserve-worktree path). The kill is a
+   **process-group** kill so no child is orphaned: the **Python** port uses
+   `start_new_session` + `os.killpg(SIGKILL)` (strict — reaps backgrounded
+   grandchildren too, asserted in `py/test_sh.py`); the **JS** port uses `spawnSync`'s
+   timeout + SIGKILL, which reaps the shell child (and the command itself, which the
+   shell exec-optimizes for a simple command) but could leave a *backgrounded*
+   grandchild of a **compound** command running — a documented port nuance, not a
+   parity break on the common single-command case. `--dry-run` reports each command
+   without executing it.
 9. `--dry-run` → print the `WOULD CLOSE` plan, return.
 10. Land loop: up to `--max` rounds of `tryLand()` = fetch → `git rebase
     origin/main` (any conflict → abort + die "resolve manually"; the commit is
@@ -651,9 +661,10 @@ NOT `store_core`, with the CLI in `ice.{py,…}`.
   "verify": {                      // pre-close verify gate (#106); absent/empty => no gate
     "commands": ["ruff check ."],  // run in order, in the worktree, just before land;
     "cwd": "worktree",             //   first non-zero exit aborts (exit 1, nothing pushed)
-    "enabled": true                // "worktree" (default) | "root"; enabled defaults on
-  }                                //   when commands present, only explicit false disables
-},
+    "enabled": true,               // "worktree" (default) | "root"; enabled defaults on
+    "timeoutSec": 0                //   when commands present, only explicit false disables.
+  }                                // timeoutSec (#107): per-command wall-clock limit; a
+},                                 //   number >0 kills on timeout (process-group), 0/unset = none
 "enrichment": {                    // sibling block; resolved by external rankers
   "statusCommand": "pmtools status", // status reconciler a skill invokes (#79)
   "clusterFile": null              // cluster soft-lock map (reserved, #80/LOCKED)

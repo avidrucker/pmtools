@@ -235,11 +235,13 @@ function runPreCloseVerify(opts, wtPath, root) {
   const verifyDir = plan.cwd === 'root' ? root : wtPath;
   for (const cmd of plan.commands) {
     if (opts.dryRun) { log(`verify (dry-run): would run "${cmd}" in the ${plan.cwd}`); continue; }
-    log(`verify: ${cmd} (in the ${plan.cwd})`);
-    const res = shCapture(cmd, verifyDir);
+    const limit = plan.timeoutSec ? ` (timeout ${plan.timeoutSec}s)` : '';
+    log(`verify: ${cmd} (in the ${plan.cwd})${limit}`);
+    const res = shCapture(cmd, verifyDir, plan.timeoutSec);
     if (res.out) process.stdout.write(res.out.endsWith('\n') ? res.out : res.out + '\n');
     if (!res.ok) {
-      die(`pre-close verify failed: \`${cmd}\` exited non-zero. Nothing pushed, worktree ` +
+      const why = res.timedOut ? `timed out after ${plan.timeoutSec}s (killed)` : 'exited non-zero';
+      die(`pre-close verify failed: \`${cmd}\` ${why}. Nothing pushed, worktree ` +
           'left intact — fix and re-run close, or bypass with --skip-verify.', 1);
     }
   }

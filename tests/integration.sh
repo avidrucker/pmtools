@@ -802,6 +802,31 @@ JSON
   assert_contains "$o" "verify: sh verify_ok.sh" "[$lang] verify: ran the configured command"
   assert_contains "$o" "CLOSED" "[$lang] verify: passing-gate close prints CLOSED"
   if [ -d "$wt2" ]; then fail "[$lang] verify: worktree removed after passing-gate close"; else pass "[$lang] verify: worktree removed after passing-gate close"; fi
+
+  # === Env C: a HANGING verify command + timeoutSec → killed, close aborts (#107) ===
+  local repo3; repo3="$(new_env)"
+  local K=43
+  ( cd "$repo3" && PATH="$gh:$PATH" "${CLAIM[@]}" "$K" --as apple --allow-stale-main ) >"$o" 2>&1
+  local wt3="$repo3/.claude/worktrees/wt-apple-demo-js-issue-$K"
+  if [ -d "$wt3" ]; then
+    git -C "$wt3" config user.email tester@example.com; git -C "$wt3" config user.name tester
+    git -C "$wt3" config commit.gpgsign false
+    mkdir -p "$wt3/.claude"
+    cat > "$wt3/.claude/orchestrate.json" <<'JSON'
+{ "close": { "verify": { "commands": ["sleep 30"], "timeoutSec": 1 } } }
+JSON
+    printf 'widget impl\n' > "$wt3/widget.txt"
+    git -C "$wt3" add .claude/orchestrate.json widget.txt
+    git -C "$wt3" commit -qm "feat: add widget renderer" -m "Closes #$K"
+  fi
+  local t0=$SECONDS
+  ( cd "$repo3" && PATH="$gh:$PATH" "${CLOSE[@]}" "$K" --branch "br-apple/demo-js-issue-$K" ) >"$o" 2>&1
+  local rc=$?
+  local elapsed=$((SECONDS - t0))
+  assert_exit "$rc" 1 "[$lang] verify: hanging command past timeout → close exits 1"
+  assert_contains "$o" "timed out after 1s" "[$lang] verify: reports the timeout + abort"
+  assert_dir "$wt3" "[$lang] verify: worktree intact after timeout abort"
+  if [ "$elapsed" -lt 15 ]; then pass "[$lang] verify: timeout killed the hang promptly (${elapsed}s < 15s)"; else fail "[$lang] verify: close took ${elapsed}s — timeout did not kill the hang"; fi
 }
 
 run_close_verify_suite "py" python3 "$PY_CLAIM" python3 "$PY_CLOSE"

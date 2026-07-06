@@ -26,9 +26,30 @@ function sh(cmd, allowFail = false) {
 }
 
 // Like sh() but always returns { ok, out } with stdout+stderr merged, never throws.
-function shCapture(cmd, cwd = undefined) {
-  // Optional `cwd` runs the command in that directory (the #106 pre-close verify
-  // gate runs project commands in the worktree or repo root).
+// Optional `cwd` runs the command in that directory (the #106 pre-close verify
+// gate runs project commands in the worktree or repo root).
+//
+// Optional `timeoutSec` (#107): when > 0, a command exceeding it is killed and the
+// result is { ok:false, timedOut:true, out }. spawnSync's timeout sends SIGKILL to
+// the shell child. A simple verify command (`pytest -q`) is exec-optimized by the
+// shell, so SIGKILL hits the real process; a compound command that BACKGROUNDS a
+// grandchild could in principle leave it running (Node's sync API cannot signal the
+// group). The Python twin uses `start_new_session` + `killpg` for a strict
+// group-kill; this residual is documented in CONTRACT.md §close. `timeoutSec` <= 0
+// keeps the original no-limit path (byte-identical to before).
+function shCapture(cmd, cwd = undefined, timeoutSec = 0) {
+  if (timeoutSec && timeoutSec > 0) {
+    const r = spawnSync(cmd, {
+      cwd, shell: true, encoding: 'utf8',
+      timeout: Math.round(timeoutSec * 1000), killSignal: 'SIGKILL',
+    });
+    const out = `${r.stdout || ''}${r.stderr || ''}`;
+    const timedOut = (r.error && r.error.code === 'ETIMEDOUT') || r.signal === 'SIGKILL';
+    if (timedOut) {
+      return { ok: false, timedOut: true, out: `${out}[verify] timed out after ${timeoutSec}s (killed)\n` };
+    }
+    return { ok: r.status === 0, out };
+  }
   try {
     const out = execSync(cmd, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     return { ok: true, out: out || '' };

@@ -10,6 +10,8 @@ release / ... wrappers stop drifting. The drift this consolidates:
 Twin of js/sh.js. These run shell STRINGS (the lccjs lineage builds command
 strings); the arg-array git/gh exec added in #37 stays in each wrapper.
 """
+import os
+import signal
 import subprocess
 import sys
 
@@ -30,10 +32,34 @@ def sh(cmd, allow_fail=False):
         raise
 
 
-def sh_capture(cmd, cwd=None):
+def sh_capture(cmd, cwd=None, timeout_sec=0):
     """Like sh() but returns {"ok", "out"} with stdout+stderr merged, never raises.
     Optional `cwd` runs the command in that directory (the #106 pre-close verify
-    gate runs project commands in the worktree or repo root)."""
+    gate runs project commands in the worktree or repo root).
+
+    Optional `timeout_sec` (#107): when > 0, a command exceeding it is killed and
+    the result is {"ok": False, "timedOut": True, "out": ...}. The kill targets the
+    whole process GROUP — the command runs in a new session (`start_new_session`),
+    so `os.killpg(SIGKILL)` reaps the shell AND any children it spawned, leaving no
+    orphan. `timeout_sec` <= 0 keeps the original no-limit path (byte-identical)."""
+    if timeout_sec and timeout_sec > 0:
+        proc = subprocess.Popen(
+            cmd, shell=True, cwd=cwd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            start_new_session=True,
+        )
+        try:
+            out, err = proc.communicate(timeout=timeout_sec)
+            return {"ok": proc.returncode == 0, "out": (out or "") + (err or "")}
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            out, err = proc.communicate()
+            partial = (out or "") + (err or "")
+            return {"ok": False, "timedOut": True,
+                    "out": partial + "[verify] timed out after {}s (killed)\n".format(timeout_sec)}
     res = subprocess.run(
         cmd, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )

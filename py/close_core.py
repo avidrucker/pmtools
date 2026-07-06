@@ -392,19 +392,23 @@ def find_worktree_for_issue(rows, issue):
 
 def preclose_plan(verify_cfg):
     """Pure pre-close verify plan from the `close.verify` config block (#106).
-    Returns {run, commands, cwd}: `run` is True only when the gate is enabled AND
-    at least one non-empty string command is configured; `commands` is that
-    sanitized list (original strings, blanks/non-strings dropped); `cwd` is "root"
-    only when explicitly set, else "worktree" (default — verify exactly what's
-    about to merge). `verify_cfg` is the dict under `close.verify`, or None/absent
-    → run False (100% backward-compatible; today's behavior). `enabled` defaults
-    on when commands are present; only an explicit `false` disables. Pure."""
+    Returns {run, commands, cwd, timeoutSec}: `run` is True only when the gate is
+    enabled AND at least one non-empty string command is configured; `commands` is
+    that sanitized list (original strings, blanks/non-strings dropped); `cwd` is
+    "root" only when explicitly set, else "worktree" (default — verify exactly
+    what's about to merge). `timeoutSec` is the per-command wall-clock limit (#107):
+    a finite number > 0, else 0 (= no limit; today's behavior). `verify_cfg` is the
+    dict under `close.verify`, or None/absent → run False (100% backward-
+    compatible). `enabled` defaults on when commands are present; only an explicit
+    `false` disables. Pure."""
     vc = verify_cfg if isinstance(verify_cfg, dict) else {}
     raw = vc.get("commands")
     commands = [s for s in raw if isinstance(s, str) and s.strip()] if isinstance(raw, list) else []
     cwd = "root" if vc.get("cwd") == "root" else "worktree"
     enabled = vc.get("enabled") is not False
-    return {"run": bool(enabled and commands), "commands": commands, "cwd": cwd}
+    tv = vc.get("timeoutSec")
+    timeout_sec = tv if isinstance(tv, (int, float)) and not isinstance(tv, bool) and tv > 0 else 0
+    return {"run": bool(enabled and commands), "commands": commands, "cwd": cwd, "timeoutSec": timeout_sec}
 
 
 def resolve_close_branch(wt, explicit_branch, cwd_branch):

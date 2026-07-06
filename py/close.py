@@ -260,13 +260,16 @@ def run_preclose_verify(opts, wt_path, root):
         if opts["dryRun"]:
             log('verify (dry-run): would run "{}" in the {}'.format(cmd, plan["cwd"]))
             continue
-        log('verify: {} (in the {})'.format(cmd, plan["cwd"]))
-        res = sh_capture(cmd, verify_dir)
+        limit = " (timeout {}s)".format(plan["timeoutSec"]) if plan["timeoutSec"] else ""
+        log('verify: {} (in the {}){}'.format(cmd, plan["cwd"], limit))
+        res = sh_capture(cmd, verify_dir, plan["timeoutSec"])
         if res["out"]:
             sys.stdout.write(res["out"] if res["out"].endswith("\n") else res["out"] + "\n")
         if not res["ok"]:
-            die('pre-close verify failed: `{}` exited non-zero. Nothing pushed, worktree '
-                "left intact — fix and re-run close, or bypass with --skip-verify.".format(cmd), 1)
+            why = ("timed out after {}s (killed)".format(plan["timeoutSec"])
+                   if res.get("timedOut") else "exited non-zero")
+            die('pre-close verify failed: `{}` {}. Nothing pushed, worktree '
+                "left intact — fix and re-run close, or bypass with --skip-verify.".format(cmd, why), 1)
 
 
 def check_marker_deleted(issue):

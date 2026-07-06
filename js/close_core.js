@@ -318,20 +318,24 @@ function findWorktreeForIssue(rows, issue) {
 }
 
 // Pure pre-close verify plan from the `close.verify` config block (#106).
-// Returns {run, commands, cwd}: `run` is true only when the gate is enabled AND
-// at least one non-empty string command is configured; `commands` is that
-// sanitized list (original strings, blanks/non-strings dropped); `cwd` is 'root'
-// only when explicitly set, else 'worktree' (default — verify exactly what's
-// about to merge). `verifyCfg` is the object under `close.verify`, or null/absent
-// → run false (100% backward-compatible; today's behavior). `enabled` defaults on
-// when commands are present; only an explicit `false` disables. Pure.
+// Returns {run, commands, cwd, timeoutSec}: `run` is true only when the gate is
+// enabled AND at least one non-empty string command is configured; `commands` is
+// that sanitized list (original strings, blanks/non-strings dropped); `cwd` is
+// 'root' only when explicitly set, else 'worktree' (default — verify exactly
+// what's about to merge). `timeoutSec` is the per-command wall-clock limit (#107):
+// a finite number > 0, else 0 (= no limit; today's behavior). `verifyCfg` is the
+// object under `close.verify`, or null/absent → run false (100% backward-
+// compatible). `enabled` defaults on when commands are present; only an explicit
+// `false` disables. Pure.
 function preclosePlan(verifyCfg) {
   const vc = (verifyCfg && typeof verifyCfg === 'object' && !Array.isArray(verifyCfg)) ? verifyCfg : {};
   const commands = Array.isArray(vc.commands)
     ? vc.commands.filter((s) => typeof s === 'string' && s.trim()) : [];
   const cwd = vc.cwd === 'root' ? 'root' : 'worktree';
   const enabled = vc.enabled !== false;
-  return { run: Boolean(enabled && commands.length), commands, cwd };
+  const timeoutSec = (typeof vc.timeoutSec === 'number' && Number.isFinite(vc.timeoutSec) && vc.timeoutSec > 0)
+    ? vc.timeoutSec : 0;
+  return { run: Boolean(enabled && commands.length), commands, cwd, timeoutSec };
 }
 
 // The branch `close` operates on, resolved CWD-INDEPENDENTLY (#104): an explicit
