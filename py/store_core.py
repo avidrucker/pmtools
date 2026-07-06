@@ -33,6 +33,8 @@ ERROR_TYPES = [
 ]
 
 # velocity-log.js VALID_ROLES (closed vocabulary — hard reject on unknown).
+# Each role's one-clause meaning is glossed in CONTRACT.md §velocity schema
+# ("Role glosses", #95) — the single definition; do not duplicate it here.
 VALID_ROLES = [
     "DEV", "TEST", "WRITER", "RESEARCH", "SPIKE", "ARC", "PM", "COMBO",
     "DATA", "CHORE", "REVIEW",

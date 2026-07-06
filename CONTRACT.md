@@ -758,6 +758,23 @@ growth). When `title` is omitted and a `ticket` is present, the title is fetched
 best-effort via `gh issue view <N> --json title -q .title` (falls back to
 `#<N> (title unavailable)`).
 
+**Role glosses** (#95) — the closed `role` vocabulary, one clause each, so a logger picks
+the right token instead of guessing (`TST` ≠ `TEST`). The set stays 11 and hard-reject;
+only its *meaning* is written down (growing the set is the separate decision #96). This is
+the single definition; the `store_core` comments point here rather than duplicate.
+
+- `DEV` — production code: features and bug fixes.
+- `TEST` — authoring or extending tests/fixtures (no production-behavior change).
+- `WRITER` — documentation and prose (README, CONTRACT, `docs/`, learnings).
+- `RESEARCH` — investigation that produces findings, not code.
+- `SPIKE` — time-boxed scoping that produces a contract/decision, not code.
+- `ARC` — architecture / design work.
+- `PM` — project management: backlog triage, decisions, coordination.
+- `COMBO` — a unit that genuinely spans multiple roles.
+- `DATA` — data / record maintenance (velocity, errors, reconcile rows).
+- `CHORE` — mechanical upkeep (deps, config, renames) with no behavior change.
+- `REVIEW` — code review of someone else's change.
+
 ### ice schema (per-issue triage score, #100; pure seam = `ice_core`)
 
 ```
