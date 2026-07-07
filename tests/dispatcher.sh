@@ -30,7 +30,7 @@ CLONE="$TMP/clone"
 mkdir -p "$CLONE/bin" "$CLONE/py" "$CLONE/js"
 cp "$REAL_BIN" "$CLONE/bin/pmtools"
 chmod +x "$CLONE/bin/pmtools"
-for c in status claim preflight close release error velocity ice; do
+for c in status file claim preflight close release error velocity ice; do
   cat > "$CLONE/py/$c.py" <<EOF
 import sys
 print("PORT=py CMD=$c ARGS=" + " ".join(sys.argv[1:]))
@@ -86,6 +86,17 @@ ln -s "$CLONE/bin/pmtools" "$TMP/elsewhere/pmtools"
 out="$(env -u PMTOOLS_HOME -u PMTOOLS_PORT bash "$TMP/elsewhere/pmtools" status 2>&1)"; rc=$?
 assert_eq "$rc" 0 "symlinked dispatcher exits 0"
 assert_has "$out" "PORT=py CMD=status" "symlinked dispatcher self-locates its clone root"
+
+# 10) `file` routes to both ports (#111).
+out="$(env -u PMTOOLS_PORT PMTOOLS_HOME="$CLONE" bash "$BIN" file --title x 2>&1)"; rc=$?
+assert_eq "$rc" 0 "file command routes (exits 0)"
+assert_has "$out" "PORT=py CMD=file ARGS=--title x" "file routes to the py port with args in order"
+out="$(env -u PMTOOLS_PORT PMTOOLS_HOME="$CLONE" bash "$BIN" file --port js --title x 2>&1)"
+assert_has "$out" "PORT=js CMD=file ARGS=--title x" "file --port js routes to the node port"
+
+# 11) `create` is an alias for `file` (#111): normalized before dispatch.
+out="$(env -u PMTOOLS_PORT PMTOOLS_HOME="$CLONE" bash "$BIN" create --title x 2>&1)"
+assert_has "$out" "PORT=py CMD=file ARGS=--title x" "create alias dispatches to the file command"
 
 echo
 echo "== dispatcher: $PASSES passed, $FAILS failed =="

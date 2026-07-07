@@ -13,6 +13,7 @@ source of truth; `fixtures/` are the golden cases every port is graded against.
 | Command | Purpose | Tier |
 |---|---|---|
 | `status [--strict] [--json]` | Reconcile `@todo`/`@inprogress` markers against worktrees + issue state | solo-relevant |
+| `file --title T [--area A] [--role R] [--body S\|--body-file F] [--label L ...] [--severity S] [--dry-run] [--allow-uncategorized]` (alias `create`) | Create an issue through config-driven requirement gates | fleet-only |
 | `claim <issue> [slug] --as <name> [--base <ref>] [--dry-run] [--lane-check] [--copy-env] [--worktree-dir D] [--roster a,b,c]` | Stake a worktree under an agent identity | fleet-only |
 | `preflight <issue>` | Stamp start time, run start-of-task reads, assert issue OPEN | fleet-only |
 | `close <issue> [--branch N] [--max N] [--dry-run] [--keep] [--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] [--worktree-dir D]` | Land the close commit on `origin/main`, then (and only then) tear down the worktree | fleet-only |
@@ -197,6 +198,50 @@ pmtools status --strict   # exit 1 if any marker is STALE (else 0)
 - A missing/offline provider degrades to `state: "UNKNOWN"`; never throws.
 
 ---
+
+## `file` (alias `create`) — ported (py + js)
+
+`file --title T [--area A] [--role R] [--body S | --body-file F] [--label L ...]
+[--severity S] [--dry-run] [--allow-uncategorized]`
+
+Gated issue creation — the **start** of the lifecycle (#111). Wraps
+`gh issue create` through the provider `createIssue`/`create_issue` write-seam,
+applying config-driven requirement gates **before the issue exists**, then echoes
+the **verified** number read back from the create response. A single serialized
+`file` structurally prevents the concurrent-create number race (pycats#541) — that
+is the load-bearing reason to own creation, beyond the label gate.
+
+The pure `fileGateVerdict` / `file_gate_verdict` seam (`file_core.{js,py}`, graded
+against `fixtures/file/*`) takes the normalized CLI inputs + the `create` config
+block (see §Configuration) and returns `{ ok, violations, labels }`. `violations`
+are ordered **area → role → severity → bodyShape → titleHygiene**; a **hard**
+violation blocks (nothing created, exit 1), a **soft** one prints `[file] note:` to
+stderr and never blocks. `labels` is the resolved set handed to `createIssue`.
+
+Gates (all config toggles; an unconfigured repo is a no-op):
+
+- **Area** (hard when `requireArea` and `validAreas` non-empty): exactly one
+  `area:*` label whose bare name is in `create.validAreas`. Zero / ≥2 / not-in-set
+  → hard block (reuses `claim_core.needsAreaLabel` for the zero case).
+  `--allow-uncategorized` applies `create.uncategorizedFallback` and downgrades to a
+  soft note. Empty `validAreas` ⇒ gate off.
+- **Role** (hard when `requireRole`): `--role` must be in `store_core.VALID_ROLES`.
+  **Validate-only** — no role label is applied (the repo has no `role:*` taxonomy);
+  the author writes `**Role:**` in the body.
+- **Severity** (hard when `severityOnlyOnDefects`): a `--severity` is allowed only on
+  a **defect** — the resolved labels must include `bug`. When valid, `severity:<s>`
+  joins the labels.
+- **Body shape** (soft, `requireBodyShape`, default off): the body should carry the
+  `have`/`should` markers.
+- **Title hygiene** (soft): a `[file] note:` iff the title contains a
+  `create.bannedTitleWords` entry (empty ⇒ silent). The em-dash-vs-colon heuristic
+  is deferred (it false-positives on the `type(scope):` prefix).
+
+Exit codes: `0` created / clean `--dry-run`; `2` usage error (missing `--title`,
+both `--body`/`--body-file`, unreadable file); `1` a hard gate block or a provider
+create failure (nothing created). `--dry-run` runs every gate and prints the
+resolved `gh issue create` invocation without creating (exit 1 if a hard gate
+fails). The two ports are faithful twins.
 
 ## `preflight` (fleet-only) — ported (py + js)
 
@@ -723,6 +768,15 @@ NOT `store_core`, with the CLI in `ice.{py,…}`.
   "clusterFile": null,             // cluster soft-lock map (reserved, #80/LOCKED)
   "claimCommand": "pmtools claim", // consumer's claim verb — preflight coherence (#63)
   "closeCommand": "pmtools close"  // consumer's close verb — preflight coherence (#63)
+},
+"create": {                        // `pmtools file` gated creation (#111)
+  "validAreas": [],                // per-repo valid area:* set; [] => area gate OFF
+  "requireArea": true,             // exactly one area:<validAreas> required
+  "requireRole": true,             // a VALID_ROLES tag required (validated, not labelled)
+  "severityOnlyOnDefects": true,   // severity:* only on a `bug` defect
+  "requireBodyShape": false,       // soft have/should check (default off)
+  "bannedTitleWords": [],          // title-hygiene soft note; [] => silent
+  "uncategorizedFallback": "area:uncategorized"  // label under --allow-uncategorized
 }
 ```
 

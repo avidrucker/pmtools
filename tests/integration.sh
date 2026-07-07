@@ -1541,6 +1541,42 @@ for lang in py js; do
   fi
 done
 
+# pmtools file (#111): gated creation. The gate decisions + dry-run render must be
+# byte-identical across ports (offline, no gh → parity_run). Then a happy-path
+# create against a fake gh (issue create → prints a URL) must parse the number back
+# and exit 0 in BOTH ports.
+PAR_REPO="$(new_env)"; mkdir -p "$PAR_REPO/.claude"
+printf '{ "create": { "validAreas": ["config","lifecycle"] } }\n' > "$PAR_REPO/.claude/orchestrate.json"
+parity_run file "valid --dry-run renders the resolved gh invocation identically" "" -- \
+  --title "feat: x" --area config --role DEV --dry-run
+parity_run file "missing area is a hard gate block (--dry-run, exit 1) identically" "" -- \
+  --title x --role DEV --dry-run
+parity_run file "missing --title is a usage error identically" "" -- --area config --role DEV
+parity_run file "--allow-uncategorized downgrades to a soft note identically" "" -- \
+  --title x --role DEV --allow-uncategorized --dry-run
+
+# happy-path: a fake gh whose `issue create` prints the new issue URL.
+FILE_GH="$TMPROOT/fakegh-file.$RANDOM"; mkdir -p "$FILE_GH"
+cat > "$FILE_GH/gh" <<'GHEOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"issue create"*) cat >/dev/null 2>&1; echo "https://github.com/o/r/issues/321" ;;
+  *) exit 1 ;;
+esac
+GHEOF
+chmod +x "$FILE_GH/gh"
+for lang in py js; do
+  frepo="$(new_env)"; mkdir -p "$frepo/.claude"
+  printf '{ "create": { "validAreas": ["config"] } }\n' > "$frepo/.claude/orchestrate.json"
+  bin="$PMTOOLS_ROOT/$lang/file.$([ "$lang" = py ] && echo py || echo js)"
+  fo="$TMPROOT/fo.$lang.$RANDOM"
+  ( cd "$frepo" && PATH="$FILE_GH:$PATH" \
+    $([ "$lang" = py ] && echo python3 || echo node) "$bin" \
+    --title "feat: thing" --area config --role DEV --body "b" ) >"$fo" 2>&1; frc=$?
+  assert_exit "$frc" 0 "[$lang] file happy-path create exits 0"
+  assert_contains "$fo" "created #321" "[$lang] file echoes the verified issue number"
+done
+
 # status unknown-flag rejection (#39): a mistyped flag (e.g. --strrict) must be
 # REJECTED loudly with the SAME exit code in both ports — not silently dropped.
 # (js used to ignore it and exit 0, masking a disabled --strict gate in CI.)

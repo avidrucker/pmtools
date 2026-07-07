@@ -55,6 +55,7 @@ USAGE
 
 COMMANDS
   status      Reconcile @todo/@inprogress markers against worktrees + issue state.
+  file        Create an issue through config-driven requirement gates (alias: create).
   claim       Stake a worktree under an agent identity for a given issue.
   preflight   Stamp start time, run start-of-task reads, assert issue OPEN.
   close       Land the close commit on origin/main, then tear down the worktree.
@@ -71,6 +72,7 @@ FLAGS
 
 EXAMPLES
   pmtools status --json
+  pmtools file --title "feat: x" --area config --role DEV --body-file b.md
   pmtools claim 42 --as apple
   pmtools preflight 42
   pmtools close 42
@@ -93,8 +95,11 @@ HELPTEXT
     exit 0
 fi
 
+# `create` is an alias for `file` (#111): normalize before dispatch.
+[ "$cmd" = create ] && cmd=file
+
 case "$cmd" in
-  status|claim|preflight|close|release|sweep|error|velocity|ice) ;;
+  status|file|claim|preflight|close|release|sweep|error|velocity|ice) ;;
   *) echo "pmtools: unknown command '$cmd' (run 'pmtools --help' for usage)" >&2; exit 2 ;;
 esac
 
