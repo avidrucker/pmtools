@@ -389,6 +389,37 @@ the gated teardown — so it can never fabricate a close.
 | `--skip-verify` | off | Skip the config-driven pre-close verify gate (`close.verify.commands`). #106. |
 | `--update-trackers` | off | After a successful close, tick the parent tracker's `- [ ] #N` checkbox (also enabled by `close.updateParentTrackers`). #36 guard 3. |
 | `--worktree-dir <dir>` | `.claude/worktrees` | **Parameterized** (lccjs hardcoded it). Worktree parent dir, relative to main repo root. |
+| `--no-code` | off | **No-code close** (#113): close a comment-only ticket (spike/decision/triage) without a `Closes #N` commit. See below. |
+| `--comment "…"` / `--comment-file F` | — | The closing comment for `--no-code` (mutually exclusive). |
+| `--no-comment` | off | Close under `--no-code` with **no** comment (explicit opt-out; the comment is otherwise required). |
+
+### No-code close (`--no-code`, #113)
+
+The back-door mirror of `pmtools file`: closes a ticket whose deliverable is a
+**comment**, not a commit — a research spike, a decision ruling, a triage summary.
+It **skips every guard that presumes changed code** — the `Closes #N` commit scan,
+the marker-deleted guard, the keyword spot-check, the pre-close verify gate, and the
+fetch/rebase/push land loop — and instead:
+
+1. Validates the comment arguments via the pure `no_code_close_plan` seam: exactly
+   one of `--comment` / `--comment-file` / `--no-comment` (any other combination is
+   a usage error, exit 2).
+2. Requires the issue be **OPEN** (a non-OPEN issue is a soft-fail no-op).
+3. **Posts the comment first, fail-closed** — via the provider `create_comment`
+   write-seam; if it fails, **abort (exit 1) and leave the issue OPEN** (the comment
+   is the deliverable, never silently dropped). `--no-comment` skips this.
+4. **Closes the issue** via the new provider `close_issue` (`gh issue close N`) —
+   there is no `Closes #N` commit to auto-close it; a failed close is exit 1.
+5. **Still logs velocity** (the velocity-row guard applies when the agent is known —
+   a worktree/branch resolved — and is skippable via `--skip-velocity-check`) and
+   **still sweeps** the claim ref.
+6. **Works with or without a worktree** — one that was claimed for the research is
+   torn down (reusing `close`'s teardown); with none, it just closes + sweeps + logs
+   (the `release` "no worktree → still free the ref" shape). Runs from the main
+   checkout (no chdir into the worktree, since nothing is landed there).
+
+The normal code-close path is unchanged (the `--no-code` branch dispatches before
+the worktree-required guards). Both ports are faithful twins.
 
 ### Pure seams (`close_core`, graded against `fixtures/close/*`)
 

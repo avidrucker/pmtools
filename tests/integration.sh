@@ -1502,6 +1502,45 @@ parity_run ice "set-tier critical renders identically (label writes fail-soft of
 parity_run ice "set-tier missing --why is a usage error identically" "" -- \
   set-tier critical --issue 7 --as apple --until u --db-path "$PAR_STDB"
 
+# no-code close (#113): close a comment-only ticket without a `Closes #N` commit.
+# The two usage-error paths and the dry-run render must be byte-identical (offline,
+# no gh needed → parity_run). Then a happy-path close against a comment-capable
+# fake gh (view→OPEN, comment→ok, close→ok) must exit 0 and post the comment +
+# close the issue in BOTH ports (run against separate repos so neither observes the
+# other's close).
+PAR_REPO="$(new_env)"
+parity_run close "no-code close without a comment source is a usage error" "" -- 5 --no-code
+parity_run close "no-code close --no-comment + --comment conflict is a usage error" "" -- 5 --no-code --no-comment --comment x
+parity_run close "no-code close --dry-run plans identically" "" -- 5 --no-code --comment "findings" --dry-run
+
+# happy-path: a comment-capable fake gh that records its writes.
+NC_GH="$TMPROOT/fakegh-nocode.$RANDOM"; mkdir -p "$NC_GH"
+cat > "$NC_GH/gh" <<'GHEOF'
+#!/usr/bin/env bash
+log="${NC_GH_LOG:?}"
+case "$*" in
+  *"issue view"*"-q .state"*) echo "OPEN" ;;
+  *"issue comment"*) cat >/dev/null 2>&1; echo "comment $*" >> "$log" ;;
+  *"issue close"*)   echo "close $*"   >> "$log" ;;
+  *) exit 1 ;;
+esac
+GHEOF
+chmod +x "$NC_GH/gh"
+for lang in py js; do
+  ncrepo="$(new_env)"; nclog="$TMPROOT/nc.$lang.$RANDOM"; : > "$nclog"
+  bin="$PMTOOLS_ROOT/$lang/close.$([ "$lang" = py ] && echo py || echo js)"
+  nco="$TMPROOT/nco.$lang.$RANDOM"
+  ( cd "$ncrepo" && NC_GH_LOG="$nclog" PATH="$NC_GH:$PATH" \
+    $([ "$lang" = py ] && echo python3 || echo node) "$bin" 5 --no-code --comment "spike findings" ) >"$nco" 2>&1; ncrc=$?
+  assert_exit "$ncrc" 0 "[$lang] no-code close (comment) exits 0"
+  assert_contains "$nco" "closed (no-code)" "[$lang] no-code close reports closed"
+  if grep -q '^comment ' "$nclog" && grep -q '^close ' "$nclog"; then
+    pass "[$lang] no-code close posted the comment AND closed the issue"
+  else
+    fail "[$lang] no-code close posted the comment AND closed the issue"; sed 's/^/      /' "$nclog"
+  fi
+done
+
 # status unknown-flag rejection (#39): a mistyped flag (e.g. --strrict) must be
 # REJECTED loudly with the SAME exit code in both ports — not silently dropped.
 # (js used to ignore it and exit 0, masking a disabled --strict gate in CI.)

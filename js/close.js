@@ -33,6 +33,12 @@
  *   node close.js <issue> --skip-velocity-check  # bypass the velocity-row guard
  *   node close.js <issue> --skip-verify          # bypass the config-driven pre-close verify gate
  *   node close.js <issue> --worktree-dir <dir>   # DEPRECATED: back-compat only, ignored post-#51 (close self-discovers)
+ *
+ *   node close.js <issue> --no-code [--comment "…" | --comment-file F | --no-comment]
+ *                                            # (#113) close a COMMENT-ONLY ticket (spike/decision/triage):
+ *                                            #   no `Closes #N` commit; skip every code guard; post the
+ *                                            #   comment, close the issue, sweep + log; tear down a
+ *                                            #   worktree if one was claimed (works with or without one).
  */
 
 const { spawnSync } = require('node:child_process');
@@ -74,6 +80,7 @@ function parseArgs(argv) {
     skipMarkerCheck: false, skipScopeAudit: false, skipVelocityCheck: false,
     skipVerify: false,
     updateTrackers: false, branch: null, worktreeDir: '.claude/worktrees',
+    noCode: false, comment: null, commentFile: null, noComment: false,
   };
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
@@ -89,6 +96,11 @@ function parseArgs(argv) {
     else if (a === '--skip-verify') opts.skipVerify = true;
     else if (a === '--update-trackers') opts.updateTrackers = true;
     else if (a === '--branch') opts.branch = argv[++i];
+    // no-code close (#113): close a comment-only ticket without a `Closes #N` commit.
+    else if (a === '--no-code') opts.noCode = true;
+    else if (a === '--comment') opts.comment = argv[++i];
+    else if (a === '--comment-file') opts.commentFile = argv[++i];
+    else if (a === '--no-comment') opts.noComment = true;
     // --worktree-dir: accepted for back-compat but intentionally IGNORED post-#51
     // (close self-discovers the worktree via `git worktree list`). Do not use. (#73)
     else if (a === '--worktree-dir') opts.worktreeDir = argv[++i];
@@ -536,15 +548,101 @@ function scanParentTrackers(issue, opts) {
   }
 }
 
+// No-code close (#113): close a comment-only ticket (research spike / decision /
+// triage) whose deliverable is a COMMENT, not a `Closes #N` commit. Skips every
+// code guard (commit scan / marker / keyword / verify gate / land loop), posts the
+// closing comment, closes the issue, then still logs velocity + sweeps the claim
+// ref, tearing down a worktree if one was claimed (else just closes). Comment-first,
+// fail-closed: a failed comment post leaves the issue OPEN (deliverable never lost).
+function runNoCodeClose(opts, issue, root) {
+  const plan = core.noCodeClosePlan({
+    comment: opts.comment, commentFile: opts.commentFile, noComment: opts.noComment,
+  });
+  if (!plan.ok) die(plan.error, 2);
+
+  let body = null;
+  if (plan.source === 'inline') body = opts.comment;
+  else if (plan.source === 'file') {
+    try { body = fs.readFileSync(opts.commentFile, 'utf8'); }
+    catch (e) { die(`could not read --comment-file ${opts.commentFile}: ${e.message}`, 2); }
+  }
+
+  // Resolve a worktree if one exists — OPTIONAL for a no-code close (unlike a
+  // normal close, which requires one to land against).
+  const wtRow = core.findWorktreeForIssue(
+    core.parseWorktreePorcelain(sh('git worktree list --porcelain', true) || ''), issue);
+  const wtPath = wtRow ? wtRow.path : null;
+  const branch = core.resolveCloseBranch(wtRow, opts.branch, currentBranch());
+  const fruit = branch ? claimCore.inferFruitFromBranch(branch) : null;
+
+  // The issue must be OPEN (a non-OPEN issue is a soft-fail no-op).
+  const provider = getProvider('github');
+  const st = sh(`gh issue view ${issue} --json state -q .state`, true);
+  if (st && st.trim().toUpperCase() !== 'OPEN') {
+    log(`#${issue} is ${st.trim()}, not OPEN — nothing to close (no-code).`);
+    return;
+  }
+
+  // Velocity-row guard (same invariant as a normal close; skippable). Only when the
+  // agent is known (a worktree/branch resolved) — a bare no-worktree close can't
+  // attribute the row, so it skips with a note.
+  if (!opts.skipVelocityCheck) {
+    if (fruit) checkVelocityGuard(issue, fruit);
+    else log('note: no worktree/branch to infer the agent — skipping the velocity-row guard.');
+  }
+
+  if (opts.dryRun) {
+    const commentPlan = plan.source === 'none' ? 'post NO comment' : `post the ${plan.source} comment`;
+    const wtPlan = wtPath ? ', and tear down the worktree' : ' (no worktree)';
+    log(`no-code close (dry-run): would ${commentPlan}, close #${issue}, sweep the claim ref${wtPlan}.`);
+    report({ issue, branch, wtPath, closingSha: null, landedSha: null, kept: false, dry: true });
+    return;
+  }
+
+  // Post the comment FIRST — fail-closed: a failed comment leaves the issue OPEN so
+  // the deliverable is never silently dropped.
+  if (plan.source !== 'none') {
+    if (!provider.createComment(issue, body)) {
+      die(`failed to post the closing comment on #${issue} (gh unavailable?) — ` +
+          'issue left OPEN, nothing closed.', 1);
+    }
+  }
+  if (!provider.closeIssue(issue)) {
+    die(`comment posted but failed to close #${issue} (gh unavailable?) — ` +
+        `close it manually: gh issue close ${issue}`, 1);
+  }
+  log(`#${issue} closed (no-code${plan.source === 'none' ? ', no comment' : ''}).`);
+
+  // Sweep the claim ref (same as a normal close).
+  deleteClaimRef(issue, { log });
+
+  // Tear down the worktree if one was claimed (reuse close's teardown, run from
+  // root — no chdir dance, since a no-code close never entered the worktree).
+  if (wtPath && fs.existsSync(wtPath)) {
+    if (branch && isSafeRef(branch)) { teardown(wtPath, branch, root); log('worktree torn down.'); }
+    else log(`note: worktree at ${wtPath} left in place (branch unsafe/unresolved).`);
+  } else {
+    log('no worktree to tear down.');
+  }
+
+  report({ issue, branch, wtPath, closingSha: null, landedSha: null, kept: false, dry: false });
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.issue || !/^\d+$/.test(opts.issue)) {
     die('usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] ' +
         '[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] ' +
-        '[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]', 2);
+        '[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]\n' +
+        '  no-code close (comment-only ticket): close <N> --no-code ' +
+        '[--comment "…" | --comment-file F | --no-comment]', 2);
   }
   const issue = opts.issue;
   const root = mainRoot();
+
+  // No-code close (#113): a comment-only ticket — dispatch BEFORE the worktree-
+  // required guards, since it works with or without a worktree.
+  if (opts.noCode) return runNoCodeClose(opts, issue, root);
 
   // --- resolve the worktree + branch for issue #N CWD-INDEPENDENTLY (#104), so
   // `close <N>` runs from the MAIN checkout — not only from inside the worktree it

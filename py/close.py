@@ -78,6 +78,7 @@ def parse_args(argv):
         "skipMarkerCheck": False, "skipScopeAudit": False, "skipVelocityCheck": False,
         "skipVerify": False,
         "updateTrackers": False, "branch": None, "worktreeDir": ".claude/worktrees",
+        "noCode": False, "comment": None, "commentFile": None, "noComment": False,
     }
     positionals = []
     i = 0
@@ -112,6 +113,17 @@ def parse_args(argv):
         elif a == "--branch":
             i += 1
             opts["branch"] = argv[i] if i < n else None
+        # no-code close (#113): close a comment-only ticket without a `Closes #N` commit.
+        elif a == "--no-code":
+            opts["noCode"] = True
+        elif a == "--comment":
+            i += 1
+            opts["comment"] = argv[i] if i < n else None
+        elif a == "--comment-file":
+            i += 1
+            opts["commentFile"] = argv[i] if i < n else None
+        elif a == "--no-comment":
+            opts["noComment"] = True
         # --worktree-dir: accepted for back-compat but intentionally IGNORED post-#51
         # (close self-discovers the worktree via `git worktree list`). Do not use. (#73)
         elif a == "--worktree-dir":
@@ -546,14 +558,104 @@ def scan_parent_trackers(issue, opts):
             log("warn: could not update parent tracker #{} — left as-is.".format(tracker))
 
 
+def run_no_code_close(opts, issue, root):
+    """No-code close (#113): close a comment-only ticket (research spike / decision /
+    triage) whose deliverable is a COMMENT, not a `Closes #N` commit. Skips every
+    code guard (commit scan / marker / keyword / verify gate / land loop), posts the
+    closing comment, closes the issue, then still logs velocity + sweeps the claim
+    ref, tearing down a worktree if one was claimed (else just closes). Comment-first,
+    fail-closed: a failed comment post leaves the issue OPEN (deliverable never lost)."""
+    plan = core.no_code_close_plan({
+        "comment": opts["comment"], "commentFile": opts["commentFile"],
+        "noComment": opts["noComment"],
+    })
+    if not plan["ok"]:
+        die(plan["error"], 2)
+
+    body = None
+    if plan["source"] == "inline":
+        body = opts["comment"]
+    elif plan["source"] == "file":
+        try:
+            with open(opts["commentFile"], "r", encoding="utf-8") as f:
+                body = f.read()
+        except OSError as e:
+            die("could not read --comment-file {}: {}".format(opts["commentFile"], e), 2)
+
+    # Resolve a worktree if one exists — OPTIONAL for a no-code close (unlike a
+    # normal close, which requires one to land against).
+    wt = core.find_worktree_for_issue(
+        core.parse_worktree_porcelain(sh("git worktree list --porcelain", True) or ""), issue)
+    wt_path = wt["path"] if wt else None
+    branch = core.resolve_close_branch(wt, opts["branch"], current_branch())
+    fruit = claim_core.infer_fruit_from_branch(branch) if branch else None
+
+    # The issue must be OPEN (a non-OPEN issue is a soft-fail no-op).
+    provider = provider_mod.get_provider("github")
+    st = sh("gh issue view {} --json state -q .state".format(issue), True)
+    if st and st.strip().upper() != "OPEN":
+        log("#{} is {}, not OPEN — nothing to close (no-code).".format(issue, st.strip()))
+        return
+
+    # Velocity-row guard (same invariant as a normal close; skippable). Only when the
+    # agent is known — a bare no-worktree close can't attribute the row, so it skips.
+    if not opts["skipVelocityCheck"]:
+        if fruit:
+            check_velocity_guard(issue, fruit)
+        else:
+            log("note: no worktree/branch to infer the agent — skipping the velocity-row guard.")
+
+    if opts["dryRun"]:
+        comment_plan = "post NO comment" if plan["source"] == "none" else "post the {} comment".format(plan["source"])
+        wt_plan = ", and tear down the worktree" if wt_path else " (no worktree)"
+        log("no-code close (dry-run): would {}, close #{}, sweep the claim ref{}.".format(
+            comment_plan, issue, wt_plan))
+        report(issue, branch, wt_path, None, None, False, True)
+        return
+
+    # Post the comment FIRST — fail-closed: a failed comment leaves the issue OPEN so
+    # the deliverable is never silently dropped.
+    if plan["source"] != "none":
+        if not provider.create_comment(issue, body):
+            die("failed to post the closing comment on #{} (gh unavailable?) — "
+                "issue left OPEN, nothing closed.".format(issue), 1)
+    if not provider.close_issue(issue):
+        die("comment posted but failed to close #{} (gh unavailable?) — "
+            "close it manually: gh issue close {}".format(issue, issue), 1)
+    log("#{} closed (no-code{}).".format(issue, ", no comment" if plan["source"] == "none" else ""))
+
+    # Sweep the claim ref (same as a normal close).
+    delete_claim_ref(issue, log)
+
+    # Tear down the worktree if one was claimed (reuse close's teardown, run from
+    # root — no chdir dance, since a no-code close never entered the worktree).
+    if wt_path and os.path.isdir(wt_path):
+        if branch and is_safe_ref(branch):
+            _teardown(wt_path, branch, root)
+            log("worktree torn down.")
+        else:
+            log("note: worktree at {} left in place (branch unsafe/unresolved).".format(wt_path))
+    else:
+        log("no worktree to tear down.")
+
+    report(issue, branch, wt_path, None, None, False, False)
+
+
 def main():
     opts = parse_args(sys.argv[1:])
     if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
         die("usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] "
             "[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] "
-            "[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]", 2)
+            "[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]\n"
+            "  no-code close (comment-only ticket): close <N> --no-code "
+            "[--comment \"…\" | --comment-file F | --no-comment]", 2)
     issue = opts["issue"]
     root = main_root()
+
+    # No-code close (#113): a comment-only ticket — dispatch BEFORE the worktree-
+    # required guards, since it works with or without a worktree.
+    if opts["noCode"]:
+        return run_no_code_close(opts, issue, root)
 
     # --- resolve the worktree + branch for issue #N CWD-INDEPENDENTLY (#104), so
     # `close <N>` runs from the MAIN checkout — not only from inside the worktree

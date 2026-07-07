@@ -153,6 +153,16 @@ class GitHubProvider {
       return true;
     } catch { return false; }
   }
+
+  // Close an issue outright (`gh issue close <N>`). Used by no-code close (#113) —
+  // a comment-only ticket has no `Closes #N` commit to auto-close it.
+  closeIssue(number) {
+    try {
+      execFileSync('gh', ['issue', 'close', String(number)],
+        { encoding: 'utf8', stdio: ['ignore', 'ignore', 'ignore'] });
+      return true;
+    } catch { return false; }
+  }
 }
 
 class GitLabProvider {
@@ -168,6 +178,7 @@ class GitLabProvider {
   addLabel() { return this._stub(); }
   removeLabel() { return this._stub(); }
   createComment() { return this._stub(); }
+  closeIssue() { return this._stub(); }
 }
 
 function getProvider(host) {

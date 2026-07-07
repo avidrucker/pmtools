@@ -166,6 +166,16 @@ class GitHubProvider:
         except Exception:
             return False
 
+    def close_issue(self, number):
+        """Close an issue outright (`gh issue close <N>`). Used by no-code close
+        (#113) — a comment-only ticket has no `Closes #N` commit to auto-close it."""
+        try:
+            subprocess.run(["gh", "issue", "close", str(number)],
+                           capture_output=True, text=True, check=True)
+            return True
+        except Exception:
+            return False
+
 
 class GitLabProvider:
     name = "gitlab"
@@ -177,7 +187,7 @@ class GitLabProvider:
 
     issue_states = issue_title = _stub
     list_issues_by_label = list_open_issues_with_bodies = edit_issue_body = _stub
-    add_label = remove_label = create_comment = _stub
+    add_label = remove_label = create_comment = close_issue = _stub
 
 
 def get_provider(host):
