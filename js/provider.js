@@ -53,6 +53,17 @@ function parseIssueListRows(out) {
   return rows;
 }
 
+// Pure: parse the new issue NUMBER from `gh issue create`'s stdout — it prints the
+// created issue's URL, e.g. `https://github.com/o/r/issues/42`. Reads the last
+// non-empty line and takes the `/issues/<N>` segment. null when unparseable /
+// offline. (#111)
+function parseCreatedIssueNumber(out) {
+  if (out === null || out === undefined) return null;
+  const line = String(out).trim().split('\n').filter(Boolean).pop() || '';
+  const m = line.match(/\/issues\/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 class GitHubProvider {
   constructor() { this.name = 'github'; }
 
@@ -163,6 +174,20 @@ class GitHubProvider {
       return true;
     } catch { return false; }
   }
+
+  // Create an issue (`gh issue create --title T --body-file - --label L …`, body
+  // via stdin). Returns the new issue NUMBER (int), or null on any failure. The
+  // serialized create + number read-back structurally prevents the concurrent-
+  // create number race (pycats#541). Used by `pmtools file` (#111).
+  createIssue(title, body, labels) {
+    const args = ['issue', 'create', '--title', String(title), '--body-file', '-'];
+    for (const l of (labels || [])) args.push('--label', String(l));
+    try {
+      const out = execFileSync('gh', args,
+        { input: body || '', encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+      return parseCreatedIssueNumber(out);
+    } catch { return null; }
+  }
 }
 
 class GitLabProvider {
@@ -179,6 +204,7 @@ class GitLabProvider {
   removeLabel() { return this._stub(); }
   createComment() { return this._stub(); }
   closeIssue() { return this._stub(); }
+  createIssue() { return this._stub(); }
 }
 
 function getProvider(host) {
@@ -188,5 +214,6 @@ function getProvider(host) {
 }
 
 module.exports = {
-  getProvider, GitHubProvider, GitLabProvider, parseIssueStateRow, parseIssueListRows,
+  getProvider, GitHubProvider, GitLabProvider,
+  parseIssueStateRow, parseIssueListRows, parseCreatedIssueNumber,
 };

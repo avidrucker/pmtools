@@ -5,6 +5,7 @@ All calls are best-effort: an offline/missing CLI degrades to empty results
 (reconcile then reports UNKNOWN) and never raises.
 """
 import json
+import re
 import subprocess
 
 
@@ -67,6 +68,19 @@ def parse_issue_list_rows(out):
         rows.append({"number": item.get("number"), "state": state,
                      "labels": labels, "blockedByCount": 0})
     return rows
+
+
+def parse_created_issue_number(out):
+    """Pure: parse the new issue NUMBER from `gh issue create`'s stdout — it prints
+    the created issue's URL, e.g. `https://github.com/o/r/issues/42`. Reads the last
+    non-empty line and takes the `/issues/<N>` segment. None when unparseable /
+    offline. (#111)"""
+    if out is None:
+        return None
+    lines = [ln for ln in str(out).strip().split("\n") if ln]
+    line = lines[-1] if lines else ""
+    m = re.search(r"/issues/(\d+)", line)
+    return int(m.group(1)) if m else None
 
 
 class GitHubProvider:
@@ -176,6 +190,21 @@ class GitHubProvider:
         except Exception:
             return False
 
+    def create_issue(self, title, body, labels):
+        """Create an issue (`gh issue create --title T --body-file - --label L …`,
+        body via stdin). Returns the new issue NUMBER (int), or None on any failure.
+        The serialized create + number read-back structurally prevents the
+        concurrent-create number race (pycats#541). Used by `pmtools file` (#111)."""
+        args = ["gh", "issue", "create", "--title", str(title), "--body-file", "-"]
+        for l in (labels or []):
+            args += ["--label", str(l)]
+        try:
+            out = subprocess.run(args, input=(body or ""), text=True,
+                                 capture_output=True, check=True)
+            return parse_created_issue_number(out.stdout)
+        except Exception:
+            return None
+
 
 class GitLabProvider:
     name = "gitlab"
@@ -187,7 +216,7 @@ class GitLabProvider:
 
     issue_states = issue_title = _stub
     list_issues_by_label = list_open_issues_with_bodies = edit_issue_body = _stub
-    add_label = remove_label = create_comment = close_issue = _stub
+    add_label = remove_label = create_comment = close_issue = create_issue = _stub
 
 
 def get_provider(host):

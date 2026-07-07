@@ -92,5 +92,25 @@ class VelocityDelegatesToProvider(unittest.TestCase):
                          "fetch_title should call provider.issue_title(ticket) exactly once")
 
 
+class ParseCreatedIssueNumber(unittest.TestCase):
+    """parse_created_issue_number: pure mapping of `gh issue create` stdout (a URL)
+    → the new issue number (#111). None on unparseable/offline."""
+
+    def test_reads_issues_number_from_url(self):
+        self.assertEqual(
+            provider.parse_created_issue_number("https://github.com/o/r/issues/42"), 42)
+        self.assertEqual(
+            provider.parse_created_issue_number("Creating issue\nhttps://github.com/o/r/issues/1360\n"), 1360)
+
+    def test_null_or_garbage_is_none(self):
+        self.assertIsNone(provider.parse_created_issue_number(None))
+        self.assertIsNone(provider.parse_created_issue_number(""))
+        self.assertIsNone(provider.parse_created_issue_number("no url here"))
+
+    def test_gitlab_stub_create_issue_raises(self):
+        with self.assertRaises(NotImplementedError):
+            provider.GitLabProvider().create_issue("t", "b", [])
+
+
 if __name__ == "__main__":
     unittest.main()

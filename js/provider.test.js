@@ -56,3 +56,28 @@ test('GitHubProvider exposes issueTitle (parity with py issue_title)', () => {
 test('GitLabProvider stubs issueTitle (throws not-implemented)', () => {
   assert.throws(() => new GitLabProvider().issueTitle(123), /not yet implemented/);
 });
+
+// parseCreatedIssueNumber: pure mapping of `gh issue create` stdout (a URL) → the
+// new issue number (#111). null on unparseable/offline.
+const { parseCreatedIssueNumber } = require('./provider');
+
+test('parseCreatedIssueNumber: reads /issues/<N> from the created-issue URL', () => {
+  assert.strictEqual(parseCreatedIssueNumber('https://github.com/o/r/issues/42'), 42);
+  assert.strictEqual(parseCreatedIssueNumber('Creating issue\nhttps://github.com/o/r/issues/1360\n'), 1360);
+});
+
+test('parseCreatedIssueNumber: null / garbage → null (offline-tolerant)', () => {
+  assert.strictEqual(parseCreatedIssueNumber(null), null);
+  assert.strictEqual(parseCreatedIssueNumber(''), null);
+  assert.strictEqual(parseCreatedIssueNumber('no url here'), null);
+});
+
+test('GitHubProvider exposes createIssue + closeIssue (parity with py)', () => {
+  const p = new GitHubProvider();
+  assert.strictEqual(typeof p.createIssue, 'function');
+  assert.strictEqual(typeof p.closeIssue, 'function');
+});
+
+test('GitLabProvider stubs createIssue (throws not-implemented)', () => {
+  assert.throws(() => new GitLabProvider().createIssue('t', 'b', []), /not yet implemented/);
+});
