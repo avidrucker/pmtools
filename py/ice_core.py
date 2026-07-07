@@ -113,6 +113,36 @@ def detect_ice_tier(labels):
     return ""
 
 
+# The label a tier maps to; 'none' has no label (it clears the overrides).
+OVERRIDE_LABEL = {"critical": "priority:critical", "elevated": "priority:elevated"}
+VALID_TIERS = ["critical", "elevated", "none"]
+
+
+def set_tier_plan(tier, current_labels):
+    """Pure: plan the label mutation + stored tier for `ice set-tier` (#112),
+    given a requested tier and the issue's CURRENT label NAMES (strings). Raises
+    ValueError on an invalid tier. critical/elevated -> ensure that priority:*
+    label and drop the other override; none -> drop both override labels. On an
+    already-correct issue the plan is empty (add None, remove []), so `set-tier
+    none` on a clean issue is a no-op. Returns {tier, storedTier, add, remove}:
+    storedTier is '' for none (the normal-queue value detect_ice_tier uses), add
+    is the label to add or None, remove lists only the override labels present."""
+    t = str("" if tier is None else tier).lower()
+    if t not in VALID_TIERS:
+        raise ValueError("tier must be one of {} — got {}".format(VALID_TIERS, repr(tier)))
+    names = [l for l in (current_labels or []) if isinstance(l, str) and l]
+    crit = OVERRIDE_LABEL["critical"]
+    elev = OVERRIDE_LABEL["elevated"]
+    if t == "none":
+        return {"tier": t, "storedTier": "", "add": None,
+                "remove": [l for l in (crit, elev) if l in names]}
+    target = OVERRIDE_LABEL[t]
+    other = elev if t == "critical" else crit
+    return {"tier": t, "storedTier": t,
+            "add": None if target in names else target,
+            "remove": [other] if other in names else []}
+
+
 def _to_ice_input(name, v, valid):
     """None/'' -> None; a value in `valid` -> normalised number; else raise."""
     if v is None or v == "":

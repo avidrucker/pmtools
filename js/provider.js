@@ -122,6 +122,37 @@ class GitHubProvider {
     const t = out.trim();
     return t || null;
   }
+
+  // --- Write-seam born for `ice set-tier` (#112); reused by no-code close and
+  //     `pmtools file`. Each returns true on success, false on ANY failure
+  //     (offline / missing gh / permission) — fail-soft, never throws. ---
+
+  // Apply a label (`gh issue edit <N> --add-label <L>`).
+  addLabel(number, label) {
+    try {
+      execFileSync('gh', ['issue', 'edit', String(number), '--add-label', String(label)],
+        { encoding: 'utf8', stdio: ['ignore', 'ignore', 'ignore'] });
+      return true;
+    } catch { return false; }
+  }
+
+  // Remove a label (`gh issue edit <N> --remove-label <L>`).
+  removeLabel(number, label) {
+    try {
+      execFileSync('gh', ['issue', 'edit', String(number), '--remove-label', String(label)],
+        { encoding: 'utf8', stdio: ['ignore', 'ignore', 'ignore'] });
+      return true;
+    } catch { return false; }
+  }
+
+  // Post a comment via stdin (`gh issue comment <N> --body-file -`).
+  createComment(number, body) {
+    try {
+      execFileSync('gh', ['issue', 'comment', String(number), '--body-file', '-'],
+        { input: body, encoding: 'utf8', stdio: ['pipe', 'ignore', 'ignore'] });
+      return true;
+    } catch { return false; }
+  }
 }
 
 class GitLabProvider {
@@ -134,6 +165,9 @@ class GitLabProvider {
   listOpenIssuesWithBodies() { return this._stub(); }
   editIssueBody() { return this._stub(); }
   issueTitle() { return this._stub(); }
+  addLabel() { return this._stub(); }
+  removeLabel() { return this._stub(); }
+  createComment() { return this._stub(); }
 }
 
 function getProvider(host) {

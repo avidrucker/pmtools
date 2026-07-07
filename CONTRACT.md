@@ -846,6 +846,34 @@ unscored open issues, deriving provisional I/C/E from labels (`derive_auto_score
 re-emits the ranked CSV from the DB. Exit codes match the other stores (0 ok /
 disabled · 2 usage · 1 operational).
 
+**`ice set-tier <critical|elevated|none> --issue N --why "…" --until "…"`** (#112)
+is the **opt-in human-escalation** path — the override tiers `priority:critical`
+(human-only) / `priority:elevated` (human or PM agent) sit **above** the normal ICE
+queue (see `sort_rows`, which orders `critical` → `elevated` → normal). It is a
+**positional subcommand**, like `score`/`list`/`export`. Effect, in order:
+
+1. Read the issue's current labels (provider, best-effort) and compute the label
+   mutation via the pure `set_tier_plan(tier, currentLabels)` seam
+   (fixture-graded): `critical`/`elevated` → add that `priority:*` label and drop
+   the other override; `none` → drop both. An already-correct issue yields an empty
+   plan, so `set-tier none` on an issue with no override is a **no-op success**.
+2. Apply the label add/remove through the provider **write-seam** (`add_label` /
+   `remove_label`, GitHub → `gh issue edit --add-label`/`--remove-label`).
+3. Store the tier on the issue's `ice` row — **read-merge-write** (upsert is
+   `INSERT OR REPLACE`, so I/C/E are preserved; a not-yet-scored issue gets a
+   minimal tier-only row). The stored `tier` is `''` for `none`.
+4. Post a **required audit comment** (`create_comment`, `gh issue comment`)
+   recording **Who** (the agent identity — `--as <name>` / `$CLAUDE_AGENT_NAME`,
+   as `claim` resolves it), **Why** (`--why`), and **Until** (`--until`).
+
+`--why` and `--until` are **required for `critical`/`elevated`** (a missing flag,
+or a missing identity, is a **usage error, exit 2** — the comment cannot be
+composed); for `none` they are optional. Host writes are **fail-soft** (a `gh`
+failure prints `[ice] note: …` to stderr and continues — the tier is still stored);
+a project with no `dbPath` **fails loud**. `score`/`list`/`export`/`--auto` are
+unchanged. The provider write-seam (`add_label`/`remove_label`/`create_comment`)
+is **shared infrastructure** born here and reused by later lifecycle commands.
+
 ### CSV mirror semantics (derived, never authoritative)
 
 Fixed column order = the table's column order (the `*_COLS` constants). Line 1 =

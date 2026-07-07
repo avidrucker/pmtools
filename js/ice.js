@@ -5,6 +5,9 @@
 //   ice score --auto [--dry-run]    provisionally score unscored open issues from labels
 //   ice list [--label S] [--json]   ranked view (table or JSON)
 //   ice export [--csv P]            ranked CSV mirror (ICE_CSV_COLS incl. derived ice_rank)
+//   ice set-tier <critical|elevated|none> --issue N --why … --until …  (#112)
+//                                   opt-in priority override: apply/clear priority:* label,
+//                                   store tier on the row, post a Who/Why/Expiry audit comment
 //
 // ICE is OPT-IN (disabled by default). Exit codes: 0 success/disabled; 2 usage;
 // 1 operational. Pure scoring/ranking/auto live in ice_core (#99); persistence in
@@ -35,8 +38,9 @@ function labelDicts(names) {
 // Own arg parser (the generic parseStoreArgs only knows log|export, rejects --auto).
 function parse(argv) {
   const a = {
-    cmd: null, json: null, auto: false, dryRun: false,
+    cmd: null, json: null, tier: null, auto: false, dryRun: false,
     label: null, asJson: false, dbPath: null, csv: null, noCsv: false,
+    issue: null, why: null, until: null, as: null,
   };
   const pos = [];
   let i = 0;
@@ -49,12 +53,17 @@ function parse(argv) {
     else if (t === '--label') { i += 1; a.label = argv[i] ?? null; }
     else if (t === '--db-path') { i += 1; a.dbPath = argv[i] ?? null; }
     else if (t === '--csv') { i += 1; a.csv = argv[i] ?? null; }
+    else if (t === '--issue') { i += 1; a.issue = argv[i] ?? null; }
+    else if (t === '--why') { i += 1; a.why = argv[i] ?? null; }
+    else if (t === '--until') { i += 1; a.until = argv[i] ?? null; }
+    else if (t === '--as') { i += 1; a.as = argv[i] ?? null; }
     else if (t.startsWith('--')) throw new Error(`unknown flag: ${t}`);
     else pos.push(t);
     i += 1;
   }
   a.cmd = pos[0] ?? null;
-  a.json = pos[1] ?? null;
+  a.json = pos[1] ?? null;    // score: the batch JSON
+  a.tier = pos[1] ?? null;    // set-tier: the tier arg (same positional slot)
   return a;
 }
 
@@ -179,6 +188,76 @@ function cmdExport(a, dbPath, storeCfg, die) {
   return 0;
 }
 
+// The Who/Why/Expiry audit comment posted on every set-tier (#112).
+function auditComment({ tier, who, why, until }) {
+  if (tier === 'none') {
+    return ['**Priority override cleared** (tier → none)', '',
+      `- **Who:** ${who || 'unknown'}`,
+      ...(why ? [`- **Why:** ${why}`] : []),
+      ...(until ? [`- **Until:** ${until}`] : []),
+      '', '_Set via `pmtools ice set-tier`._'].join('\n');
+  }
+  return ['**Priority escalated → `priority:' + tier + '`**', '',
+    `- **Who:** ${who}`, `- **Why:** ${why}`, `- **Until:** ${until}`,
+    '', '_Set via `pmtools ice set-tier`._'].join('\n');
+}
+
+// `ice set-tier <critical|elevated|none> --issue N [--why … --until … --as …]`
+// (#112): apply/clear the priority:* override label, store the tier on the ice
+// row, and post the Who/Why/Expiry audit comment. Opt-in; host writes fail-soft.
+function cmdSetTier(a, dbPath, storeCfg, die, provider) {
+  if (!storeCfg.enabled) { console.log('ice store disabled for this project'); return 0; }
+  if (!dbPath) return die('no dbPath configured — set storage.dbPath in .claude/orchestrate.json');
+  const t = a.tier ? String(a.tier).toLowerCase() : null;
+  if (!t) return die('usage: ice set-tier <critical|elevated|none> --issue N --why "…" --until "…"', 2);
+  const issue = parseInt(a.issue, 10);
+  if (!a.issue || !Number.isInteger(issue) || issue <= 0) {
+    return die('set-tier requires --issue <positive integer>', 2);
+  }
+  const who = a.as || process.env.CLAUDE_AGENT_NAME || null;
+  if (t === 'critical' || t === 'elevated') {
+    if (!who) return die('set-tier critical|elevated requires an agent identity: --as <name> or $CLAUDE_AGENT_NAME', 2);
+    if (!a.why) return die('set-tier critical|elevated requires --why "<one sentence>"', 2);
+    if (!a.until) return die('set-tier critical|elevated requires --until "<date|event>"', 2);
+  }
+
+  const prov = provider || getProvider('github');
+  let labels = [];
+  try { labels = (prov.issueStates([issue])[issue] || {}).labels || []; } catch { labels = []; }
+
+  let plan;
+  try { plan = iceCore.setTierPlan(t, labels); } catch (e) { return die(e.message, 2); }
+
+  // Apply the label mutation (fail-soft: a gh failure warns, does not abort).
+  for (const lbl of plan.remove) {
+    if (!prov.removeLabel(issue, lbl)) console.error(`[ice] note: could not remove ${lbl} on #${issue} (gh unavailable?)`);
+  }
+  if (plan.add && !prov.addLabel(issue, plan.add)) {
+    console.error(`[ice] note: could not add ${plan.add} on #${issue} (gh unavailable?)`);
+  }
+
+  // Store the tier on the ice row — read-merge-write so I/C/E are preserved
+  // (upsert is INSERT OR REPLACE). No prior row → a minimal tier-only row.
+  const existing = store.selectAll(dbPath, 'ice').find((r) => r.issue === issue) || null;
+  const raw = existing
+    ? { ...existing, tier: plan.storedTier }
+    : { issue, tier: plan.storedTier, notes: 'tier set via ice set-tier' };
+  let row;
+  try { row = iceCore.validateIceRow(raw); } catch (e) { return die(e.message); }
+  row.updated_iso = nowIso();
+  try { store.upsert(dbPath, 'ice', row); } catch (e) { return die(`DB upsert failed: ${e.message}`); }
+
+  // Post the audit comment (fail-soft).
+  if (!prov.createComment(issue, auditComment({ tier: t, who, why: a.why, until: a.until }))) {
+    console.error(`[ice] note: could not post audit comment on #${issue} (gh unavailable?)`);
+  }
+
+  const detail = [plan.add ? `+${plan.add}` : null, plan.remove.length ? `-${plan.remove.join(', ')}` : null]
+    .filter(Boolean).join(' ');
+  console.log(`#${issue}: ${t === 'none' ? 'cleared tier override' : `tier=${t}`}${detail ? ` (${detail})` : ''}`);
+  return 0;
+}
+
 function main(argv, provider) {
   const die = makeDie('ice');
   let a;
@@ -189,10 +268,11 @@ function main(argv, provider) {
   if (a.cmd === 'score') return cmdScore(a, dbPath, storeCfg, die, provider);
   if (a.cmd === 'list') return cmdList(a, dbPath, storeCfg, die);
   if (a.cmd === 'export') return cmdExport(a, dbPath, storeCfg, die);
-  return die(`usage: ice <score|list|export> [...]  (got ${JSON.stringify(a.cmd)})`, 2);
+  if (a.cmd === 'set-tier') return cmdSetTier(a, dbPath, storeCfg, die, provider);
+  return die(`usage: ice <score|list|export|set-tier> [...]  (got ${JSON.stringify(a.cmd)})`, 2);
 }
 
-module.exports = { main, parse, cmdScore, cmdList, cmdExport, rankedCsv };
+module.exports = { main, parse, cmdScore, cmdList, cmdExport, cmdSetTier, auditComment, rankedCsv };
 
 if (require.main === module) {
   process.exit(main(process.argv.slice(2)));

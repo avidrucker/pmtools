@@ -1489,6 +1489,19 @@ parity_run close "close --dry-run plan" "$PAR_GH" -- 61 --branch br-apple/demo-j
 PAR_REPO="$(new_env)"
 parity_run release "release of an unclaimed issue is a no-op" "$PAR_GH" -- 777
 
+# ice set-tier (#112): the escalation command must render identically across ports.
+# The hermetic repo has no gh remote, so the provider's label/comment WRITES
+# fail-soft → both ports emit the same `[ice] note:` lines and still store the
+# tier; py runs first, js re-runs against the SAME --db-path (idempotent: reads the
+# row back, re-writes the identical tier). Also pins the usage-error render.
+PAR_REPO="$(new_env)"; mkdir -p "$PAR_REPO/.claude"
+printf '{ "storage": { "ice": { "enabled": true } } }\n' > "$PAR_REPO/.claude/orchestrate.json"
+PAR_STDB="$PAR_REPO/settier.db"
+parity_run ice "set-tier critical renders identically (label writes fail-soft offline)" "" -- \
+  set-tier critical --issue 7 --as apple --why "SLA breach" --until "2026-08-01" --db-path "$PAR_STDB"
+parity_run ice "set-tier missing --why is a usage error identically" "" -- \
+  set-tier critical --issue 7 --as apple --until u --db-path "$PAR_STDB"
+
 # status unknown-flag rejection (#39): a mistyped flag (e.g. --strrict) must be
 # REJECTED loudly with the SAME exit code in both ports — not silently dropped.
 # (js used to ignore it and exit 0, masking a disabled --strict gate in CI.)

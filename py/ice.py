@@ -5,6 +5,9 @@
   ice score --auto [--dry-run]    provisionally score unscored open issues from labels
   ice list [--label S] [--json]   ranked view (table or JSON)
   ice export [--csv P]            ranked CSV mirror (ICE_CSV_COLS incl. derived ice_rank)
+  ice set-tier <critical|elevated|none> --issue N --why … --until …  (#112)
+                                  opt-in priority override: apply/clear priority:* label,
+                                  store tier on the row, post a Who/Why/Expiry audit comment
 
 ICE is OPT-IN: disabled by default; a command prints a notice + exits 0 unless
 .claude/orchestrate.json enables storage.ice. Exit codes: 0 success/disabled;
@@ -43,8 +46,9 @@ def _label_dicts(names):
 def _parse(argv):
     """Own arg parser (the generic store_core.parse_store_args only knows
     log|export and rejects --auto). Unknown --flag -> ValueError (usage, exit 2)."""
-    a = {"cmd": None, "json": None, "auto": False, "dry_run": False,
-         "label": None, "as_json": False, "db_path": None, "csv": None, "no_csv": False}
+    a = {"cmd": None, "json": None, "tier": None, "auto": False, "dry_run": False,
+         "label": None, "as_json": False, "db_path": None, "csv": None, "no_csv": False,
+         "issue": None, "why": None, "until": None, "as_name": None}
     pos = []
     i = 0
     while i < len(argv):
@@ -66,13 +70,26 @@ def _parse(argv):
         elif t == "--csv":
             i += 1
             a["csv"] = argv[i] if i < len(argv) else None
+        elif t == "--issue":
+            i += 1
+            a["issue"] = argv[i] if i < len(argv) else None
+        elif t == "--why":
+            i += 1
+            a["why"] = argv[i] if i < len(argv) else None
+        elif t == "--until":
+            i += 1
+            a["until"] = argv[i] if i < len(argv) else None
+        elif t == "--as":
+            i += 1
+            a["as_name"] = argv[i] if i < len(argv) else None
         elif t.startswith("--"):
             raise ValueError("unknown flag: " + t)
         else:
             pos.append(t)
         i += 1
     a["cmd"] = pos[0] if pos else None
-    a["json"] = pos[1] if len(pos) > 1 else None
+    a["json"] = pos[1] if len(pos) > 1 else None   # score: batch JSON
+    a["tier"] = pos[1] if len(pos) > 1 else None   # set-tier: tier arg (same slot)
     return a
 
 
@@ -226,6 +243,99 @@ def _cmd_export(a, db_path, store_cfg, die):
     return 0
 
 
+def _audit_comment(tier, who, why, until):
+    """The Who/Why/Expiry audit comment posted on every set-tier (#112)."""
+    if tier == "none":
+        lines = ["**Priority override cleared** (tier → none)", "",
+                 "- **Who:** {}".format(who or "unknown")]
+        if why:
+            lines.append("- **Why:** {}".format(why))
+        if until:
+            lines.append("- **Until:** {}".format(until))
+        lines += ["", "_Set via `pmtools ice set-tier`._"]
+        return "\n".join(lines)
+    return "\n".join([
+        "**Priority escalated → `priority:{}`**".format(tier), "",
+        "- **Who:** {}".format(who), "- **Why:** {}".format(why),
+        "- **Until:** {}".format(until), "", "_Set via `pmtools ice set-tier`._"])
+
+
+def _cmd_set_tier(a, db_path, store_cfg, die, provider=None):
+    """`ice set-tier <critical|elevated|none> --issue N [--why … --until … --as …]`
+    (#112): apply/clear the priority:* override label, store the tier on the ice
+    row, and post the Who/Why/Expiry audit comment. Opt-in; host writes fail-soft."""
+    if not store_cfg["enabled"]:
+        print("ice store disabled for this project")
+        return 0
+    if not db_path:
+        return die("no dbPath configured — set storage.dbPath in .claude/orchestrate.json")
+    t = a["tier"].lower() if a["tier"] else None
+    if not t:
+        return die('usage: ice set-tier <critical|elevated|none> --issue N --why "…" --until "…"', 2)
+    try:
+        issue = int(a["issue"])
+    except (TypeError, ValueError):
+        return die("set-tier requires --issue <positive integer>", 2)
+    if issue <= 0:
+        return die("set-tier requires --issue <positive integer>", 2)
+    who = a["as_name"] or os.environ.get("CLAUDE_AGENT_NAME") or None
+    if t in ("critical", "elevated"):
+        if not who:
+            return die("set-tier critical|elevated requires an agent identity: --as <name> or $CLAUDE_AGENT_NAME", 2)
+        if not a["why"]:
+            return die('set-tier critical|elevated requires --why "<one sentence>"', 2)
+        if not a["until"]:
+            return die('set-tier critical|elevated requires --until "<date|event>"', 2)
+
+    prov = provider or get_provider("github")
+    try:
+        labels = (prov.issue_states([issue]).get(issue) or {}).get("labels") or []
+    except Exception:
+        labels = []
+
+    try:
+        plan = ice_core.set_tier_plan(t, labels)
+    except ValueError as e:
+        return die(str(e), 2)
+
+    # Apply the label mutation (fail-soft: a gh failure warns, does not abort).
+    for lbl in plan["remove"]:
+        if not prov.remove_label(issue, lbl):
+            sys.stderr.write("[ice] note: could not remove {} on #{} (gh unavailable?)\n".format(lbl, issue))
+    if plan["add"] and not prov.add_label(issue, plan["add"]):
+        sys.stderr.write("[ice] note: could not add {} on #{} (gh unavailable?)\n".format(plan["add"], issue))
+
+    # Store the tier on the ice row — read-merge-write so I/C/E are preserved
+    # (upsert is INSERT OR REPLACE). No prior row → a minimal tier-only row.
+    existing = next((r for r in store.select_all(db_path, "ice") if r["issue"] == issue), None)
+    if existing:
+        raw = dict(existing)
+        raw["tier"] = plan["storedTier"]
+    else:
+        raw = {"issue": issue, "tier": plan["storedTier"], "notes": "tier set via ice set-tier"}
+    try:
+        row = ice_core.validate_ice_row(raw)
+    except ValueError as e:
+        return die(str(e))
+    row["updated_iso"] = _now_iso()
+    try:
+        store.upsert(db_path, "ice", row)
+    except Exception as e:
+        return die("DB upsert failed: {}".format(e))
+
+    # Post the audit comment (fail-soft).
+    if not prov.create_comment(issue, _audit_comment(t, who, a["why"], a["until"])):
+        sys.stderr.write("[ice] note: could not post audit comment on #{} (gh unavailable?)\n".format(issue))
+
+    detail = " ".join(x for x in [
+        "+" + plan["add"] if plan["add"] else "",
+        "-" + ", ".join(plan["remove"]) if plan["remove"] else ""] if x)
+    print("#{}: {}{}".format(
+        issue, "cleared tier override" if t == "none" else "tier=" + t,
+        " ({})".format(detail) if detail else ""))
+    return 0
+
+
 def main(argv, provider=None):
     die = make_die("ice")
     try:
@@ -242,7 +352,9 @@ def main(argv, provider=None):
         return _cmd_list(a, db_path, store_cfg, die)
     if cmd == "export":
         return _cmd_export(a, db_path, store_cfg, die)
-    die("usage: ice <score|list|export> [...]  (got {})".format(
+    if cmd == "set-tier":
+        return _cmd_set_tier(a, db_path, store_cfg, die, provider)
+    die("usage: ice <score|list|export|set-tier> [...]  (got {})".format(
         json.dumps(cmd, ensure_ascii=False)), 2)
 
 

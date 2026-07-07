@@ -28,6 +28,9 @@ class FakeProvider:
         self._titles = titles or {}
         self._states = states or {}
         self._listing = listing or []
+        self.added = []      # set-tier write log (#112)
+        self.removed = []
+        self.comments = []
 
     def issue_title(self, n):
         return self._titles.get(n)
@@ -38,13 +41,30 @@ class FakeProvider:
     def list_open_issues_with_labels(self, limit):
         return self._listing
 
+    def add_label(self, n, label):
+        self.added.append((n, label))
+        return True
+
+    def remove_label(self, n, label):
+        self.removed.append((n, label))
+        return True
+
+    def create_comment(self, n, body):
+        self.comments.append((n, body))
+        return True
+
 
 def _run(argv, db, provider, cfg=ENABLED):
     a = ice._parse(argv)
     with contextlib.redirect_stdout(io.StringIO()) as out:
-        rc = (ice._cmd_score(a, db, cfg, DIE, provider) if a["cmd"] == "score"
-              else ice._cmd_list(a, db, cfg, DIE) if a["cmd"] == "list"
-              else ice._cmd_export(a, db, cfg, DIE))
+        if a["cmd"] == "score":
+            rc = ice._cmd_score(a, db, cfg, DIE, provider)
+        elif a["cmd"] == "list":
+            rc = ice._cmd_list(a, db, cfg, DIE)
+        elif a["cmd"] == "set-tier":
+            rc = ice._cmd_set_tier(a, db, cfg, DIE, provider)
+        else:
+            rc = ice._cmd_export(a, db, cfg, DIE)
     return rc, out.getvalue()
 
 
@@ -135,6 +155,63 @@ class Gating(unittest.TestCase):
     def test_unknown_flag_raises(self):
         with self.assertRaises(ValueError):
             ice._parse(["score", "--bogus"])
+
+
+class SetTier(unittest.TestCase):
+    def test_critical_applies_label_stores_tier_posts_comment(self):
+        db = _tmp_db()
+        prov = FakeProvider(states={42: {"labels": []}})
+        _run(["set-tier", "critical", "--issue", "42", "--as", "honeydew",
+              "--why", "SLA breach", "--until", "2026-08-01"], db, prov)
+        self.assertEqual(prov.added, [(42, "priority:critical")])
+        self.assertEqual(prov.removed, [])
+        self.assertEqual(len(prov.comments), 1)
+        self.assertIn("Who:** honeydew", prov.comments[0][1])
+        self.assertIn("Why:** SLA breach", prov.comments[0][1])
+        row = next(r for r in store.select_all(db, "ice") if r["issue"] == 42)
+        self.assertEqual(row["tier"], "critical")
+
+    def test_critical_swaps_existing_elevated(self):
+        db = _tmp_db()
+        prov = FakeProvider(states={7: {"labels": ["priority:elevated"]}})
+        _run(["set-tier", "critical", "--issue", "7", "--as", "a", "--why", "w", "--until", "u"], db, prov)
+        self.assertEqual(prov.added, [(7, "priority:critical")])
+        self.assertEqual(prov.removed, [(7, "priority:elevated")])
+
+    def test_none_clears_override(self):
+        db = _tmp_db()
+        prov = FakeProvider(states={9: {"labels": ["priority:critical"]}})
+        _run(["set-tier", "none", "--issue", "9"], db, prov)
+        self.assertEqual(prov.removed, [(9, "priority:critical")])
+        self.assertEqual(prov.added, [])
+        row = next(r for r in store.select_all(db, "ice") if r["issue"] == 9)
+        self.assertEqual(row["tier"], "")
+
+    def test_preserves_existing_ice(self):
+        db = _tmp_db()
+        prov = FakeProvider(titles={5: "Five"}, states={5: {"labels": ["severity:low"]}})
+        _run(['score', '{"5":{"I":2,"C":0.8,"E":5}}'], db, prov)
+        _run(["set-tier", "critical", "--issue", "5", "--as", "a", "--why", "w", "--until", "u"], db, prov)
+        row = next(r for r in store.select_all(db, "ice") if r["issue"] == 5)
+        self.assertEqual(row["tier"], "critical")
+        self.assertEqual(row["ice_score"], 8.0)
+        self.assertEqual(row["title"], "Five")
+
+    def test_missing_why_is_usage_error(self):
+        db = _tmp_db()
+        with self.assertRaises(SystemExit):
+            _run(["set-tier", "critical", "--issue", "1", "--as", "a", "--until", "u"],
+                 db, FakeProvider(states={1: {"labels": []}}))
+
+    def test_missing_issue_is_usage_error(self):
+        db = _tmp_db()
+        with self.assertRaises(SystemExit):
+            _run(["set-tier", "critical", "--as", "a", "--why", "w", "--until", "u"], db, FakeProvider())
+
+    def test_invalid_tier_is_usage_error(self):
+        db = _tmp_db()
+        with self.assertRaises(SystemExit):
+            _run(["set-tier", "urgent", "--issue", "1"], db, FakeProvider(states={1: {"labels": []}}))
 
 
 if __name__ == "__main__":

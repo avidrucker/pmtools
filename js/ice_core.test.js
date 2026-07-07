@@ -22,6 +22,7 @@ const ICE_DISPATCH = {
   rank_rows: core.rankRows,
   derive_auto_score: core.deriveAutoScore,
   validate_ice_row: core.validateIceRow,
+  set_tier_plan: core.setTierPlan,
 };
 
 function fixtureStems(dir) {

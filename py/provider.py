@@ -135,6 +135,37 @@ class GitHubProvider:
         t = out.strip()
         return t or None
 
+    # --- Write-seam born for `ice set-tier` (#112); reused by no-code close and
+    #     `pmtools file`. Each returns True on success, False on ANY failure
+    #     (offline / missing gh / permission) — fail-soft, never raises. ---
+
+    def add_label(self, number, label):
+        """Apply a label (`gh issue edit <N> --add-label <L>`)."""
+        try:
+            subprocess.run(["gh", "issue", "edit", str(number), "--add-label", str(label)],
+                           capture_output=True, text=True, check=True)
+            return True
+        except Exception:
+            return False
+
+    def remove_label(self, number, label):
+        """Remove a label (`gh issue edit <N> --remove-label <L>`)."""
+        try:
+            subprocess.run(["gh", "issue", "edit", str(number), "--remove-label", str(label)],
+                           capture_output=True, text=True, check=True)
+            return True
+        except Exception:
+            return False
+
+    def create_comment(self, number, body):
+        """Post a comment via stdin (`gh issue comment <N> --body-file -`)."""
+        try:
+            subprocess.run(["gh", "issue", "comment", str(number), "--body-file", "-"],
+                           input=body, text=True, capture_output=True, check=True)
+            return True
+        except Exception:
+            return False
+
 
 class GitLabProvider:
     name = "gitlab"
@@ -146,6 +177,7 @@ class GitLabProvider:
 
     issue_states = issue_title = _stub
     list_issues_by_label = list_open_issues_with_bodies = edit_issue_body = _stub
+    add_label = remove_label = create_comment = _stub
 
 
 def get_provider(host):

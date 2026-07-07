@@ -28,6 +28,7 @@ ICE_DISPATCH = {
     "rank_rows": ice_core.rank_rows,
     "derive_auto_score": ice_core.derive_auto_score,
     "validate_ice_row": ice_core.validate_ice_row,
+    "set_tier_plan": ice_core.set_tier_plan,
 }
 
 

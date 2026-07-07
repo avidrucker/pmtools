@@ -23,16 +23,21 @@ function tmpDb() {
 class FakeProvider {
   constructor({ titles = {}, states = {}, listing = [] } = {}) {
     this._titles = titles; this._states = states; this._listing = listing;
+    this.added = []; this.removed = []; this.comments = []; // set-tier write log (#112)
   }
   issueTitle(n) { return this._titles[n] ?? null; }
   issueStates(nums) { const o = {}; for (const n of nums) o[n] = this._states[n] || {}; return o; }
   listOpenIssuesWithLabels() { return this._listing; }
+  addLabel(n, l) { this.added.push([n, l]); return true; }
+  removeLabel(n, l) { this.removed.push([n, l]); return true; }
+  createComment(n, body) { this.comments.push([n, body]); return true; }
 }
 
 function run(argv, db, provider, cfg = ENABLED) {
   const a = ice.parse(argv);
   if (a.cmd === 'score') return ice.cmdScore(a, db, cfg, die, provider);
   if (a.cmd === 'list') return ice.cmdList(a, db, cfg, die);
+  if (a.cmd === 'set-tier') return ice.cmdSetTier(a, db, cfg, die, provider);
   return ice.cmdExport(a, db, cfg, die);
 }
 
@@ -118,4 +123,75 @@ test('ice: disabled store is a no-op', () => {
 
 test('ice: unknown flag throws (usage)', () => {
   assert.throws(() => ice.parse(['score', '--bogus']));
+});
+
+// --- set-tier (#112) ---
+
+function silent(fn) {
+  const orig = console.log; let out = '';
+  console.log = (s) => { out += `${s}\n`; };
+  try { fn(); } finally { console.log = orig; }
+  return out;
+}
+
+test('ice set-tier critical: applies label, stores tier, posts audit comment', () => {
+  const db = tmpDb();
+  const prov = new FakeProvider({ states: { 42: { labels: [] } } });
+  silent(() => run(['set-tier', 'critical', '--issue', '42', '--as', 'honeydew',
+    '--why', 'SLA breach', '--until', '2026-08-01'], db, prov));
+  assert.deepEqual(prov.added, [[42, 'priority:critical']]);
+  assert.deepEqual(prov.removed, []);
+  assert.equal(prov.comments.length, 1);
+  assert.match(prov.comments[0][1], /Who:\*\* honeydew/);
+  assert.match(prov.comments[0][1], /Why:\*\* SLA breach/);
+  const row = store.selectAll(db, 'ice').find((r) => r.issue === 42);
+  assert.equal(row.tier, 'critical');
+});
+
+test('ice set-tier critical: swaps out an existing elevated label', () => {
+  const db = tmpDb();
+  const prov = new FakeProvider({ states: { 7: { labels: ['priority:elevated'] } } });
+  silent(() => run(['set-tier', 'critical', '--issue', '7', '--as', 'a',
+    '--why', 'w', '--until', 'u'], db, prov));
+  assert.deepEqual(prov.added, [[7, 'priority:critical']]);
+  assert.deepEqual(prov.removed, [[7, 'priority:elevated']]);
+});
+
+test('ice set-tier none: clears the override and stores empty tier', () => {
+  const db = tmpDb();
+  const prov = new FakeProvider({ states: { 9: { labels: ['priority:critical'] } } });
+  silent(() => run(['set-tier', 'none', '--issue', '9'], db, prov));
+  assert.deepEqual(prov.removed, [[9, 'priority:critical']]);
+  assert.deepEqual(prov.added, []);
+  assert.equal(store.selectAll(db, 'ice').find((r) => r.issue === 9).tier, '');
+});
+
+test('ice set-tier: preserves an existing row I/C/E (read-merge-write)', () => {
+  const db = tmpDb();
+  const prov = new FakeProvider({ titles: { 5: 'Five' }, states: { 5: { labels: ['severity:low'] } } });
+  silent(() => run(['score', '{"5":{"I":2,"C":0.8,"E":5}}'], db, prov));
+  silent(() => run(['set-tier', 'critical', '--issue', '5', '--as', 'a',
+    '--why', 'w', '--until', 'u'], db, prov));
+  const row = store.selectAll(db, 'ice').find((r) => r.issue === 5);
+  assert.equal(row.tier, 'critical');
+  assert.equal(row.ice_score, 8.0);  // I=2,C=0.8,E=5 preserved
+  assert.equal(row.title, 'Five');
+});
+
+test('ice set-tier critical: missing --why is a usage error', () => {
+  const db = tmpDb();
+  assert.throws(() => run(['set-tier', 'critical', '--issue', '1', '--as', 'a', '--until', 'u'],
+    db, new FakeProvider({ states: { 1: { labels: [] } } })));
+});
+
+test('ice set-tier: missing --issue is a usage error', () => {
+  const db = tmpDb();
+  assert.throws(() => run(['set-tier', 'critical', '--as', 'a', '--why', 'w', '--until', 'u'],
+    db, new FakeProvider()));
+});
+
+test('ice set-tier: invalid tier is a usage error', () => {
+  const db = tmpDb();
+  assert.throws(() => run(['set-tier', 'urgent', '--issue', '1'],
+    db, new FakeProvider({ states: { 1: { labels: [] } } })));
 });

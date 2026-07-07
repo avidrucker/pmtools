@@ -86,6 +86,39 @@ function detectIceTier(labels) {
   return '';
 }
 
+// The label a tier maps to; 'none' has no label (it clears the overrides).
+const OVERRIDE_LABEL = { critical: 'priority:critical', elevated: 'priority:elevated' };
+const VALID_TIERS = ['critical', 'elevated', 'none'];
+
+// Pure: plan the label mutation + stored tier for `ice set-tier` (#112), given a
+// requested tier and the issue's CURRENT label NAMES (strings). Throws on an
+// invalid tier. critical/elevated → ensure that priority:* label and drop the
+// other override; none → drop both override labels. On an already-correct issue
+// the plan is empty (add null, remove []), so `set-tier none` on a clean issue is
+// a no-op. Returns { tier, storedTier, add, remove }: storedTier is '' for none
+// (the normal-queue value detectIceTier uses), add is the label to add or null,
+// remove lists only the override labels actually present.
+function setTierPlan(tier, currentLabels) {
+  const t = String(tier == null ? '' : tier).toLowerCase();
+  if (!VALID_TIERS.includes(t)) {
+    throw new Error(`tier must be one of ${JSON.stringify(VALID_TIERS)} — got ${JSON.stringify(tier)}`);
+  }
+  const names = (currentLabels || []).filter((l) => typeof l === 'string' && l);
+  const crit = OVERRIDE_LABEL.critical;
+  const elev = OVERRIDE_LABEL.elevated;
+  if (t === 'none') {
+    return { tier: t, storedTier: '', add: null, remove: [crit, elev].filter((l) => names.includes(l)) };
+  }
+  const target = OVERRIDE_LABEL[t];
+  const other = t === 'critical' ? elev : crit;
+  return {
+    tier: t,
+    storedTier: t,
+    add: names.includes(target) ? null : target,
+    remove: names.includes(other) ? [other] : [],
+  };
+}
+
 // null/'' -> null; a value in `valid` -> the number; else throw.
 function toIceInput(name, v, valid) {
   if (v === null || v === undefined || v === '') return null;
@@ -134,6 +167,7 @@ function validateIceRow(row) {
 
 module.exports = {
   VALID_I, VALID_C, VALID_E, ICE_TIER_ORDER, ICE_COLS, ICE_CSV_COLS,
+  OVERRIDE_LABEL, VALID_TIERS,
   toStr, computeIce, finalScore, sortRows, rankRows,
-  deriveAutoScore, detectIceTier, validateIceRow,
+  deriveAutoScore, detectIceTier, validateIceRow, setTierPlan,
 };
