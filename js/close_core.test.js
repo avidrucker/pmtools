@@ -52,6 +52,7 @@ const DISPATCH = {
   resolve_close_branch: close.resolveCloseBranch,
   preclose_plan: close.preclosePlan,
   release_guard_verdict: close.releaseGuardVerdict,
+  no_code_close_plan: close.noCodeClosePlan,
 };
 
 test('every close fixture file has a dispatch entry (1:1)', () => {

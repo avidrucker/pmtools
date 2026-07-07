@@ -56,6 +56,7 @@ DISPATCH = {
     "resolve_close_branch": close_core.resolve_close_branch,
     "preclose_plan": close_core.preclose_plan,
     "release_guard_verdict": close_core.release_guard_verdict,
+    "no_code_close_plan": close_core.no_code_close_plan,
 }
 
 

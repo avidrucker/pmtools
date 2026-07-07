@@ -378,8 +378,32 @@ function parseReleaseArgs(argv) {
   return a;
 }
 
+// Pure: validate the `--no-code` comment arguments (#113). A no-code close closes
+// a comment-only ticket without a `Closes #N` commit; the comment IS the
+// deliverable, so exactly one of a comment source (`--comment` / `--comment-file`)
+// or an explicit `--no-comment` must be chosen. Returns
+// { ok:true, source:'inline'|'file'|'none' } or { ok:false, error } — the impure
+// close wrapper die()s (usage error, exit 2) on !ok.
+function noCodeClosePlan(opts) {
+  const o = opts || {};
+  const hasInline = o.comment !== null && o.comment !== undefined;
+  const hasFile = o.commentFile !== null && o.commentFile !== undefined;
+  const noComment = Boolean(o.noComment);
+  if (hasInline && hasFile) {
+    return { ok: false, error: 'provide only one of --comment or --comment-file' };
+  }
+  if (noComment && (hasInline || hasFile)) {
+    return { ok: false, error: '--no-comment cannot be combined with --comment or --comment-file' };
+  }
+  if (!noComment && !hasInline && !hasFile) {
+    return { ok: false, error: '--no-code requires a closing comment: pass --comment, --comment-file, or --no-comment to close without one' };
+  }
+  return { ok: true, source: noComment ? 'none' : (hasInline ? 'inline' : 'file') };
+}
+
 module.exports = {
   DEFAULT_MAX_RETRIES, UNION_FILES, KEYWORD_STOP_SET, SHORT_TECH_WORDS,
+  noCodeClosePlan,
   isSafeRef,
   classifyPushError, shouldCleanup,
   claimRefDeleteCommand, classifyClaimRefDelete,

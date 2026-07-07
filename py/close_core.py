@@ -438,6 +438,27 @@ def release_guard_verdict(ahead, dirty, force):
     return "ok"
 
 
+def no_code_close_plan(opts):
+    """Pure: validate the `--no-code` comment arguments (#113). A no-code close
+    closes a comment-only ticket without a `Closes #N` commit; the comment IS the
+    deliverable, so exactly one of a comment source (`--comment` / `--comment-file`)
+    or an explicit `--no-comment` must be chosen. Returns
+    {ok:True, source:'inline'|'file'|'none'} or {ok:False, error} — the impure
+    close wrapper dies (usage error, exit 2) on not ok."""
+    o = opts or {}
+    has_inline = o.get("comment") is not None
+    has_file = o.get("commentFile") is not None
+    no_comment = bool(o.get("noComment"))
+    if has_inline and has_file:
+        return {"ok": False, "error": "provide only one of --comment or --comment-file"}
+    if no_comment and (has_inline or has_file):
+        return {"ok": False, "error": "--no-comment cannot be combined with --comment or --comment-file"}
+    if not no_comment and not has_inline and not has_file:
+        return {"ok": False,
+                "error": "--no-code requires a closing comment: pass --comment, --comment-file, or --no-comment to close without one"}
+    return {"ok": True, "source": "none" if no_comment else ("inline" if has_inline else "file")}
+
+
 def parse_release_args(argv):
     """Pure arg parser for the release CLI (#46): `release <N> [--force]`. Accepts
     a single numeric issue, a `--force` flag, and a bare `--` separator (skipped).
