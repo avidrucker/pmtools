@@ -4,9 +4,10 @@ Future features, grouped by theme. This is the parking lot for work **not** in t
 release. The living behavioral contract is [`CONTRACT.md`](CONTRACT.md); per-release specs
 live under [`docs/specs/`](docs/specs/).
 
-- **Current release spec:** [`docs/specs/0.0.2.md`](docs/specs/0.0.2.md) — lifecycle
-  completeness (`pmtools file`, no-code close, seven cheap fixes).
-- **Baseline:** 0.0.1 = today's `main`.
+- **Last shipped:** [`docs/specs/0.0.2.md`](docs/specs/0.0.2.md) — lifecycle completeness
+  (`pmtools file` #111, no-code close #113, `ice set-tier` #112, plus the cheap fixes) —
+  all nine items landed on `main`.
+- **Baseline:** 0.0.1 = the pre-0.0.2 `main`; the current `main` now carries 0.0.2.
 
 Each item links its tracking issue. Placement here is a *default*, not a commitment — a
 future release spec pulls items up when they're ready.
