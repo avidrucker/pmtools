@@ -33,6 +33,20 @@ const DEFAULTS = {
 const DEFAULTS_PDD = { enabled: true, ignoreFile: '.pddignore' };
 const DEFAULTS_ENRICHMENT = { statusCommand: null, clusterFile: null, claimCommand: null, closeCommand: null };
 
+// Gated issue-creation config (`pmtools file`, #111). All defaults make an
+// UNCONFIGURED repo a no-op: `validAreas: []` turns the area gate OFF, and
+// `bannedTitleWords: []` keeps title hygiene silent — so the shared harness never
+// hardcodes a consumer's taxonomy (the #23 generic rule).
+const DEFAULTS_CREATE = {
+  validAreas: [],
+  requireArea: true,
+  requireRole: true,
+  severityOnlyOnDefects: true,
+  requireBodyShape: false,
+  bannedTitleWords: [],
+  uncategorizedFallback: 'area:uncategorized',
+};
+
 function sh(cmd, args) {
   try {
     return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -186,7 +200,28 @@ function loadEnrichmentConfig(cwd = null) {
   return merged;
 }
 
+// Merged `create` config for `pmtools file` (#111): { validAreas, requireArea,
+// requireRole, severityOnlyOnDefects, requireBodyShape, bannedTitleWords,
+// uncategorizedFallback }. Reads the top-level `create` block (sibling to
+// `storage`/`close`/`enrichment`). Tolerant of a missing repo / file / key /
+// wrong-typed value — each falls back to its default (area gate off, hygiene
+// silent). String arrays drop non-string / empty entries.
+function loadCreateConfig(cwd = null) {
+  const raw = readOrchestrateBlock('create', cwd);
+  const merged = { ...DEFAULTS_CREATE };
+  for (const k of ['validAreas', 'bannedTitleWords']) {
+    if (Array.isArray(raw[k])) merged[k] = raw[k].filter((s) => typeof s === 'string' && s);
+  }
+  for (const k of ['requireArea', 'requireRole', 'severityOnlyOnDefects', 'requireBodyShape']) {
+    if (typeof raw[k] === 'boolean') merged[k] = raw[k];
+  }
+  if (typeof raw.uncategorizedFallback === 'string' && raw.uncategorizedFallback) {
+    merged.uncategorizedFallback = raw.uncategorizedFallback;
+  }
+  return merged;
+}
+
 module.exports = {
   repoRoot, mainRepoRoot, defaultDbPath, loadStorageConfig, loadPddConfig, loadCloseConfig,
-  loadEnrichmentConfig, expanduser,
+  loadEnrichmentConfig, loadCreateConfig, expanduser,
 };

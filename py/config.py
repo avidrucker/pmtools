@@ -34,6 +34,20 @@ _DEFAULTS_PDD = {"enabled": True, "ignoreFile": ".pddignore"}
 _DEFAULTS_ENRICHMENT = {"statusCommand": None, "clusterFile": None,
                         "claimCommand": None, "closeCommand": None}
 
+# Gated issue-creation config (`pmtools file`, #111). All defaults make an
+# UNCONFIGURED repo a no-op: validAreas [] turns the area gate OFF, and
+# bannedTitleWords [] keeps title hygiene silent — so the shared harness never
+# hardcodes a consumer's taxonomy (the #23 generic rule).
+_DEFAULTS_CREATE = {
+    "validAreas": [],
+    "requireArea": True,
+    "requireRole": True,
+    "severityOnlyOnDefects": True,
+    "requireBodyShape": False,
+    "bannedTitleWords": [],
+    "uncategorizedFallback": "area:uncategorized",
+}
+
 
 def _sh(cmd):
     try:
@@ -194,4 +208,29 @@ def load_enrichment_config(cwd=None):
         v = raw.get(k)
         if isinstance(v, str) and v:
             merged[k] = v
+    return merged
+
+
+def load_create_config(cwd=None):
+    """Merged `create` config for `pmtools file` (#111): {validAreas, requireArea,
+    requireRole, severityOnlyOnDefects, requireBodyShape, bannedTitleWords,
+    uncategorizedFallback}. Reads the top-level `create` block (sibling to
+    `storage`/`close`/`enrichment`). Tolerant of a missing repo / file / key /
+    wrong-typed value — each falls back to its default (area gate off, hygiene
+    silent). String arrays drop non-string / empty entries."""
+    raw = _read_orchestrate_block("create", cwd)
+    merged = dict(_DEFAULTS_CREATE)
+    merged["validAreas"] = list(_DEFAULTS_CREATE["validAreas"])
+    merged["bannedTitleWords"] = list(_DEFAULTS_CREATE["bannedTitleWords"])
+    for k in ("validAreas", "bannedTitleWords"):
+        v = raw.get(k)
+        if isinstance(v, list):
+            merged[k] = [s for s in v if isinstance(s, str) and s]
+    for k in ("requireArea", "requireRole", "severityOnlyOnDefects", "requireBodyShape"):
+        v = raw.get(k)
+        if isinstance(v, bool):
+            merged[k] = v
+    fb = raw.get("uncategorizedFallback")
+    if isinstance(fb, str) and fb:
+        merged["uncategorizedFallback"] = fb
     return merged

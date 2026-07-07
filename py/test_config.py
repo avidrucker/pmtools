@@ -110,5 +110,33 @@ class Enrichment(unittest.TestCase):
         self.assertEqual(config.load_enrichment_config(repo), self.ALL_NONE)
 
 
+class Create(unittest.TestCase):
+    """#111: load_create_config reads the `create` block for `pmtools file`,
+    tolerant of absence (defaults make an unconfigured repo a no-op)."""
+
+    DEFAULTS = {"validAreas": [], "requireArea": True, "requireRole": True,
+                "severityOnlyOnDefects": True, "requireBodyShape": False,
+                "bannedTitleWords": [], "uncategorizedFallback": "area:uncategorized"}
+
+    def test_absent_block_defaults(self):
+        repo = _repo_with_orchestrate({"storage": {}})
+        self.assertEqual(config.load_create_config(repo), self.DEFAULTS)
+
+    def test_reads_valid_areas_toggles_fallback_dropping_bad(self):
+        repo = _repo_with_orchestrate({"create": {
+            "validAreas": ["config", "lifecycle", 7], "requireRole": False,
+            "bannedTitleWords": ["baked in", ""], "uncategorizedFallback": "needs:area"}})
+        cfg = config.load_create_config(repo)
+        self.assertEqual(cfg["validAreas"], ["config", "lifecycle"])  # non-string 7 dropped
+        self.assertFalse(cfg["requireRole"])
+        self.assertTrue(cfg["requireArea"])                          # untouched default
+        self.assertEqual(cfg["bannedTitleWords"], ["baked in"])      # empty string dropped
+        self.assertEqual(cfg["uncategorizedFallback"], "needs:area")
+
+    def test_no_orchestrate_file_defaults(self):
+        repo = _repo_with_orchestrate(None)
+        self.assertEqual(config.load_create_config(repo), self.DEFAULTS)
+
+
 if __name__ == "__main__":
     unittest.main()

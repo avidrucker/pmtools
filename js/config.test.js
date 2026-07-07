@@ -82,6 +82,34 @@ test('loadEnrichmentConfig: no orchestrate.json → null defaults (#79)', () => 
   assert.deepEqual(config.loadEnrichmentConfig(repo), ENRICH_ALL_NULL);
 });
 
+const CREATE_DEFAULTS = {
+  validAreas: [], requireArea: true, requireRole: true, severityOnlyOnDefects: true,
+  requireBodyShape: false, bannedTitleWords: [], uncategorizedFallback: 'area:uncategorized',
+};
+
+test('loadCreateConfig: absent block → defaults (#111)', () => {
+  const repo = repoWithOrchestrate({ storage: {} });
+  assert.deepEqual(config.loadCreateConfig(repo), CREATE_DEFAULTS);
+});
+
+test('loadCreateConfig: reads validAreas + toggles + fallback, dropping bad entries (#111)', () => {
+  const repo = repoWithOrchestrate({ create: {
+    validAreas: ['config', 'lifecycle', 7], requireRole: false,
+    bannedTitleWords: ['baked in', ''], uncategorizedFallback: 'needs:area',
+  } });
+  const cfg = config.loadCreateConfig(repo);
+  assert.deepEqual(cfg.validAreas, ['config', 'lifecycle']); // non-string 7 dropped
+  assert.equal(cfg.requireRole, false);
+  assert.equal(cfg.requireArea, true);                       // untouched default
+  assert.deepEqual(cfg.bannedTitleWords, ['baked in']);      // empty string dropped
+  assert.equal(cfg.uncategorizedFallback, 'needs:area');
+});
+
+test('loadCreateConfig: no orchestrate.json → defaults (#111)', () => {
+  const repo = repoWithOrchestrate(null);
+  assert.deepEqual(config.loadCreateConfig(repo), CREATE_DEFAULTS);
+});
+
 test('repoRoot from a worktree returns the worktree (the misleading identity)', () => {
   const { wt } = repoWithWorktree();
   assert.equal(path.basename(config.repoRoot(wt)), 'wt-issue-99');
