@@ -1,0 +1,70 @@
+[
+  { "name": "valid area + role → ok, area label resolved",
+    "args": [{ "area": "config", "role": "DEV", "title": "feat: x" }, { "validAreas": ["config", "lifecycle"] }],
+    "expected": { "ok": true, "violations": [], "labels": ["area:config"] } },
+
+  { "name": "missing area → hard area violation",
+    "args": [{ "role": "DEV", "title": "x" }, { "validAreas": ["config", "lifecycle"] }],
+    "expected": { "ok": false, "labels": [],
+      "violations": [{ "gate": "area", "severity": "hard",
+        "message": "requires exactly one area:* label from [config, lifecycle] — pass --area <one>, or --allow-uncategorized to defer" }] } },
+
+  { "name": "area not in validAreas → hard area violation",
+    "args": [{ "area": "bogus", "role": "DEV" }, { "validAreas": ["config", "lifecycle"] }],
+    "expected": { "ok": false, "labels": ["area:bogus"],
+      "violations": [{ "gate": "area", "severity": "hard",
+        "message": "requires exactly one area:* label from [config, lifecycle] — pass --area <one>, or --allow-uncategorized to defer" }] } },
+
+  { "name": "two area labels → hard area violation",
+    "args": [{ "area": "config", "role": "DEV", "labels": ["area:lifecycle"] }, { "validAreas": ["config", "lifecycle"] }],
+    "expected": { "ok": false, "labels": ["area:lifecycle", "area:config"],
+      "violations": [{ "gate": "area", "severity": "hard",
+        "message": "exactly one area:* label allowed — got area:lifecycle, area:config" }] } },
+
+  { "name": "allow-uncategorized with no area → soft note + fallback applied",
+    "args": [{ "role": "DEV", "allowUncategorized": true, "title": "x" }, { "validAreas": ["config", "lifecycle"] }],
+    "expected": { "ok": true, "labels": ["area:uncategorized"],
+      "violations": [{ "gate": "area", "severity": "soft",
+        "message": "filed as area:uncategorized (--allow-uncategorized) — assign a real area:* before work begins" }] } },
+
+  { "name": "missing role → hard role violation",
+    "args": [{ "area": "config", "title": "x" }, { "validAreas": ["config"] }],
+    "expected": { "ok": false, "labels": ["area:config"],
+      "violations": [{ "gate": "role", "severity": "hard",
+        "message": "requires --role (a valid role, e.g. DEV, RESEARCH, WRITER)" }] } },
+
+  { "name": "invalid role → hard role violation",
+    "args": [{ "area": "config", "role": "TST" }, { "validAreas": ["config"] }],
+    "expected": { "ok": false, "labels": ["area:config"],
+      "violations": [{ "gate": "role", "severity": "hard",
+        "message": "role \"TST\" is not a valid role" }] } },
+
+  { "name": "severity on a non-defect → hard severity violation",
+    "args": [{ "area": "config", "role": "DEV", "severity": "high" }, { "validAreas": ["config"] }],
+    "expected": { "ok": false, "labels": ["area:config", "severity:high"],
+      "violations": [{ "gate": "severity", "severity": "hard",
+        "message": "severity:high is only allowed on a defect — add the `bug` label or drop --severity" }] } },
+
+  { "name": "severity on a defect (bug label) → ok",
+    "args": [{ "area": "config", "role": "DEV", "severity": "high", "labels": ["bug"] }, { "validAreas": ["config"] }],
+    "expected": { "ok": true, "violations": [], "labels": ["bug", "area:config", "severity:high"] } },
+
+  { "name": "title hygiene: a banned word → soft note, still ok",
+    "args": [{ "area": "config", "role": "DEV", "title": "the feature is baked in now" }, { "validAreas": ["config"], "bannedTitleWords": ["baked in"] }],
+    "expected": { "ok": true, "labels": ["area:config"],
+      "violations": [{ "gate": "titleHygiene", "severity": "soft",
+        "message": "title contains discouraged word(s): baked in" }] } },
+
+  { "name": "empty validAreas + requireRole off → gates off, ok",
+    "args": [{ "title": "anything" }, { "validAreas": [], "requireRole": false }],
+    "expected": { "ok": true, "violations": [], "labels": [] } },
+
+  { "name": "multiple hard violations in fixed order (area → role → severity)",
+    "args": [{ "role": "BOGUS", "severity": "high", "title": "x" }, { "validAreas": ["config"] }],
+    "expected": { "ok": false, "labels": ["severity:high"],
+      "violations": [
+        { "gate": "area", "severity": "hard", "message": "requires exactly one area:* label from [config] — pass --area <one>, or --allow-uncategorized to defer" },
+        { "gate": "role", "severity": "hard", "message": "role \"BOGUS\" is not a valid role" },
+        { "gate": "severity", "severity": "hard", "message": "severity:high is only allowed on a defect — add the `bug` label or drop --severity" }
+      ] } }
+]
