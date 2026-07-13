@@ -62,6 +62,10 @@ number misleads.
 hour**. The project already trades correctness for cycle time, deliberately. **So the lever is a test
 at feat-authoring time — NOT a merge gate**, which would only manufacture waiting.
 
+> **This finding is ranked first by the author's judgment, NOT by measured cost.** No waste in this
+> report has a cost attached; the instrumentation cannot produce one. Read the ordering as an opinion.
+> See `121-report-findings-meta.md` #29.
+
 Reverts are near-nil: **1 true revert in 3,235 commits.**
 
 ### 2. Extraneous cognitive load — the error taxonomy has no word for the errors actually being made · Sedano #5
@@ -129,9 +133,14 @@ forced into a bucket.**
 
 **Observed cause (verbatim):** *"Missing information, people, or equipment."*
 
-**42 of 135 open lccjs issues (31.1%) are gated on a human decision or an external party — and they
-are the oldest items in the queue** (median ~38 days; `waiting-on-external` ~47 days, against a
-backlog median of 35.7).
+**42 of 135 open lccjs issues (31.1%) are gated on a human decision or an external party** (median
+~38 days; `waiting-on-external` ~47 days, against a backlog median of 35.7 days).
+
+> **Two corrections to how this was first reported.** (1) The gap is **6%**, not a chasm — calling
+> these "the oldest items in the queue" was a superlative laid over a marginal difference. (2) This
+> claim was **asserted and verified by the same agent**, which this project's own gate forbids for a
+> load-bearing claim. It is the least-verified of the four surviving findings. See
+> `121-report-findings-meta.md` #24 and #30.
 
 This is the only Sedano waste that survives contact with the data cleanly. The bottleneck is not the
 scoring rubric, not backlog hygiene, and not agent throughput. **It is decisions only Avi can make.**
@@ -163,7 +172,7 @@ proxy is precisely how the prior review went wrong.
 | Waste | Why not assessed | What would fix it |
 |---|---|---|
 | **6 — Psychological distress** | **PROHIBITED, not missing.** No commit, ticket, or velocity row licenses a claim about a person's stress. Sedano's evidence came from humans saying so in retrospectives. **Add no field.** | Ask the human. |
-| **7 — Waiting** (flow efficiency) | `actual_min` exceeds total lifespan on 14.4% of tickets. A field where 14% of rows are physically impossible is not a metric with outliers — it is a metric with an integrity defect, **and that defect is the finding.** | Fix `actual_min`; add `velocity.claimed_iso` (one column, zero new discipline — it rides a command that already runs). |
+| **7 — Waiting** (flow efficiency) | `actual_min` exceeds total lifespan on >10% of tickets (an independent reimplementation gets 151/1133 where the analysts got 153/1059 — **the defect reproduces, the exact count does not**). A field where 14% of rows are physically impossible is not a metric with outliers — it is a metric with an integrity defect, **and that defect is the finding.** | Fix `actual_min`; add `velocity.claimed_iso` (one column, zero new discipline — it rides a command that already runs). |
 | **1 — Building the wrong feature** | `stateReason` is never captured — though `gh --json` already offers it. | Add one field to a flag already being passed. |
 | **9 — Ineffective communication** | Issue `body` / `comments` never captured. | Same — one flag. |
 | Reopen rate | `gh` state is a partition at one instant: open ∩ closed = ∅. Reopens need the timeline API. | Timeline API. |
