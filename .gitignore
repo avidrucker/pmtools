@@ -13,3 +13,7 @@ node_modules/
 # never tracked — regenerate on demand via `<store> export`. Tracking them caused
 # spurious rebase conflicts on concurrent close. (#68 / #65 ruling R2)
 docs/pmtools-*.csv
+
+# verify-claims ledger — a working epistemic record, not a deliverable.
+# What graduates out of it is a committed findings doc or an issue.
+claims-data/
