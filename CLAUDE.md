@@ -3,6 +3,21 @@
 Supplements the workspace file `~/Documents/Study/CLAUDE.md` (git identity, workspace
 layout); it does not replace it. Project-specific guidance lives here.
 
+## `failed-research/` is not a source
+
+Everything under [`failed-research/`](failed-research/) is **discredited**. It is kept only as a
+record of work that went wrong — not as knowledge about this project.
+
+- **Do not cite it, quote it, or reference it** in an answer, a commit message, an issue, a PR, or
+  a doc.
+- **Do not treat any claim, number, or conclusion in it as established**, including claims that
+  look like plain facts about the schema or the data. The audit that produced them is exactly what
+  is in question, so a number being stated confidently there is not evidence that it is true.
+- **Do not build on it.** If a question in it still matters, investigate it from the primary
+  source — the code, the database, `git` — and cite that instead.
+- If a reader points you at one of these files, say plainly that the content is untrusted and
+  offer to re-derive the answer from scratch.
+
 ## Communication style
 
 These rules govern **answers to the human** — chat replies, PR descriptions, and issue
