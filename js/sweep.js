@@ -23,6 +23,10 @@ const { makeDie, makeLog } = require('./sh');
 const die = makeDie('sweep');
 const log = makeLog('sweep');
 
+// The command's own usage line — printed on a bad invocation (exit 2) and on
+// `--help` (exit 0, #117). Single source so the error and help paths never drift.
+const USAGE = 'usage: sweep [--dry-run] [--host github|gitlab]';
+
 function run(cmd, args) {
   try {
     return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -37,8 +41,8 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--host') opts.host = argv[++i];
-    else if (a.startsWith('--')) die(`unknown flag: ${a}`, 2);
-    else die(`sweep takes no positional args (got '${a}')`, 2);
+    else if (a.startsWith('--')) die(`unknown flag: ${a}\n${USAGE}`, 2);
+    else die(`sweep takes no positional args (got '${a}')\n${USAGE}`, 2);
   }
   return opts;
 }

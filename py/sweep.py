@@ -27,6 +27,10 @@ from sh import make_die, make_log
 die = make_die("sweep")
 log = make_log("sweep")
 
+# The command's own usage line — printed on a bad invocation (exit 2) and on
+# `--help` (exit 0, #117). Single source so the error and help paths never drift.
+USAGE = "usage: sweep [--dry-run] [--host github|gitlab]"
+
 
 def _run(cmd):
     try:
@@ -46,9 +50,9 @@ def parse_args(argv):
             i += 1
             opts["host"] = argv[i] if i < n else None
         elif a.startswith("--"):
-            die("unknown flag: " + a, 2)
+            die("unknown flag: {}\n{}".format(a, USAGE), 2)
         else:
-            die("sweep takes no positional args (got '{}')".format(a), 2)
+            die("sweep takes no positional args (got '{}')\n{}".format(a, USAGE), 2)
         i += 1
     return opts
 

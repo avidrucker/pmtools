@@ -30,6 +30,11 @@ DEFAULT_BRANCH_PATTERN = r"^(?:br-)?(?P<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:[a-z0-9]
 
 die = make_die("status")
 
+# The command's own usage line — printed on a bad flag (exit 2) and on `--help`
+# (exit 0, #117). Single source so the error and help paths never drift.
+USAGE = ("usage: status [--strict] [--json] [--host github|gitlab] "
+         "[--branch-pattern RX] [--limit N]")
+
 
 def parse_args(argv):
     """Thin impure wrapper over the shared pure parser (status_core, #46): an
@@ -39,7 +44,7 @@ def parse_args(argv):
     try:
         a = core_parse_args(argv)
     except ValueError as e:
-        die(str(e), 2)
+        die("{}\n{}".format(e, USAGE), 2)
     if not a["branchPattern"]:
         a["branchPattern"] = DEFAULT_BRANCH_PATTERN
     return a

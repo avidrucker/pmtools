@@ -1642,4 +1642,17 @@ exit_both status    2 "status: unknown flag exits 2"           -- --strrict
 exit_both status    2 "status: unknown --host value exits 2"   -- --host bogus
 # operational failures stay 1 (the well-formed invocation, bad data/world state)
 exit_both error     1 "error: invalid JSON content stays exit 1" -- log "{bad"
+
+# #117 part (b): status + sweep must TEACH usage on a bad flag (a `usage:` line),
+# not just emit a bare `unknown flag:` — parity with every other command.
+usage_both() { # <cmd> <label> -- <args...>
+  local cmd="$1" label="$2"; shift 2; [ "${1:-}" = "--" ] && shift
+  local uo="$TMPROOT/usage.$RANDOM"
+  ( cd "$EC_REPO" && python3 "$PMTOOLS_ROOT/py/$cmd.py" "$@" ) >"$uo" 2>&1
+  assert_contains "$uo" "usage: $cmd" "[py] $label"
+  ( cd "$EC_REPO" && node    "$PMTOOLS_ROOT/js/$cmd.js" "$@" ) >"$uo" 2>&1
+  assert_contains "$uo" "usage: $cmd" "[js] $label"
+}
+usage_both status "status: bad flag teaches usage" -- --strrict
+usage_both sweep  "sweep: bad flag teaches usage"  -- --bogus
 [ "$FAILS" -eq 0 ]

@@ -25,6 +25,11 @@ const DEFAULT_BRANCH_PATTERN = '^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:[a-z
 // move all usage errors to 2 — keep both ports identical here, #39).
 const die = makeDie('status');
 
+// The command's own usage line — printed on a bad flag (exit 2) and on `--help`
+// (exit 0, #117). Single source so the error and help paths never drift.
+const USAGE = 'usage: status [--strict] [--json] [--host github|gitlab] '
+  + '[--branch-pattern RX] [--limit N]';
+
 function run(cmd, args) {
   try {
     return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -120,7 +125,7 @@ function renderTable(report) {
 function parseArgs(argv) {
   let a;
   try { a = coreParseArgs(argv); }
-  catch (e) { return die(e.message, 2); }
+  catch (e) { return die(`${e.message}\n${USAGE}`, 2); }
   if (!a.branchPattern) a.branchPattern = DEFAULT_BRANCH_PATTERN;
   return a;
 }
