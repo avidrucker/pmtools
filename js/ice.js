@@ -22,9 +22,11 @@ const store = require('./store');
 const core = require('./store_core');
 const iceCore = require('./ice_core');
 const { getProvider } = require('./provider');
-const { makeDie } = require('./sh');
+const { makeDie, wantsHelp } = require('./sh');
 
 const AUTO_LIMIT = 500;
+
+const USAGE = 'usage: ice <score|list|export|set-tier> [...]';
 
 function nowIso() {
   return new Date().toISOString();
@@ -260,6 +262,7 @@ function cmdSetTier(a, dbPath, storeCfg, die, provider) {
 
 function main(argv, provider) {
   const die = makeDie('ice');
+  if (wantsHelp(argv)) { console.log(USAGE); return 0; } // #117 command-aware --help
   let a;
   try { a = parse(argv); } catch (e) { return die(e.message, 2); }
   const cfg = config.loadStorageConfig();
@@ -269,7 +272,7 @@ function main(argv, provider) {
   if (a.cmd === 'list') return cmdList(a, dbPath, storeCfg, die);
   if (a.cmd === 'export') return cmdExport(a, dbPath, storeCfg, die);
   if (a.cmd === 'set-tier') return cmdSetTier(a, dbPath, storeCfg, die, provider);
-  return die(`usage: ice <score|list|export|set-tier> [...]  (got ${JSON.stringify(a.cmd)})`, 2);
+  return die(`${USAGE}  (got ${JSON.stringify(a.cmd)})`, 2);
 }
 
 module.exports = { main, parse, cmdScore, cmdList, cmdExport, cmdSetTier, auditComment, rankedCsv };

@@ -98,6 +98,19 @@ assert_has "$out" "PORT=js CMD=file ARGS=--title x" "file --port js routes to th
 out="$(env -u PMTOOLS_PORT PMTOOLS_HOME="$CLONE" bash "$BIN" create --title x 2>&1)"
 assert_has "$out" "PORT=py CMD=file ARGS=--title x" "create alias dispatches to the file command"
 
+# 12) #117: `--help`/`-h` is command-aware. With a command present it PASSES
+#     THROUGH to that command (which prints its own usage); with no command it
+#     stays global and prints the dispatcher banner.
+out="$(env -u PMTOOLS_PORT PMTOOLS_HOME="$CLONE" bash "$BIN" ice --help 2>&1)"; rc=$?
+assert_eq "$rc" 0 "command --help exits 0"
+assert_has "$out" "PORT=py CMD=ice ARGS=--help" "--help after a command passes through to the command"
+out="$(env -u PMTOOLS_PORT PMTOOLS_HOME="$CLONE" bash "$BIN" ice -h 2>&1)"
+assert_has "$out" "PORT=py CMD=ice ARGS=-h" "-h after a command passes through too"
+out="$(env -u PMTOOLS_PORT PMTOOLS_HOME="$CLONE" bash "$BIN" --help 2>&1)"
+assert_has "$out" "COMMANDS" "global --help (no command) prints the dispatcher banner"
+out="$(env -u PMTOOLS_PORT PMTOOLS_HOME="$CLONE" bash "$BIN" 2>&1)"
+assert_has "$out" "COMMANDS" "no args prints the dispatcher banner"
+
 echo
 echo "== dispatcher: $PASSES passed, $FAILS failed =="
 [ "$FAILS" -eq 0 ]

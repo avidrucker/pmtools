@@ -45,7 +45,7 @@ import store
 import store_core
 import claim_core
 import provider as provider_mod
-from sh import sh, sh_capture, git_capture, make_die, make_log
+from sh import sh, sh_capture, git_capture, make_die, make_log, wants_help
 from claimref import delete_claim_ref
 from close_core import (
     DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
@@ -641,14 +641,21 @@ def run_no_code_close(opts, issue, root):
     report(issue, branch, wt_path, None, None, False, False)
 
 
+USAGE = ("usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] "
+         "[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] "
+         "[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]\n"
+         "  no-code close (comment-only ticket): close <N> --no-code "
+         "[--comment \"…\" | --comment-file F | --no-comment]")
+
+
 def main():
-    opts = parse_args(sys.argv[1:])
+    argv = sys.argv[1:]
+    if wants_help(argv):  # #117 command-aware --help
+        print(USAGE)
+        return 0
+    opts = parse_args(argv)
     if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
-        die("usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] "
-            "[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] "
-            "[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]\n"
-            "  no-code close (comment-only ticket): close <N> --no-code "
-            "[--comment \"…\" | --comment-file F | --no-comment]", 2)
+        die(USAGE, 2)
     issue = opts["issue"]
     root = main_root()
 

@@ -57,6 +57,13 @@ failure (and every warning) across all tiers and both ports (#44):
   parity check (`tests/integration.sh`) stays byte-exact.
 - **Usage strings** read `usage: <cmd> …` (the bare command name, no `pmtools`
   prefix), uniformly across commands and ports.
+- **`--help` / `-h` is command-aware** (#117). With no command it is global —
+  `pmtools --help` (and bare `pmtools`) prints the dispatcher's banner. With a
+  command present the dispatcher passes it through, and the command prints its
+  *own* `usage:` string at **exit 0** — `pmtools <cmd> --help` teaches that
+  command's flags, never the global banner. The help text is the same `usage:`
+  string the command emits on a bad invocation (single source), the only
+  difference being the exit code (0 for `--help`, 2 for a usage error).
 
 **Exit codes** follow one convention across every command and both ports (#44
 thread 3): **2** for a usage/argument error — an unknown/missing subcommand,

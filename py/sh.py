@@ -105,3 +105,11 @@ def make_log(tag):
     def log(msg):
         print("[{}] {}".format(tag, msg))
     return log
+
+
+def wants_help(argv):
+    """True when argv requests help (`--help`/`-h`). A command checks this first
+    and prints its OWN usage at exit 0, so `pmtools <cmd> --help` teaches that
+    command's flags rather than the dispatcher's global banner (#117). Twin of js
+    wantsHelp."""
+    return bool(argv) and ("--help" in argv or "-h" in argv)

@@ -17,10 +17,13 @@ import sys
 
 import config
 import provider as provider_mod
-from sh import make_die
+from sh import make_die, wants_help
 from file_core import file_gate_verdict
 
 die = make_die("file")
+
+USAGE = ("usage: file --title T [--area A] [--role R] [--body S | --body-file F] "
+         "[--label L ...] [--severity S] [--dry-run] [--allow-uncategorized]")
 
 
 def out(s):
@@ -72,13 +75,15 @@ def gh_invocation(title, labels):
 
 
 def main(argv, provider=None):
+    if wants_help(argv):  # #117 command-aware --help
+        print(USAGE)
+        return 0
     try:
         a = parse_args(argv)
     except ValueError as e:
         return die(str(e), 2)
     if not a["title"]:
-        return die("usage: file --title T [--area A] [--role R] [--body S | --body-file F] "
-                   "[--label L ...] [--severity S] [--dry-run] [--allow-uncategorized]", 2)
+        return die(USAGE, 2)
     if a["body"] is not None and a["bodyFile"] is not None:
         return die("pass only one of --body or --body-file", 2)
     body = ""

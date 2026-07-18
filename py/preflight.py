@@ -22,7 +22,7 @@ import sys
 import config
 from preflight_core import (preflight_issue_gate, preflight_evidence,
                             preflight_close_coherence, DEFAULT_EVIDENCE_DIRS)
-from sh import make_die
+from sh import make_die, wants_help
 
 
 def sh(cmd):
@@ -42,6 +42,8 @@ def out(s):
 
 
 die = make_die("preflight")
+
+USAGE = "usage: preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]"
 
 
 def indent(s):
@@ -90,10 +92,13 @@ def parse_args(argv):
 
 
 def main(argv):
+    if wants_help(argv):  # #117 command-aware --help
+        print(USAGE)
+        return 0
     args = parse_args(argv)
     issue = re.sub(r"^#", "", str(args["issue"] or ""))
     if not re.match(r"^\d+$", issue):
-        die("usage: preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]", 2)
+        die(USAGE, 2)
 
     bar = "─" * 58
     out(bar); out("  PREFLIGHT  ·  issue #{}".format(issue)); out(bar)

@@ -28,7 +28,7 @@ import store
 import store_core as core
 import ice_core
 from provider import get_provider
-from sh import make_die
+from sh import make_die, wants_help
 
 AUTO_LIMIT = 500
 
@@ -336,8 +336,14 @@ def _cmd_set_tier(a, db_path, store_cfg, die, provider=None):
     return 0
 
 
+USAGE = "usage: ice <score|list|export|set-tier> [...]"
+
+
 def main(argv, provider=None):
     die = make_die("ice")
+    if wants_help(argv):  # #117 command-aware --help
+        print(USAGE)
+        return 0
     try:
         a = _parse(argv)
     except ValueError as e:
@@ -354,8 +360,7 @@ def main(argv, provider=None):
         return _cmd_export(a, db_path, store_cfg, die)
     if cmd == "set-tier":
         return _cmd_set_tier(a, db_path, store_cfg, die, provider)
-    die("usage: ice <score|list|export|set-tier> [...]  (got {})".format(
-        json.dumps(cmd, ensure_ascii=False)), 2)
+    die("{}  (got {})".format(USAGE, json.dumps(cmd, ensure_ascii=False)), 2)
 
 
 if __name__ == "__main__":

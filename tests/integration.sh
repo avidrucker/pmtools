@@ -1655,4 +1655,23 @@ usage_both() { # <cmd> <label> -- <args...>
 }
 usage_both status "status: bad flag teaches usage" -- --strrict
 usage_both sweep  "sweep: bad flag teaches usage"  -- --bogus
+
+# #117 part (a): `<cmd> --help` prints THAT command's own usage (a `usage:` line
+# containing a command-specific token) at exit 0 — not a bad-flag error, not the
+# dispatcher's global banner. Representative commands, both ports.
+help_own_usage() { # <cmd> <token> <label> -- <help-arg>
+  local cmd="$1" token="$2" label="$3"; shift 3; [ "${1:-}" = "--" ] && shift
+  local ho="$TMPROOT/help.$RANDOM"
+  ( cd "$EC_REPO" && python3 "$PMTOOLS_ROOT/py/$cmd.py" "$@" ) >"$ho" 2>&1
+  assert_exit "$?" 0 "[py] $label exits 0"
+  assert_contains "$ho" "usage: $cmd" "[py] $label prints its own usage"
+  assert_contains "$ho" "$token" "[py] $label usage carries $token"
+  ( cd "$EC_REPO" && node    "$PMTOOLS_ROOT/js/$cmd.js" "$@" ) >"$ho" 2>&1
+  assert_exit "$?" 0 "[js] $label exits 0"
+  assert_contains "$ho" "usage: $cmd" "[js] $label prints its own usage"
+  assert_contains "$ho" "$token" "[js] $label usage carries $token"
+}
+help_own_usage ice   "set-tier"  "ice --help"      -- --help
+help_own_usage close "--no-code" "close --help"    -- --help
+help_own_usage claim "--as"      "claim -h"        -- -h
 [ "$FAILS" -eq 0 ]

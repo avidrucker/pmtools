@@ -18,7 +18,7 @@ import sys
 import config
 import store
 import store_core as core
-from sh import make_die
+from sh import make_die, wants_help
 
 
 def repo_basename(cwd=None):
@@ -36,6 +36,11 @@ def run(argv, spec):
 
     def note(msg):
         sys.stderr.write("[{}] note: {}\n".format(spec["name"], msg))
+
+    # #117 command-aware --help: print this store command's own usage, exit 0.
+    if wants_help(argv):
+        print(spec["log_usage"])
+        return 0
 
     try:
         args = core.parse_store_args(argv)

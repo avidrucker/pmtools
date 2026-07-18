@@ -16,7 +16,7 @@ const path = require('node:path');
 const config = require('./config');
 const store = require('./store');
 const core = require('./store_core');
-const { makeDie } = require('./sh');
+const { makeDie, wantsHelp } = require('./sh');
 
 function repoBasename(cwd = null) {
   // The `repo` data column labels the PROJECT; from a worktree that is still the
@@ -31,6 +31,9 @@ function repoBasename(cwd = null) {
 function run(argv, spec) {
   const die = makeDie(spec.name);
   const note = (msg) => process.stderr.write(`[${spec.name}] note: ${msg}\n`);
+
+  // #117 command-aware --help: print this store command's own usage, exit 0.
+  if (wantsHelp(argv)) { console.log(spec.logUsage); return 0; }
 
   let args;
   try { args = core.parseStoreArgs(argv); }

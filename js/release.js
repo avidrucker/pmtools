@@ -19,7 +19,7 @@
  * Exit:   0 on success / nothing-to-do; 1 on bad args or a guard refusal.
  */
 
-const { sh, shTrim, gitTrim, makeDie, makeLog } = require('./sh');
+const { sh, shTrim, gitTrim, makeDie, makeLog, wantsHelp } = require('./sh');
 const { deleteClaimRef } = require('./claimref');
 const {
   isSafeRef, parseWorktreePorcelain, findWorktreeForIssue, releaseGuardVerdict,
@@ -29,6 +29,8 @@ const {
 const log = makeLog('release');
 const die = makeDie('release');
 
+const USAGE = 'usage: release <issue-number> [--force]';
+
 // Thin impure wrapper over the shared pure parser (close_core, #46): an unknown
 // or extra arg throws there; a missing issue yields issue=null — both become a
 // usage die (exit 2) here.
@@ -36,12 +38,14 @@ function parseArgs(argv) {
   let a;
   try { a = parseReleaseArgs(argv); }
   catch (e) { return die(e.message, 2); }
-  if (a.issue === null) die('usage: release <issue-number> [--force]', 2);
+  if (a.issue === null) die(USAGE, 2);
   return a;
 }
 
 function main() {
-  const { issue, force } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (wantsHelp(argv)) { console.log(USAGE); return 0; } // #117 command-aware --help
+  const { issue, force } = parseArgs(argv);
   const rows = parseWorktreePorcelain(shTrim('git worktree list --porcelain'));
   const root = rows.length ? rows[0].path : shTrim('git rev-parse --show-toplevel');
   const wt = findWorktreeForIssue(rows, issue);

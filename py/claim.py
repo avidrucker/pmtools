@@ -41,7 +41,7 @@ from claim_core import (
     apply_marker_flip, build_banner_lines, classify_claim_push_result,
     build_claim_message, claim_push_action,
 )
-from sh import sh, git_capture, make_die
+from sh import sh, git_capture, make_die, wants_help
 
 TODO_KW = "@" + "todo"
 INPROGRESS_KW = "@" + "inprogress"
@@ -320,11 +320,18 @@ def report(fruit, branch, wt_path, base, mode, dry, comment_count, issue):
         print(line)
 
 
+USAGE = ("usage: claim <issue-number> [slug] [--as <fruit>] [--base <ref>] [--dry-run] [--force] "
+         "[--custom] [--lane-check] [--copy-env] [--worktree-dir <dir>] [--roster a,b,c] [--allow-stale-main]")
+
+
 def main():
-    opts = parse_args(sys.argv[1:])
+    argv = sys.argv[1:]
+    if wants_help(argv):  # #117 command-aware --help
+        print(USAGE)
+        return 0
+    opts = parse_args(argv)
     if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
-        die("usage: claim <issue-number> [slug] [--as <fruit>] [--base <ref>] [--dry-run] [--force] "
-            "[--custom] [--lane-check] [--copy-env] [--worktree-dir <dir>] [--roster a,b,c] [--allow-stale-main]", 2)
+        die(USAGE, 2)
     issue = opts["issue"]
     roster = opts["roster"] if (opts["roster"]) else FRUITS
 

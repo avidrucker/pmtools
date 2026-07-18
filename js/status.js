@@ -14,7 +14,7 @@ const { parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims,
   parseArgs: coreParseArgs } = require('./status_core');
 const { parseClaimRefs } = require('./claim_core');
 const { loadPddConfig } = require('./config');
-const { makeDie } = require('./sh');
+const { makeDie, wantsHelp } = require('./sh');
 const { parseWorktreePorcelain } = require('./close_core');
 
 // agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
@@ -131,6 +131,7 @@ function parseArgs(argv) {
 }
 
 function main(argv) {
+  if (wantsHelp(argv)) { console.log(USAGE); return 0; } // #117 command-aware --help
   const args = parseArgs(argv);
   // PDD marker scanning is config-gated (#16). When disabled, skip the scan
   // entirely; worktree + issue reconciliation still run.

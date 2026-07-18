@@ -21,7 +21,7 @@ from status_core import (parse_canonical_marker, parse_pddignore, is_pdd_ignored
                          filter_open_claims, parse_args as core_parse_args)
 from claim_core import parse_claim_refs
 from config import load_pdd_config
-from sh import make_die
+from sh import make_die, wants_help
 from close_core import parse_worktree_porcelain
 
 # agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
@@ -159,6 +159,9 @@ def render_table(report):
 def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
+    if wants_help(argv):  # #117 command-aware --help
+        print(USAGE)
+        return 0
     args = parse_args(argv)
 
     # PDD marker scanning is config-gated (#16). When disabled, skip the scan

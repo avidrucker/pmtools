@@ -22,7 +22,7 @@ import sys
 from provider import get_provider
 from claim_core import parse_claim_refs, classify_sweep_targets
 from claimref import delete_claim_ref
-from sh import make_die, make_log
+from sh import make_die, make_log, wants_help
 
 die = make_die("sweep")
 log = make_log("sweep")
@@ -62,6 +62,9 @@ def _list_claims():
 
 
 def main(argv):
+    if wants_help(argv):  # #117 command-aware --help
+        print(USAGE)
+        return 0
     opts = parse_args(argv)
     if opts["host"] not in ("github", "gitlab"):
         die("unknown host '{}' (expected github or gitlab)".format(opts["host"]), 2)

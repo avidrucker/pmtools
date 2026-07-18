@@ -27,7 +27,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { sh, gitCapture, makeDie } = require('./sh');
+const { sh, gitCapture, makeDie, wantsHelp } = require('./sh');
 const config = require('./config');
 const { parseWorktreePorcelain } = require('./close_core');
 const core = require('./claim_core');
@@ -277,11 +277,15 @@ function report(roster, fruit, branch, wtPath, base, mode, dry, commentCount, is
     .forEach((l) => console.log(l));
 }
 
+const USAGE = 'usage: claim <issue-number> [slug] [--as <fruit>] [--base <ref>] [--dry-run] [--force] '
+  + '[--custom] [--lane-check] [--copy-env] [--worktree-dir <dir>] [--roster a,b,c] [--allow-stale-main]';
+
 function main() {
-  const opts = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (wantsHelp(argv)) { console.log(USAGE); return 0; } // #117 command-aware --help
+  const opts = parseArgs(argv);
   if (!opts.issue || !/^\d+$/.test(opts.issue)) {
-    die('usage: claim <issue-number> [slug] [--as <fruit>] [--base <ref>] [--dry-run] [--force] ' +
-        '[--custom] [--lane-check] [--copy-env] [--worktree-dir <dir>] [--roster a,b,c] [--allow-stale-main]', 2);
+    die(USAGE, 2);
   }
   const issue = opts.issue;
   const roster = (opts.roster && opts.roster.length) ? opts.roster : FRUITS;

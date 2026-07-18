@@ -99,4 +99,13 @@ function makeLog(tag) {
   return (msg) => { console.log(`[${tag}] ${msg}`); };
 }
 
-module.exports = { sh, shCapture, shTrim, gitCapture, gitTrim, makeDie, makeLog };
+// True when argv requests help (`--help`/`-h`). A command checks this first and
+// prints its OWN usage at exit 0, so `pmtools <cmd> --help` teaches that command's
+// flags rather than the dispatcher's global banner (#117). Twin of py wants_help.
+function wantsHelp(argv) {
+  return Array.isArray(argv) && (argv.includes('--help') || argv.includes('-h'));
+}
+
+module.exports = {
+  sh, shCapture, shTrim, gitCapture, gitTrim, makeDie, makeLog, wantsHelp,
+};

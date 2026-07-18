@@ -24,12 +24,14 @@ from close_core import (
     is_safe_ref, parse_worktree_porcelain, find_worktree_for_issue,
     release_guard_verdict, parse_release_args,
 )
-from sh import sh, sh_trim, git_trim, make_die, make_log
+from sh import sh, sh_trim, git_trim, make_die, make_log, wants_help
 from claimref import delete_claim_ref
 
 
 log = make_log("release")
 die = make_die("release")
+
+USAGE = "usage: release <issue-number> [--force]"
 
 
 def parse_args(argv):
@@ -41,14 +43,18 @@ def parse_args(argv):
     except ValueError as e:
         die(str(e), 2)
     if a["issue"] is None:
-        die("usage: release <issue-number> [--force]", 2)
+        die(USAGE, 2)
     return a
 
 
 
 
 def main():
-    args = parse_args(sys.argv[1:])
+    argv = sys.argv[1:]
+    if wants_help(argv):  # #117 command-aware --help
+        print(USAGE)
+        return 0
+    args = parse_args(argv)
     issue, force = args["issue"], args["force"]
     rows = parse_worktree_porcelain(sh_trim("git worktree list --porcelain"))
     root = rows[0]["path"] if rows else sh_trim("git rev-parse --show-toplevel")

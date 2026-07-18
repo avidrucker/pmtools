@@ -18,11 +18,14 @@ const fs = require('node:fs');
 
 const config = require('./config');
 const { getProvider } = require('./provider');
-const { makeDie } = require('./sh');
+const { makeDie, wantsHelp } = require('./sh');
 const { fileGateVerdict } = require('./file_core');
 
 function out(s) { process.stdout.write(String(s).replace(/\n?$/, '\n')); }
 const die = makeDie('file');
+
+const USAGE = 'usage: file --title T [--area A] [--role R] [--body S | --body-file F] '
+  + '[--label L ...] [--severity S] [--dry-run] [--allow-uncategorized]';
 
 function parseArgs(argv) {
   const a = {
@@ -55,11 +58,11 @@ function ghInvocation(title, labels) {
 }
 
 function main(argv, provider) {
+  if (wantsHelp(argv)) { console.log(USAGE); return 0; } // #117 command-aware --help
   let a;
   try { a = parseArgs(argv); } catch (e) { return die(e.message, 2); }
   if (!a.title) {
-    return die('usage: file --title T [--area A] [--role R] [--body S | --body-file F] '
-      + '[--label L ...] [--severity S] [--dry-run] [--allow-uncategorized]', 2);
+    return die(USAGE, 2);
   }
   if (a.body !== null && a.bodyFile !== null) return die('pass only one of --body or --body-file', 2);
   let body = '';

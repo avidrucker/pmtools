@@ -45,7 +45,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { sh, shCapture, gitCapture, makeDie, makeLog } = require('./sh');
+const { sh, shCapture, gitCapture, makeDie, makeLog, wantsHelp } = require('./sh');
 const { deleteClaimRef } = require('./claimref');
 const core = require('./close_core');
 const config = require('./config');
@@ -628,14 +628,18 @@ function runNoCodeClose(opts, issue, root) {
   report({ issue, branch, wtPath, closingSha: null, landedSha: null, kept: false, dry: false });
 }
 
+const USAGE = 'usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] '
+  + '[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] '
+  + '[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]\n'
+  + '  no-code close (comment-only ticket): close <N> --no-code '
+  + '[--comment "…" | --comment-file F | --no-comment]';
+
 function main() {
-  const opts = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (wantsHelp(argv)) { console.log(USAGE); return 0; } // #117 command-aware --help
+  const opts = parseArgs(argv);
   if (!opts.issue || !/^\d+$/.test(opts.issue)) {
-    die('usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] ' +
-        '[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] ' +
-        '[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]\n' +
-        '  no-code close (comment-only ticket): close <N> --no-code ' +
-        '[--comment "…" | --comment-file F | --no-comment]', 2);
+    die(USAGE, 2);
   }
   const issue = opts.issue;
   const root = mainRoot();

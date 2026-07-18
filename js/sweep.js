@@ -18,7 +18,7 @@ const { execFileSync } = require('node:child_process');
 const { getProvider } = require('./provider');
 const { parseClaimRefs, classifySweepTargets } = require('./claim_core');
 const { deleteClaimRef } = require('./claimref');
-const { makeDie, makeLog } = require('./sh');
+const { makeDie, makeLog, wantsHelp } = require('./sh');
 
 const die = makeDie('sweep');
 const log = makeLog('sweep');
@@ -52,6 +52,7 @@ function listClaims() {
 }
 
 function main(argv) {
+  if (wantsHelp(argv)) { console.log(USAGE); return 0; } // #117 command-aware --help
   const opts = parseArgs(argv);
   if (opts.host !== 'github' && opts.host !== 'gitlab') {
     die(`unknown host '${opts.host}' (expected github or gitlab)`, 2);

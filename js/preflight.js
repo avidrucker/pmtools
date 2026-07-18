@@ -21,7 +21,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const config = require('./config');
-const { makeDie } = require('./sh');
+const { makeDie, wantsHelp } = require('./sh');
 const { preflightIssueGate, preflightEvidence, preflightCloseCoherence, DEFAULT_EVIDENCE_DIRS } = require('./preflight_core');
 
 function sh(cmd) {
@@ -34,6 +34,8 @@ function sh(cmd) {
 
 function out(s) { process.stdout.write(String(s).replace(/\n?$/, '\n')); }
 const die = makeDie('preflight');
+
+const USAGE = 'usage: preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]';
 const indent = (s) => String(s || '').replace(/^/gm, '    ').replace(/\s+$/, '');
 
 function listEvidenceFiles(evidenceDirs) {
@@ -67,9 +69,10 @@ function parseArgs(argv) {
 }
 
 function main(argv) {
+  if (wantsHelp(argv)) { console.log(USAGE); return 0; } // #117 command-aware --help
   const args = parseArgs(argv);
   const issue = String(args.issue || '').replace(/^#/, '');
-  if (!/^\d+$/.test(issue)) die('usage: preflight <issue-number> [--scratch-dir D] [--evidence-dir D ...]', 2);
+  if (!/^\d+$/.test(issue)) die(USAGE, 2);
 
   const bar = '─'.repeat(58);
   out(bar); out(`  PREFLIGHT  ·  issue #${issue}`); out(bar);
