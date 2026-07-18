@@ -10,6 +10,12 @@ const { execFileSync } = require('node:child_process');
 // the catch degrades to null (best-effort, same as any other failure).
 const RUN_TIMEOUT_MS = 5000;
 
+// The `--limit` for the batched `gh issue list` that backs issueStates (#42).
+// Generous enough to cover a typical board in one call; any requested number the
+// batch misses (older than the window, or offline) falls back to a per-issue view,
+// so this bounds the fast path, not correctness.
+const BATCH_LIST_LIMIT = 200;
+
 function run(cmd, args) {
   try {
     return execFileSync(cmd, args,
@@ -53,6 +59,40 @@ function parseIssueListRows(out) {
   return rows;
 }
 
+// Pure: map a BATCHED `gh issue list --state all --json number,state,labels,blockedBy`
+// payload (a JSON array, or null offline) to reconcile-ready rows (#42). Unlike
+// parseIssueListRows this KEEPS blockedByCount — the batched issueStates replaces the
+// per-view path, so the BLOCKED overlay's relation signal (#87) must survive. Drops
+// rows whose state is not OPEN|CLOSED. Shape-identical to parseIssueStateRow's rows.
+function parseIssueStateRows(out) {
+  if (out === null || out === undefined) return [];
+  let data;
+  try { data = JSON.parse(out); } catch { return []; }
+  if (!Array.isArray(data)) return [];
+  const rows = [];
+  for (const item of data) {
+    if (!item) continue;
+    const state = String(item.state || '').toUpperCase();
+    if (state !== 'OPEN' && state !== 'CLOSED') continue;
+    const labels = Array.isArray(item.labels) ? item.labels.map((l) => l && l.name) : [];
+    const blockedByCount = (item.blockedBy && Number(item.blockedBy.totalCount)) || 0;
+    rows.push({ number: item.number, state, labels, blockedByCount });
+  }
+  return rows;
+}
+
+// Pure: split the requested numbers against the batch rows (#42) — return the batch
+// rows that were actually requested, plus the requested numbers the batch MISSED
+// (offline, beyond --limit, or genuinely absent), which the caller then looks up one
+// at a time. Keeps the impure issueStates orchestration thin and testable.
+function selectStateRows(numbers, batchRows) {
+  const requested = new Set(numbers);
+  const rows = (batchRows || []).filter((r) => r && requested.has(r.number));
+  const have = new Set(rows.map((r) => r.number));
+  const missing = (numbers || []).filter((n) => !have.has(n));
+  return { rows, missing };
+}
+
 // Pure: parse the new issue NUMBER from `gh issue create`'s stdout — it prints the
 // created issue's URL, e.g. `https://github.com/o/r/issues/42`. Reads the last
 // non-empty line and takes the `/issues/<N>` segment. null when unparseable /
@@ -67,16 +107,23 @@ function parseCreatedIssueNumber(out) {
 class GitHubProvider {
   constructor() { this.name = 'github'; }
 
-  // [{number, state, labels:[<name>...]}] for the given issue numbers
-  // (best-effort). `labels` drives the BLOCKED overlay (#78); it rides the same
-  // per-issue lookup status already makes, so adding it costs no extra gh calls.
+  // [{number, state, labels:[<name>...], blockedByCount}] for the given issue
+  // numbers (best-effort). Batched (#42): ONE `gh issue list --state all` replaces
+  // the former N serial `gh issue view` round-trips. `--state all` (not open) so a
+  // CLOSED issue is reported CLOSED — status's STALE reconcile and the stale-claim
+  // sweep depend on that; --state open would leave it merely absent. Any requested
+  // number the batch misses (older than the window, or offline) falls back to a
+  // per-issue view, so no signal is lost. `labels` + `blockedBy` feed the BLOCKED
+  // overlay (#78/#87). Empty input short-circuits — no gh call.
   issueStates(numbers) {
-    const rows = [];
-    for (const n of numbers) {
-      // `blockedBy` rides the same per-issue lookup — one extra json field, no
-      // extra gh call — feeding the BLOCKED overlay's relation signal (#87).
-      const out = run('gh', ['issue', 'view', String(n), '--json', 'state,labels,blockedBy']);
-      const row = parseIssueStateRow(out, n);
+    if (!numbers || !numbers.length) return [];
+    const batch = parseIssueStateRows(run('gh',
+      ['issue', 'list', '--state', 'all', '--limit', String(BATCH_LIST_LIMIT),
+        '--json', 'number,state,labels,blockedBy']));
+    const { rows, missing } = selectStateRows(numbers, batch);
+    for (const n of missing) {
+      const row = parseIssueStateRow(
+        run('gh', ['issue', 'view', String(n), '--json', 'state,labels,blockedBy']), n);
       if (row) rows.push(row); // null → offline / not found / non-OPEN|CLOSED → UNKNOWN
     }
     return rows;
@@ -215,5 +262,6 @@ function getProvider(host) {
 
 module.exports = {
   getProvider, GitHubProvider, GitLabProvider,
-  parseIssueStateRow, parseIssueListRows, parseCreatedIssueNumber,
+  parseIssueStateRow, parseIssueListRows, parseIssueStateRows, selectStateRows,
+  parseCreatedIssueNumber,
 };

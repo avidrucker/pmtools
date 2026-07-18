@@ -31,6 +31,21 @@ const { sh, gitCapture, makeDie } = require('./sh');
 const config = require('./config');
 const { parseWorktreePorcelain } = require('./close_core');
 const core = require('./claim_core');
+const { getProvider } = require('./provider');
+
+// One batched issue-state lookup → Map(number → STATE) for the given numbers (#42).
+// Replaces the former per-issue `gh issue view` calls in the warn* teardown checks
+// with a single `gh issue list` behind the provider (github-only, claim's host).
+// Best-effort: an absent/offline number simply doesn't appear in the map.
+function issueStateMap(numbers) {
+  const uniq = [...new Set(numbers)].filter((n) => Number.isInteger(n));
+  if (!uniq.length) return new Map();
+  let rows = [];
+  try { rows = getProvider('github').issueStates(uniq); } catch { rows = []; }
+  const map = new Map();
+  for (const r of rows) map.set(r.number, String(r.state).toUpperCase());
+  return map;
+}
 const {
   FRUITS, SESSION_SENTINEL_MAX_AGE_S, isSafeRef,
   slugify, resolveIdentity, checkIdentityName,
@@ -191,10 +206,9 @@ function warnOrphanedWorktrees(worktreeDir) {
   const entries = worktreesWithIssue(listWorktreeBranches());
   if (!entries.length) return;
   const root = mainRoot();
-  for (const { branch, fruit, issue } of entries) {
-    const state = sh(`gh issue view ${issue} --json state -q .state`, true);
-    if (!state || !state.trim()) continue;
-    if (state.trim().toUpperCase() !== 'CLOSED') continue;
+  const states = issueStateMap(entries.map((e) => Number(e.issue)));
+  for (const { branch, issue } of entries) {
+    if (states.get(Number(issue)) !== 'CLOSED') continue;
     const wtPath = path.join(root, worktreeDir, core.branchToWorktreeName(branch));
     console.error(
       `[claim] ⚠ stale worktree: "${branch}" references CLOSED issue #${issue}.\n` +
@@ -208,19 +222,23 @@ function warnOrphanedWorktrees(worktreeDir) {
 function warnStaleClaimRefs() {
   const listing = sh(`git ls-remote origin 'refs/claims/*' 2>/dev/null`, true);
   if (!listing || !listing.trim()) return;
+  const refs = [];
   for (const line of listing.trim().split('\n')) {
     const [, ref] = line.split('\t');
     const m = /refs\/claims\/issue-(\d+)\b/.exec(ref || '');
-    if (!m) continue;
-    const issueNum = m[1];
-    const stateRaw = sh(`gh issue view ${issueNum} --json state -q .state`, true);
-    const issueState = stateRaw && stateRaw.trim() ? stateRaw.trim().toUpperCase() : null;
-    if (issueState === 'CLOSED' || issueState === 'MERGED') {
-      console.error(
-        `[claim] ⚠ stale claim ref refs/claims/issue-${issueNum} (issue #${issueNum} is ${issueState}).\n` +
-        `         To sweep:  git push origin :refs/claims/issue-${issueNum}`
-      );
-    }
+    if (m) refs.push(Number(m[1]));
+  }
+  if (!refs.length) return;
+  // One batched state lookup (#42) instead of one `gh issue view` per claim ref.
+  // A closed issue is only ever CLOSED here — issue_states reports OPEN|CLOSED, so
+  // the former defensive MERGED check (a PR-only state) can never fire.
+  const states = issueStateMap(refs);
+  for (const issueNum of refs) {
+    if (states.get(issueNum) !== 'CLOSED') continue;
+    console.error(
+      `[claim] ⚠ stale claim ref refs/claims/issue-${issueNum} (issue #${issueNum} is CLOSED).\n` +
+      `         To sweep:  git push origin :refs/claims/issue-${issueNum}`
+    );
   }
 }
 

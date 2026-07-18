@@ -8,6 +8,12 @@ import json
 import re
 import subprocess
 
+# The `--limit` for the batched `gh issue list` that backs issue_states (#42).
+# Generous enough to cover a typical board in one call; any requested number the
+# batch misses (older than the window, or offline) falls back to a per-issue view,
+# so this bounds the fast path, not correctness.
+BATCH_LIST_LIMIT = 200
+
 
 def _run(cmd, timeout=5):
     """Return stdout on success, else None (never raises). A 5s timeout keeps a
@@ -70,6 +76,51 @@ def parse_issue_list_rows(out):
     return rows
 
 
+def parse_issue_state_rows(out):
+    """Pure: map a BATCHED `gh issue list --state all
+    --json number,state,labels,blockedBy` payload (a JSON array, or None offline)
+    to reconcile-ready rows (#42). Unlike parse_issue_list_rows this KEEPS
+    blockedByCount — the batched issue_states replaces the per-view path, so the
+    BLOCKED overlay's relation signal (#87) must survive. Drops rows whose state
+    is not OPEN|CLOSED. Shape-identical to parse_issue_state_row's row.
+    Mirrors js parseIssueStateRows."""
+    if out is None:
+        return []
+    try:
+        data = json.loads(out)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    rows = []
+    for item in data:
+        if not item:
+            continue
+        state = str(item.get("state") or "").upper()
+        if state not in ("OPEN", "CLOSED"):
+            continue
+        labels = [lab.get("name") for lab in (item.get("labels") or [])
+                  if isinstance(lab, dict)]
+        blocked_by = item.get("blockedBy") or {}
+        blocked_by_count = blocked_by.get("totalCount") or 0
+        rows.append({"number": item.get("number"), "state": state,
+                     "labels": labels, "blockedByCount": blocked_by_count})
+    return rows
+
+
+def select_state_rows(numbers, batch_rows):
+    """Pure: split the requested numbers against the batch rows (#42) — return
+    (rows, missing): the batch rows actually requested, plus the requested
+    numbers the batch MISSED (offline, beyond --limit, or genuinely absent),
+    which the caller looks up one at a time. Keeps issue_states thin + testable.
+    Mirrors js selectStateRows."""
+    requested = set(numbers or [])
+    rows = [r for r in (batch_rows or []) if r and r.get("number") in requested]
+    have = {r.get("number") for r in rows}
+    missing = [n for n in (numbers or []) if n not in have]
+    return rows, missing
+
+
 def parse_created_issue_number(out):
     """Pure: parse the new issue NUMBER from `gh issue create`'s stdout — it prints
     the created issue's URL, e.g. `https://github.com/o/r/issues/42`. Reads the last
@@ -88,13 +139,23 @@ class GitHubProvider:
 
     def issue_states(self, numbers):
         """[{number, state, labels:[<name>...], blockedByCount}] for the given
-        issue numbers (best-effort). `labels` + the `blockedBy` relation drive the
-        BLOCKED overlay (#78/#87); `blockedBy` rides the same per-issue lookup
-        status already makes — one extra json field, no extra gh calls."""
-        rows = []
-        for n in numbers:
-            out = _run(["gh", "issue", "view", str(n), "--json", "state,labels,blockedBy"])
-            row = parse_issue_state_row(out, n)
+        issue numbers (best-effort). Batched (#42): ONE `gh issue list --state all`
+        replaces the former N serial `gh issue view` round-trips. `--state all`
+        (not open) so a CLOSED issue is reported CLOSED — status's STALE reconcile
+        and the stale-claim sweep depend on that; --state open would leave it
+        merely absent. Any requested number the batch misses (older than the
+        window, or offline) falls back to a per-issue view, so no signal is lost.
+        `labels` + `blockedBy` feed the BLOCKED overlay (#78/#87). Empty input
+        short-circuits — no gh call."""
+        if not numbers:
+            return []
+        batch = parse_issue_state_rows(_run(
+            ["gh", "issue", "list", "--state", "all", "--limit", str(BATCH_LIST_LIMIT),
+             "--json", "number,state,labels,blockedBy"]))
+        rows, missing = select_state_rows(numbers, batch)
+        for n in missing:
+            row = parse_issue_state_row(
+                _run(["gh", "issue", "view", str(n), "--json", "state,labels,blockedBy"]), n)
             if row:  # None -> offline / not found / non-OPEN|CLOSED -> UNKNOWN
                 rows.append(row)
         return rows

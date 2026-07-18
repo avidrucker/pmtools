@@ -8,7 +8,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { GitHubProvider, GitLabProvider, parseIssueStateRow, parseIssueListRows } = require('./provider');
+const {
+  GitHubProvider, GitLabProvider,
+  parseIssueStateRow, parseIssueListRows, parseIssueStateRows, selectStateRows,
+} = require('./provider');
 
 // parseIssueListRows: pure mapping of a `gh issue list --json number,state,labels`
 // payload (a JSON array) to reconcile-ready rows (#88). Tested with canned JSON.
@@ -47,6 +50,54 @@ test('parseIssueStateRow: null/garbage/non-open-closed → null (dropped, UNKNOW
   assert.strictEqual(parseIssueStateRow(null, 1), null);
   assert.strictEqual(parseIssueStateRow('not json', 1), null);
   assert.strictEqual(parseIssueStateRow(JSON.stringify({ state: 'DRAFT' }), 1), null);
+});
+
+// parseIssueStateRows: the BATCHED plural mapping of a `gh issue list --state all
+// --json number,state,labels,blockedBy` array to reconcile-ready rows (#42). Unlike
+// parseIssueListRows it KEEPS blockedByCount (the batched issueStates replaces the
+// per-view path, so the BLOCKED overlay's relation signal must survive, #87).
+test('parseIssueStateRows: maps a list payload, keeping blockedByCount + both states', () => {
+  const out = JSON.stringify([
+    { number: 5, state: 'OPEN', labels: [{ name: 'blocked' }], blockedBy: { totalCount: 3 } },
+    { number: 6, state: 'CLOSED', labels: [{ name: 'bug' }] },
+  ]);
+  assert.deepStrictEqual(parseIssueStateRows(out), [
+    { number: 5, state: 'OPEN', labels: ['blocked'], blockedByCount: 3 },
+    { number: 6, state: 'CLOSED', labels: ['bug'], blockedByCount: 0 },
+  ]);
+});
+
+test('parseIssueStateRows: drops non-OPEN|CLOSED rows; null/garbage/empty → [] (offline)', () => {
+  const out = JSON.stringify([
+    { number: 1, state: 'OPEN', labels: [] },
+    { number: 2, state: 'DRAFT', labels: [] },
+  ]);
+  assert.deepStrictEqual(parseIssueStateRows(out),
+    [{ number: 1, state: 'OPEN', labels: [], blockedByCount: 0 }]);
+  assert.deepStrictEqual(parseIssueStateRows(null), []);
+  assert.deepStrictEqual(parseIssueStateRows('not json'), []);
+  assert.deepStrictEqual(parseIssueStateRows('{}'), []);
+});
+
+// selectStateRows: pure filter+fallback decision for the batched issueStates (#42).
+// Given the requested numbers and the batch rows, return the rows that matched and
+// the requested numbers the batch MISSED (which get a per-view fallback lookup).
+test('selectStateRows: filters batch to requested, reports the missing set for fallback', () => {
+  const batch = [
+    { number: 5, state: 'OPEN', labels: [], blockedByCount: 0 },
+    { number: 6, state: 'CLOSED', labels: [], blockedByCount: 0 },
+    { number: 8, state: 'OPEN', labels: [], blockedByCount: 0 }, // not requested → excluded
+  ];
+  const { rows, missing } = selectStateRows([5, 7, 6], batch);
+  assert.deepStrictEqual(rows, [
+    { number: 5, state: 'OPEN', labels: [], blockedByCount: 0 },
+    { number: 6, state: 'CLOSED', labels: [], blockedByCount: 0 },
+  ]);
+  assert.deepStrictEqual(missing, [7]);
+});
+
+test('selectStateRows: empty batch → nothing matched, everything missing (offline path)', () => {
+  assert.deepStrictEqual(selectStateRows([3, 4], []), { rows: [], missing: [3, 4] });
 });
 
 test('GitHubProvider exposes issueTitle (parity with py issue_title)', () => {

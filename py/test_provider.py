@@ -57,6 +57,61 @@ class ParseIssueListRows(unittest.TestCase):
         self.assertEqual(provider.parse_issue_list_rows("[]"), [])
 
 
+class ParseIssueStateRows(unittest.TestCase):
+    """parse_issue_state_rows: the BATCHED plural mapping of a `gh issue list
+    --state all --json number,state,labels,blockedBy` array to reconcile-ready
+    rows (#42). Unlike parse_issue_list_rows it KEEPS blockedByCount so the
+    batched issue_states preserves the BLOCKED overlay's relation signal (#87).
+    Mirrors js parseIssueStateRows."""
+
+    def test_maps_keeping_blocked_by_and_both_states(self):
+        out = json.dumps([
+            {"number": 5, "state": "OPEN", "labels": [{"name": "blocked"}],
+             "blockedBy": {"totalCount": 3}},
+            {"number": 6, "state": "CLOSED", "labels": [{"name": "bug"}]},
+        ])
+        self.assertEqual(provider.parse_issue_state_rows(out), [
+            {"number": 5, "state": "OPEN", "labels": ["blocked"], "blockedByCount": 3},
+            {"number": 6, "state": "CLOSED", "labels": ["bug"], "blockedByCount": 0},
+        ])
+
+    def test_drops_non_open_closed_and_offline_returns_empty(self):
+        out = json.dumps([
+            {"number": 1, "state": "OPEN", "labels": []},
+            {"number": 2, "state": "DRAFT", "labels": []},
+        ])
+        self.assertEqual(provider.parse_issue_state_rows(out),
+                         [{"number": 1, "state": "OPEN", "labels": [], "blockedByCount": 0}])
+        self.assertEqual(provider.parse_issue_state_rows(None), [])
+        self.assertEqual(provider.parse_issue_state_rows("not json"), [])
+        self.assertEqual(provider.parse_issue_state_rows("{}"), [])
+
+
+class SelectStateRows(unittest.TestCase):
+    """select_state_rows: pure filter+fallback decision for batched issue_states
+    (#42) — return the batch rows matching the requested numbers plus the
+    requested numbers the batch MISSED (which get a per-view fallback). Mirrors
+    js selectStateRows."""
+
+    def test_filters_to_requested_and_reports_missing(self):
+        batch = [
+            {"number": 5, "state": "OPEN", "labels": [], "blockedByCount": 0},
+            {"number": 6, "state": "CLOSED", "labels": [], "blockedByCount": 0},
+            {"number": 8, "state": "OPEN", "labels": [], "blockedByCount": 0},
+        ]
+        rows, missing = provider.select_state_rows([5, 7, 6], batch)
+        self.assertEqual(rows, [
+            {"number": 5, "state": "OPEN", "labels": [], "blockedByCount": 0},
+            {"number": 6, "state": "CLOSED", "labels": [], "blockedByCount": 0},
+        ])
+        self.assertEqual(missing, [7])
+
+    def test_empty_batch_everything_missing(self):
+        rows, missing = provider.select_state_rows([3, 4], [])
+        self.assertEqual(rows, [])
+        self.assertEqual(missing, [3, 4])
+
+
 class IssueTitleParity(unittest.TestCase):
     def test_github_provider_exposes_issue_title(self):
         gh = provider.GitHubProvider()

@@ -30,6 +30,7 @@ import time
 from datetime import datetime, timezone
 
 import config
+import provider
 from close_core import parse_worktree_porcelain
 import claim_core as core
 from claim_core import (
@@ -210,17 +211,31 @@ def flip_marker(issue, wt_path):
         TODO_KW, issue, INPROGRESS_KW, rel_file, res["line"]))
 
 
+def issue_state_map(numbers):
+    """One batched issue-state lookup -> {number: STATE} for the given numbers
+    (#42). Replaces the former per-issue `gh issue view` calls in the warn_*
+    teardown checks with a single `gh issue list` behind the provider (github-only,
+    claim's host). Best-effort: an absent/offline number simply isn't in the map.
+    Mirrors js issueStateMap."""
+    uniq = [n for n in dict.fromkeys(numbers) if isinstance(n, int)]
+    if not uniq:
+        return {}
+    try:
+        rows = provider.get_provider("github").issue_states(uniq)
+    except Exception:
+        rows = []
+    return {r["number"]: str(r["state"]).upper() for r in rows}
+
+
 def warn_orphaned_worktrees(worktree_dir):
     entries = worktrees_with_issue(list_worktree_branches())
     if not entries:
         return
     root = main_root()
+    states = issue_state_map([int(e["issue"]) for e in entries])
     for e in entries:
-        branch, fruit, iss = e["branch"], e["fruit"], e["issue"]
-        state = sh("gh issue view {} --json state -q .state".format(iss), True)
-        if not state or not state.strip():
-            continue
-        if state.strip().upper() != "CLOSED":
+        branch, iss = e["branch"], e["issue"]
+        if states.get(int(iss)) != "CLOSED":
             continue
         wt_path = os.path.join(root, worktree_dir, core.branch_to_worktree_name(branch))
         sys.stderr.write(
@@ -234,19 +249,25 @@ def warn_stale_claim_refs():
     listing = sh("git ls-remote origin 'refs/claims/*' 2>/dev/null", True)
     if not listing or not listing.strip():
         return
+    refs = []
     for line in listing.strip().split("\n"):
         parts = line.split("\t")
         ref = parts[1] if len(parts) > 1 else ""
         m = re.search(r"refs/claims/issue-(\d+)\b", ref)
-        if not m:
+        if m:
+            refs.append(int(m.group(1)))
+    if not refs:
+        return
+    # One batched state lookup (#42) instead of one `gh issue view` per claim ref.
+    # A closed issue is only ever CLOSED here — issue_states reports OPEN|CLOSED, so
+    # the former defensive MERGED check (a PR-only state) can never fire.
+    states = issue_state_map(refs)
+    for issue_num in refs:
+        if states.get(issue_num) != "CLOSED":
             continue
-        issue_num = m.group(1)
-        state_raw = sh("gh issue view {} --json state -q .state".format(issue_num), True)
-        issue_state = state_raw.strip().upper() if state_raw and state_raw.strip() else None
-        if issue_state in ("CLOSED", "MERGED"):
-            sys.stderr.write(
-                "[claim] ⚠ stale claim ref refs/claims/issue-{0} (issue #{0} is {1}).\n"
-                "         To sweep:  git push origin :refs/claims/issue-{0}\n".format(issue_num, issue_state))
+        sys.stderr.write(
+            "[claim] ⚠ stale claim ref refs/claims/issue-{0} (issue #{0} is CLOSED).\n"
+            "         To sweep:  git push origin :refs/claims/issue-{0}\n".format(issue_num))
 
 
 def parse_args(argv):
