@@ -1,0 +1,879 @@
+#!/usr/bin/env python3
+"""close.py — finish a puzzle safely: land the close commit on origin/main, then
+(and ONLY then) tear down the worktree. The symmetric mirror of claim.py.
+
+Ported from lccjs scripts/close.js (the GENERIC core of the IMPURE orchestration).
+All pure decisions live in close_core; this file does only git/gh I/O and wiring,
+and is a faithful twin of js/close.js.
+
+Boundary: this tool does NOT author the closing commit. The agent writes the
+marker deletion + `Closes #N` message and commits FIRST; close.py takes over
+after, owning only the racy push + the gated teardown.
+
+The velocity-row guard (#5) IS ported, but DB-based and config-gated: it reads
+SQLite (the source of truth), not the lccjs velocity CSV. Still OMITTED
+(lccjs-specific, out of scope): the velocity-CSV diff parsers + auto-resolve, the
+learnings-README conflict resolver, union-file auto-resolve, and the
+parent-tracker scan. Any rebase conflict is blocking.
+
+Usage (after committing `Closes #N`):
+  close <issue>                    # from the MAIN checkout (recommended, #104): the
+                                   #   worktree + branch resolve from the issue
+                                   #   number, so the caller's cwd is never the
+                                   #   directory being torn down. Also works from
+                                   #   inside the worktree (back-compat).
+  close <issue> --branch <name>    # override the resolved branch explicitly
+  close <issue> --max 8            # more push-race retries (default 5)
+  close <issue> --dry-run          # show the plan, change nothing
+  close <issue> --keep             # land the commit but DON'T tear down
+  close <issue> --no-verify-issue  # skip the gh post-close check
+  close <issue> --skip-marker-check
+  close <issue> --skip-keyword-check
+  close <issue> --skip-scope-audit
+  close <issue> --skip-velocity-check   # bypass the velocity-row guard
+  close <issue> --skip-verify           # bypass the config-driven pre-close verify gate
+  close <issue> --worktree-dir <dir>   # DEPRECATED: back-compat only, ignored post-#51 (close self-discovers)
+"""
+import os
+import re
+import subprocess
+import sys
+
+import close_core as core
+import config
+import store
+import store_core
+import claim_core
+import provider as provider_mod
+from sh import sh, sh_capture, git_capture, make_die, make_log, wants_help
+from claimref import delete_claim_ref
+from close_core import (
+    DEFAULT_MAX_RETRIES, is_safe_ref, classify_push_error, should_cleanup,
+    classify_rebase_conflict, body_closes_issue, pushed_commit_references_issue,
+    unsupported_flag_hint,
+    extract_keywords, keywords_overlap, marker_still_present,
+    scope_audit_diff_command, velocity_row_present, compute_velocity_mismatch,
+)
+
+
+die = make_die("close")
+log = make_log("close")
+
+
+def main_root():
+    """The MAIN checkout's root, NOT the worktree we're closing — the worktree is
+    about to be removed, so the removal must run from a directory that survives.
+    git-common-dir resolution lives once in config.main_repo_root (#74); this
+    wrapper keeps the die-on-failure behavior (config returns None)."""
+    root = config.main_repo_root()
+    if not root:
+        die("not inside a git repository.")
+    return root
+
+
+def parse_args(argv):
+    opts = {
+        "issue": None, "max": DEFAULT_MAX_RETRIES, "dryRun": False,
+        "keep": False, "verifyIssue": True, "skipKeywordCheck": False,
+        "skipMarkerCheck": False, "skipScopeAudit": False, "skipVelocityCheck": False,
+        "skipVerify": False,
+        "updateTrackers": False, "branch": None, "worktreeDir": ".claude/worktrees",
+        "noCode": False, "comment": None, "commentFile": None, "noComment": False,
+    }
+    positionals = []
+    i = 0
+    n = len(argv)
+    while i < n:
+        a = argv[i]
+        if a == "--max":
+            i += 1
+            raw = argv[i] if i < n else None
+            try:
+                opts["max"] = int(raw)
+            except (TypeError, ValueError):
+                opts["max"] = DEFAULT_MAX_RETRIES
+        elif a == "--dry-run":
+            opts["dryRun"] = True
+        elif a == "--keep":
+            opts["keep"] = True
+        elif a == "--no-verify-issue":
+            opts["verifyIssue"] = False
+        elif a == "--skip-keyword-check":
+            opts["skipKeywordCheck"] = True
+        elif a == "--skip-marker-check":
+            opts["skipMarkerCheck"] = True
+        elif a == "--skip-scope-audit":
+            opts["skipScopeAudit"] = True
+        elif a == "--skip-velocity-check":
+            opts["skipVelocityCheck"] = True
+        elif a == "--skip-verify":
+            opts["skipVerify"] = True
+        elif a == "--update-trackers":
+            opts["updateTrackers"] = True
+        elif a == "--branch":
+            i += 1
+            opts["branch"] = argv[i] if i < n else None
+        # no-code close (#113): close a comment-only ticket without a `Closes #N` commit.
+        elif a == "--no-code":
+            opts["noCode"] = True
+        elif a == "--comment":
+            i += 1
+            opts["comment"] = argv[i] if i < n else None
+        elif a == "--comment-file":
+            i += 1
+            opts["commentFile"] = argv[i] if i < n else None
+        elif a == "--no-comment":
+            opts["noComment"] = True
+        # --worktree-dir: accepted for back-compat but intentionally IGNORED post-#51
+        # (close self-discovers the worktree via `git worktree list`). Do not use. (#73)
+        elif a == "--worktree-dir":
+            i += 1
+            opts["worktreeDir"] = argv[i] if i < n else None
+        elif a.startswith("--"):
+            # A flag recognized on a sibling command but unsupported here (#9, e.g.
+            # `--as`) gets a teaching message; truly unknown flags keep the generic
+            # one. Both are usage errors → exit 2.
+            hint = unsupported_flag_hint(a)
+            die(hint if hint else "unknown flag: " + a, 2)
+        else:
+            positionals.append(a)
+        i += 1
+    opts["issue"] = positionals[0] if positionals else None
+    if not isinstance(opts["max"], int) or opts["max"] < 1:
+        opts["max"] = DEFAULT_MAX_RETRIES
+    return opts
+
+
+# ---- git I/O helpers (thin wrappers; close_core stays pure) ----------------
+
+def current_branch():
+    b = sh("git rev-parse --abbrev-ref HEAD", True)
+    return b.strip() if b else None
+
+
+def head_sha():
+    s = sh("git rev-parse HEAD", True)
+    return s.strip() if s else None
+
+
+def find_closing_commit_sha(issue):
+    """Scan origin/main..HEAD for a commit whose body Closes #issue. First match's
+    SHA, else None."""
+    out = sh("git log origin/main..HEAD --format=%H", True) or ""
+    shas = [s.strip() for s in out.strip().split("\n") if s.strip()]
+    for sha in shas:
+        body = sh("git show -s --format=%B {}".format(sha), True) or ""
+        if body_closes_issue(body, issue):
+            return sha
+    return None
+
+
+def find_closing_commit_on_main(issue):
+    """Recovery path: scan origin/main -100 for a Closes #issue commit, else None."""
+    out = sh("git log origin/main -100 --format=%H", True) or ""
+    shas = [s.strip() for s in out.strip().split("\n") if s.strip()]
+    for sha in shas:
+        body = sh("git show -s --format=%B {}".format(sha), True) or ""
+        if body_closes_issue(body, issue):
+            return sha
+    return None
+
+
+def find_pushed_reference_on_main(issue):
+    """Recovery diagnostic (#7): scan origin/main -100 for a commit that REFERENCES
+    #issue (e.g. `(#N)`) but lacks a close keyword. Returns (sha, subject) or None.
+    The impure twin of pushed_commit_references_issue."""
+    out = sh("git log origin/main -100 --format=%H", True) or ""
+    shas = [s.strip() for s in out.strip().split("\n") if s.strip()]
+    for sha in shas:
+        body = sh("git show -s --format=%B {}".format(sha), True) or ""
+        if pushed_commit_references_issue(body, issue):
+            subject = (sh("git show -s --format=%s {}".format(sha), True) or "").strip()
+            return (sha, subject)
+    return None
+
+
+def tree_is_clean():
+    s = sh("git status --porcelain", True)
+    return s is not None and s.strip() == ""
+
+
+def rebase_or_merge_in_progress():
+    rm = sh("git rev-parse --git-path rebase-merge", True)
+    ra = sh("git rev-parse --git-path rebase-apply", True)
+    mh = sh("git rev-parse --git-path MERGE_HEAD", True)
+
+    def exists(p):
+        return bool(p and sh('test -e "{}" && echo yes'.format(p.strip()), True))
+
+    return bool(exists(rm) or exists(ra) or exists(mh))
+
+
+def conflicted_paths():
+    s = sh("git diff --name-only --diff-filter=U", True) or ""
+    return [x.strip() for x in s.split("\n") if x.strip()]
+
+
+def on_origin_main(sha):
+    out = sh("git branch -r --contains {}".format(sha), True) or ""
+    return any(l.strip() == "origin/main" for l in out.split("\n"))
+
+
+# ---- guards (skippable) ----------------------------------------------------
+
+def check_keyword_match(issue, closing_commit_sha):
+    """Guard 2: the closing commit's subject must share >=1 keyword with the issue
+    title (via gh). Degrades gracefully when gh is unavailable."""
+    title = sh("gh issue view {} --json title -q .title".format(issue), True)
+    if not title or not title.strip():
+        log("warn: could not fetch issue title (gh unavailable?) — skipping keyword check.")
+        return
+    sha = closing_commit_sha or "HEAD"
+    subject = sh("git show -s --format=%s {}".format(sha), True) or ""
+    title_kws = extract_keywords(title.strip())
+    if not title_kws:
+        log("warn: issue title has no extractable keywords — skipping keyword check.")
+        return
+    if keywords_overlap(title_kws, extract_keywords(subject.strip())):
+        return
+    all_subjects_out = sh("git log origin/main..HEAD --format=%s", True) or ""
+    all_subjects = [s for s in all_subjects_out.strip().split("\n") if s]
+    if any(keywords_overlap(title_kws, extract_keywords(s)) for s in all_subjects):
+        return
+    all_subject_kws = sorted(set(kw for s in all_subjects for kw in extract_keywords(s)))
+    die("keyword check: no keyword from issue #{} title matched any unpushed commit subject.\n"
+        '  title:            "{}"\n'
+        "  title keywords:   [{}]\n"
+        "  subjects scanned: {}\n"
+        "  subject keywords: [{}]\n"
+        "  Paraphrased title? Add --skip-keyword-check to your close command.".format(
+            issue, title.strip(), ", ".join(title_kws), len(all_subjects),
+            ", ".join(all_subject_kws)))
+
+
+def run_preclose_verify(opts, wt_path, root):
+    """Pre-close verify gate (#106): run project-defined commands from
+    `close.verify` (lint/test/typecheck) and REFUSE to land if any exits non-zero.
+    Config-gated: no `close.verify.commands` → no-op (byte-identical to today).
+    Runs LAST — after the fast built-in gates, immediately before the land loop
+    (ruling Q2) — so a wrong-marker close fails in ~1s, not after a slow test run.
+    Each command runs in the worktree (default) or repo root; the first non-zero
+    exit prints the output and dies exit 1, leaving the worktree intact and NOTHING
+    pushed. `--dry-run` reports the commands without executing them."""
+    try:
+        vcfg = config.load_close_config().get("verify")
+    except Exception:
+        return  # config unreadable — never block on it.
+    plan = core.preclose_plan(vcfg)
+    if not plan["run"]:
+        return
+    verify_dir = root if plan["cwd"] == "root" else wt_path
+    for cmd in plan["commands"]:
+        if opts["dryRun"]:
+            log('verify (dry-run): would run "{}" in the {}'.format(cmd, plan["cwd"]))
+            continue
+        limit = " (timeout {}s)".format(plan["timeoutSec"]) if plan["timeoutSec"] else ""
+        log('verify: {} (in the {}){}'.format(cmd, plan["cwd"], limit))
+        res = sh_capture(cmd, verify_dir, plan["timeoutSec"])
+        if res["out"]:
+            sys.stdout.write(res["out"] if res["out"].endswith("\n") else res["out"] + "\n")
+        if not res["ok"]:
+            why = ("timed out after {}s (killed)".format(plan["timeoutSec"])
+                   if res.get("timedOut") else "exited non-zero")
+            die('pre-close verify failed: `{}` {}. Nothing pushed, worktree '
+                "left intact — fix and re-run close, or bypass with --skip-verify.".format(cmd, why), 1)
+
+
+def check_marker_deleted(issue):
+    """Guard: no puzzle marker (todo/inprogress) for the issue may remain in any
+    tracked file. LANGUAGE-AGNOSTIC: search all tracked files, not just *.js/ts."""
+    t_pat = "@" + "todo #{}".format(issue)
+    i_pat = "@" + "inprogress #{}".format(issue)
+    result = sh_capture('git grep -rn -e "{}" -e "{}"'.format(t_pat, i_pat))
+    res = marker_still_present(issue, result["out"])
+    if res["found"]:
+        die("puzzle marker for #{} still present — delete it in the closing commit first.\n".format(issue)
+            + "\n".join("  Found: {}".format(l) for l in res["lines"]) + "\n"
+            + "  Pass --skip-marker-check to bypass (no source marker ever existed).")
+
+
+def check_velocity_guard(issue, fruit):
+    """Velocity-row guard (#5; ported from lccjs scripts/close.js). Config-gated:
+    when storage.velocity is disabled — or the DB is absent (first run / CI) — it
+    no-ops. Otherwise SQLite is the source of truth: (Check A) refuse when no
+    velocity row exists for this ticket, or (Guard 1) when the closing agent
+    logged only a different ticket (the #278 digit-transposition). All blocking
+    decisions live in the pure close_core seams; this wrapper only does I/O."""
+    try:
+        cfg = config.load_storage_config()
+    except Exception:
+        return  # config unreadable — never block on it.
+    if not cfg.get("velocity") or not cfg["velocity"].get("enabled"):
+        return  # disabled → skip.
+    db_path = cfg.get("dbPath")
+    if not db_path or not os.path.exists(db_path):
+        log("warn: velocity store enabled but no DB at {} — skipping velocity-row check.".format(
+            db_path or "(unset)"))
+        return
+    try:
+        rows = store.select_all(db_path, "velocity")
+    except Exception as e:
+        log("warn: could not read velocity DB at {} ({}) — skipping velocity-row check.".format(
+            db_path, str(e).split(chr(10))[0]))
+        return
+    n = int(issue)
+    if velocity_row_present([r for r in rows if r["ticket"] is not None and int(r["ticket"]) == n]):
+        return  # Check A satisfied (skip issueless null-ticket rows, #56).
+    mismatch = compute_velocity_mismatch(rows, issue, fruit)
+    if mismatch:
+        die('velocity-row guard: agent "{}" logged ticket(s) #{} but is closing #{}. '
+            "Align the velocity row's ticket (or the close) first, then re-run. "
+            "Pass --skip-velocity-check to bypass.".format(
+                fruit, ", #".join(str(t) for t in mismatch), issue))
+    die("velocity-row guard: no velocity row for #{} in {}. Log your session first:\n"
+        "  pmtools velocity log '{{\"ticket\":{},\"role\":\"DEV\",\"agent\":\"{}\","
+        "\"started_iso\":\"<ISO>\",\"finished_iso\":\"<ISO>\",\"actual_min\":<A>}}'\n"
+        "  Then re-run close. Pass --skip-velocity-check to bypass (PM/triage closes).".format(
+            issue, db_path, issue, fruit))
+
+
+# ---- land loop -------------------------------------------------------------
+
+def reexport_and_stage_velocity_csv(cfg):
+    """Re-export the velocity CSV mirror from SQLite (the source of truth, which
+    already holds both agents' rows) and stage it, to auto-resolve a
+    velocity-CSV-only rebase conflict. Resolved against the current worktree's
+    toplevel (where the rebase is happening). On any failure, abort the rebase and
+    die() — the commit stays safe and local. (#57; ported from lccjs #313)"""
+    top = (sh("git rev-parse --show-toplevel", True) or "").strip() or os.getcwd()
+    csv_abs = os.path.join(top, cfg["velocity"]["csvMirror"])
+    try:
+        store.export_csv(cfg["dbPath"], "velocity", csv_abs, store_core.VELOCITY_COLS)
+    except Exception as e:
+        sh("git rebase --abort", True)
+        die("velocity CSV conflict: re-export from the DB failed ({}). "
+            "Aborted the rebase; your commit is safe and local.".format(
+                str(e).split(chr(10))[0]))
+    staged = sh_capture('git add "{}"'.format(csv_abs))
+    if not staged["ok"]:
+        sh("git rebase --abort", True)
+        die("velocity CSV conflict: re-export succeeded but git add failed. "
+            "Aborted the rebase; your commit is safe and local.")
+
+
+def union_merge_and_stage(file):
+    """Union-merge an append-only file that conflicted on BOTH sides of a rebase,
+    keeping every line from each side (git's merge=union semantics) — driven by
+    config so the consumer needs no committed .gitattributes (#36 guard 2 / #290).
+    During the conflict the three versions live in the index: :1: base, :2: ours
+    (origin/main), :3: theirs (the replayed commit); `merge-file --union` folds them.
+    On any failure, abort the rebase and die() — the commit stays safe and local."""
+    d = os.path.dirname(file) or "."
+    base = os.path.join(d, ".pmtools-union.{}.base".format(os.path.basename(file)))
+    ours = os.path.join(d, ".pmtools-union.{}.ours".format(os.path.basename(file)))
+    theirs = os.path.join(d, ".pmtools-union.{}.theirs".format(os.path.basename(file)))
+    try:
+        for tmp, stage in ((base, 1), (ours, 2), (theirs, 3)):
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(sh('git show ":{}:{}"'.format(stage, file), True) or "")
+        merged = sh('git merge-file -p --union "{}" "{}" "{}"'.format(ours, base, theirs), True)
+        if merged is None:
+            sh("git rebase --abort", True)
+            die("union-file conflict: merge-file failed for {}. "
+                "Aborted the rebase; your commit is safe and local.".format(file))
+        with open(file, "w", encoding="utf-8") as fh:
+            fh.write(merged)
+        staged = sh_capture('git add "{}"'.format(file))
+        if not staged["ok"]:
+            sh("git rebase --abort", True)
+            die("union-file conflict: merged {} but git add failed. "
+                "Aborted the rebase; your commit is safe and local.".format(file))
+    finally:
+        for tmp in (base, ours, theirs):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def resolve_markdown_index_and_stage(file):
+    """Resolve an append-only markdown index that conflicted (each side appended a
+    row) by stripping the git conflict markers in place — keeping both rows, and
+    collapsing an adjacent identical row — then stage it. The decision logic is the
+    pure resolve_append_only_markdown_conflict; this wraps it with file I/O.
+    (#36 guard 4 / #971)"""
+    try:
+        with open(file, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as e:
+        sh("git rebase --abort", True)
+        die("learnings-index conflict: could not read {} ({}). "
+            "Aborted the rebase; your commit is safe and local.".format(file, e))
+    try:
+        with open(file, "w", encoding="utf-8") as fh:
+            fh.write(core.resolve_append_only_markdown_conflict(text))
+    except OSError as e:
+        sh("git rebase --abort", True)
+        die("learnings-index conflict: could not write {} ({}). "
+            "Aborted the rebase; your commit is safe and local.".format(file, e))
+    staged = sh_capture('git add "{}"'.format(file))
+    if not staged["ok"]:
+        sh("git rebase --abort", True)
+        die("learnings-index conflict: resolved {} but git add failed. "
+            "Aborted the rebase; your commit is safe and local.".format(file))
+
+
+def try_land():
+    """One fetch/rebase/push round. Returns 'ok' | 'race' | 'rejected-other', or
+    die()s on a blocking rebase conflict (not retryable). A conflict whose ONLY
+    path is the velocity CSV mirror auto-resolves via re-export (#57)."""
+    sh("git fetch origin main", True)
+    rebase = sh_capture("git rebase origin/main")
+    if not rebase["ok"]:
+        conflicted = conflicted_paths()
+        try:
+            cfg = config.load_storage_config()
+        except Exception:
+            cfg = None
+        try:
+            close_cfg = config.load_close_config()
+        except Exception:
+            close_cfg = {"autoResolve": {"unionFiles": [], "markdownIndexes": []}}
+        union_files = close_cfg["autoResolve"]["unionFiles"]
+        markdown_indexes = close_cfg["autoResolve"]["markdownIndexes"]
+        csv_mirror = (cfg["velocity"]["csvMirror"]
+                      if cfg and cfg.get("velocity") and cfg["velocity"].get("enabled")
+                      else None)
+        if csv_mirror and core.is_velocity_csv_only_conflict(conflicted, csv_mirror):
+            # Two agents committed divergent full-table CSV exports. Re-export from
+            # the DB (already holds both rows) and continue — the only resolvable one.
+            reexport_and_stage_velocity_csv(cfg)
+            cont = sh_capture("GIT_EDITOR=true git rebase --continue")
+            if not cont["ok"]:
+                sh("git rebase --abort", True)
+                die("velocity CSV conflict: re-export + stage succeeded but rebase "
+                    "--continue failed: {}. Your commit is safe and local.".format(
+                        cont["out"].strip()))
+            log("velocity CSV conflict auto-resolved (re-exported from the DB).")
+        elif union_files and core.classify_rebase_conflict(conflicted, union_files) == "union-only":
+            # Consumer-configured append-only logs diverged on both sides — union-merge
+            # each (keep every line), stage, and continue. Config-driven, so no committed
+            # .gitattributes is required (#36 guard 2 / #290).
+            for f in conflicted:
+                union_merge_and_stage(f)
+            cont = sh_capture("GIT_EDITOR=true git rebase --continue")
+            if not cont["ok"]:
+                sh("git rebase --abort", True)
+                die("union-file conflict: merge + stage succeeded but rebase --continue "
+                    "failed: {}. Your commit is safe and local.".format(cont["out"].strip()))
+            log("union-file conflict auto-resolved (merge=union, kept both sides).")
+        elif markdown_indexes and core.is_markdown_index_only_conflict(conflicted, markdown_indexes):
+            # Consumer-configured append-only markdown indexes diverged (each agent
+            # appended a row) — strip the conflict markers (keep both rows, dedup an
+            # adjacent identical row), stage, and continue. (#36 guard 4 / #971)
+            for f in conflicted:
+                resolve_markdown_index_and_stage(f)
+            cont = sh_capture("GIT_EDITOR=true git rebase --continue")
+            if not cont["ok"]:
+                sh("git rebase --abort", True)
+                die("learnings-index conflict: resolve + stage succeeded but rebase --continue "
+                    "failed: {}. Your commit is safe and local.".format(cont["out"].strip()))
+            log("learnings-index conflict auto-resolved (kept both rows).")
+        else:
+            sh("git rebase --abort", True)
+            die("rebase hit a real conflict in: {}. ".format(", ".join(conflicted) or rebase["out"].strip())
+                + "Aborted the rebase. Resolve manually, then re-run close. "
+                "Your commit is safe and local.")
+    push = sh_capture("git push origin HEAD:main")
+    if push["ok"]:
+        return "ok"
+    return classify_push_error(push["out"])
+
+
+def report(issue, branch, wt_path, closing_sha, landed_sha, kept, dry):
+    short = wt_path.replace(os.environ.get("HOME", "\0"), "~") if wt_path else "(unknown)"
+    bar = "─" * 58
+    print(bar)
+    print("  {}  ·  issue: #{}".format(
+        "WOULD CLOSE" if dry else ("LANDED (kept worktree)" if kept else "CLOSED"), issue))
+    print(bar)
+    print("  branch    {}".format(branch or "(detached)"))
+    print("  worktree  {}".format(short))
+    if closing_sha:
+        print("  commit    {}  (on origin/main)".format(closing_sha[:12]))
+        if landed_sha and landed_sha != closing_sha:
+            print("  tip       {}  (post-rebase HEAD)".format(landed_sha[:12]))
+    print(bar)
+    tip_field = " tip={}".format(landed_sha) if (landed_sha and landed_sha != closing_sha) else ""
+    print("CLOSE {} issue={} branch={} sha={}{}{}".format(
+        "DRYRUN" if dry else "OK", issue, branch or "", closing_sha or "",
+        tip_field, " kept=1" if kept else ""))
+
+
+def log_comment_prompt(issue, closing_sha):
+    s = closing_sha[:12] if closing_sha else "(sha)"
+    log('Post your closing comment:\n  gh issue comment {} --body "Closed in {}. <your summary here>"'.format(issue, s))
+
+
+def scan_parent_trackers(issue, opts):
+    """After a successful close, tick the parent tracker issue's checkbox for this
+    child (#36 guard 3 / lccjs #907). Opt-in: config `close.updateParentTrackers`
+    or the --update-trackers flag. Best-effort — every failure warns and skips; it
+    never blocks or fails the close. Only a box whose SOLE issue ref is this child
+    is ticked (the pure tick_checkbox_for_issue), so an umbrella line is never
+    prematurely checked."""
+    enabled = bool(opts.get("updateTrackers"))
+    if not enabled:
+        try:
+            enabled = config.load_close_config().get("updateParentTrackers") is True
+        except Exception:
+            enabled = False
+    if not enabled:
+        return
+    try:
+        prov = provider_mod.get_provider("github")
+    except Exception:
+        return
+    try:
+        issues = prov.list_open_issues_with_bodies(500)
+    except Exception:
+        log("warn: could not fetch open issues for parent-tracker scan — skipping.")
+        return
+    seen = set()
+    for match in core.find_parent_trackers(issues, issue):
+        tracker = match["trackerNumber"]
+        if tracker in seen:
+            continue
+        seen.add(tracker)
+        full = next((i for i in (issues or []) if i.get("number") == tracker), None)
+        if not full:
+            continue
+        new_body = core.tick_checkbox_for_issue(full.get("body"), issue)
+        if new_body == str(full.get("body") or ""):
+            log("warn: parent tracker #{} box replacement had no effect — skipping.".format(tracker))
+            continue
+        if prov.edit_issue_body(tracker, new_body):
+            log("Parent tracker #{}: checked the box for #{}.".format(tracker, issue))
+        else:
+            log("warn: could not update parent tracker #{} — left as-is.".format(tracker))
+
+
+def run_no_code_close(opts, issue, root):
+    """No-code close (#113): close a comment-only ticket (research spike / decision /
+    triage) whose deliverable is a COMMENT, not a `Closes #N` commit. Skips every
+    code guard (commit scan / marker / keyword / verify gate / land loop), posts the
+    closing comment, closes the issue, then still logs velocity + sweeps the claim
+    ref, tearing down a worktree if one was claimed (else just closes). Comment-first,
+    fail-closed: a failed comment post leaves the issue OPEN (deliverable never lost)."""
+    plan = core.no_code_close_plan({
+        "comment": opts["comment"], "commentFile": opts["commentFile"],
+        "noComment": opts["noComment"],
+    })
+    if not plan["ok"]:
+        die(plan["error"], 2)
+
+    body = None
+    if plan["source"] == "inline":
+        body = opts["comment"]
+    elif plan["source"] == "file":
+        try:
+            with open(opts["commentFile"], "r", encoding="utf-8") as f:
+                body = f.read()
+        except OSError as e:
+            die("could not read --comment-file {}: {}".format(opts["commentFile"], e), 2)
+
+    # Resolve a worktree if one exists — OPTIONAL for a no-code close (unlike a
+    # normal close, which requires one to land against).
+    wt = core.find_worktree_for_issue(
+        core.parse_worktree_porcelain(sh("git worktree list --porcelain", True) or ""), issue)
+    wt_path = wt["path"] if wt else None
+    branch = core.resolve_close_branch(wt, opts["branch"], current_branch())
+    fruit = claim_core.infer_fruit_from_branch(branch) if branch else None
+
+    # The issue must be OPEN (a non-OPEN issue is a soft-fail no-op).
+    provider = provider_mod.get_provider("github")
+    st = sh("gh issue view {} --json state -q .state".format(issue), True)
+    if st and st.strip().upper() != "OPEN":
+        log("#{} is {}, not OPEN — nothing to close (no-code).".format(issue, st.strip()))
+        return
+
+    # Velocity-row guard (same invariant as a normal close; skippable). Only when the
+    # agent is known — a bare no-worktree close can't attribute the row, so it skips.
+    if not opts["skipVelocityCheck"]:
+        if fruit:
+            check_velocity_guard(issue, fruit)
+        else:
+            log("note: no worktree/branch to infer the agent — skipping the velocity-row guard.")
+
+    if opts["dryRun"]:
+        comment_plan = "post NO comment" if plan["source"] == "none" else "post the {} comment".format(plan["source"])
+        wt_plan = ", and tear down the worktree" if wt_path else " (no worktree)"
+        log("no-code close (dry-run): would {}, close #{}, sweep the claim ref{}.".format(
+            comment_plan, issue, wt_plan))
+        report(issue, branch, wt_path, None, None, False, True)
+        return
+
+    # Post the comment FIRST — fail-closed: a failed comment leaves the issue OPEN so
+    # the deliverable is never silently dropped.
+    if plan["source"] != "none":
+        if not provider.create_comment(issue, body):
+            die("failed to post the closing comment on #{} (gh unavailable?) — "
+                "issue left OPEN, nothing closed.".format(issue), 1)
+    if not provider.close_issue(issue):
+        die("comment posted but failed to close #{} (gh unavailable?) — "
+            "close it manually: gh issue close {}".format(issue, issue), 1)
+    log("#{} closed (no-code{}).".format(issue, ", no comment" if plan["source"] == "none" else ""))
+
+    # Sweep the claim ref (same as a normal close).
+    delete_claim_ref(issue, log)
+
+    # Tear down the worktree if one was claimed (reuse close's teardown, run from
+    # root — no chdir dance, since a no-code close never entered the worktree).
+    if wt_path and os.path.isdir(wt_path):
+        if branch and is_safe_ref(branch):
+            _teardown(wt_path, branch, root)
+            log("worktree torn down.")
+        else:
+            log("note: worktree at {} left in place (branch unsafe/unresolved).".format(wt_path))
+    else:
+        log("no worktree to tear down.")
+
+    report(issue, branch, wt_path, None, None, False, False)
+
+
+USAGE = ("usage: close <issue-number> [--branch <name>] [--max N] [--dry-run] [--keep] "
+         "[--no-verify-issue] [--skip-marker-check] [--skip-keyword-check] [--skip-scope-audit] "
+         "[--skip-velocity-check] [--skip-verify] [--worktree-dir <dir> (deprecated, ignored)]\n"
+         "  no-code close (comment-only ticket): close <N> --no-code "
+         "[--comment \"…\" | --comment-file F | --no-comment]")
+
+
+def main():
+    argv = sys.argv[1:]
+    if wants_help(argv):  # #117 command-aware --help
+        print(USAGE)
+        return 0
+    opts = parse_args(argv)
+    if not opts["issue"] or not re.match(r"^\d+$", str(opts["issue"])):
+        die(USAGE, 2)
+    issue = opts["issue"]
+    root = main_root()
+
+    # No-code close (#113): a comment-only ticket — dispatch BEFORE the worktree-
+    # required guards, since it works with or without a worktree.
+    if opts["noCode"]:
+        return run_no_code_close(opts, issue, root)
+
+    # --- resolve the worktree + branch for issue #N CWD-INDEPENDENTLY (#104), so
+    # `close <N>` runs from the MAIN checkout — not only from inside the worktree
+    # it deletes (which strands the caller's shell in a removed cwd). Discover the
+    # worktree from git's own porcelain (as status/sweep/release do) rather than
+    # rebuilding the dir name — robust under a non-default --worktree-dir and odd
+    # branch shapes, and the single source of truth for where the worktree is (#51).
+    wt = core.find_worktree_for_issue(
+        core.parse_worktree_porcelain(sh("git worktree list --porcelain", True) or ""), issue)
+    wt_path = wt["path"] if wt else None
+    # Identity/branch inferred from the RESOLVED worktree's branch, not cwd:
+    # explicit --branch wins, else the worktree branch, else the cwd branch.
+    branch = core.resolve_close_branch(wt, opts["branch"], current_branch())
+
+    # A real worktree must exist to land against and tear down. Fail here — before
+    # the branch-shape guards — so a from-main run with no worktree gets an accurate
+    # message instead of the stale "run from inside the worktree" one.
+    if not wt_path or not os.path.isdir(wt_path):
+        if opts["branch"]:
+            die("--branch supplied but no worktree for issue #{} found via "
+                "`git worktree list`. Is it still present?".format(issue))
+        die("no worktree for issue #{} found via `git worktree list` — claim it "
+            "first (pmtools claim {} --as <name>), or run close from inside its "
+            "worktree.".format(issue, issue))
+
+    # Injection guard (#37): the resolved branch is interpolated into teardown's
+    # `git branch -D <branch>`. Reject shell metacharacters, then require an ANCHORED
+    # branch shape bound to the issue token (the old guards were unanchored substring
+    # searches, so `x/issue-17; touch ...` slipped through). The anchored shape
+    # tolerates the br-/<project>-<lang>- self-describing scheme (#17) as well as
+    # legacy <fruit>/issue-N names — and, by anchoring, refuses a slug-embedded
+    # `-issue-M` from masquerading as the issue token.
+    if not branch or not is_safe_ref(branch):
+        die('branch "{}" contains unsafe characters — '
+            "only letters, digits, and . _ / - are allowed.".format(branch or "?"))
+    if not re.match(r"^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-\d+(?:-[A-Za-z0-9._-]+)?$", branch):
+        die('branch "{}" is not a [br-]<agent>/[<project>-<lang>-]issue-<N> worktree branch. '
+            "Wrong --branch, or a mislabeled worktree?".format(branch))
+    if not re.match(r"^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-{}(?:-[A-Za-z0-9._-]+)?$".format(issue), branch):
+        die('branch "{}" does not match issue #{}. Wrong worktree?'.format(branch, issue))
+
+    fruit = claim_core.infer_fruit_from_branch(branch)
+    # Operate from INSIDE the worktree (git land/rebase/push target its branch);
+    # finalize_close then chdirs back to `root` before teardown. When the caller
+    # ran from the main checkout, its shell cwd was never inside the deleted
+    # worktree, so it is never stranded — the whole point of #104. A child process
+    # cannot chdir its parent, so this "run from a stable cwd" design, not a
+    # post-teardown repair, is the durable fix.
+    os.chdir(wt_path)
+
+    closing_commit_sha = find_closing_commit_sha(issue)
+    if not closing_commit_sha:
+        # Recovery path: agent may have pushed before running close.
+        sh("git fetch origin main", True)
+        already_landed = find_closing_commit_on_main(issue)
+        if already_landed:
+            state = sh("gh issue view {} --json state -q .state".format(issue), True)
+            if state and state.strip().upper() != "OPEN":
+                log("commit {} already on origin/main and #{} is {} — treating as clean close.".format(
+                    already_landed[:12], issue, state.strip()))
+                delete_claim_ref(issue, log)
+                finalize_close(issue, branch, wt_path, root,
+                               already_landed, already_landed, opts["keep"])
+                return
+        # Diagnostic (#7): a close commit may already be on origin/main but lack the
+        # `Closes #N` keyword (e.g. pushed as `(#N)`). Name it instead of the generic
+        # "commit FIRST" message, which misdiagnoses an already-pushed commit.
+        ref = find_pushed_reference_on_main(issue)
+        if ref:
+            ref_sha, ref_subject = ref
+            die('Found pushed commit {} "{}" that references #{} but lacks the '
+                "`Closes #{}` keyword — GitHub will not auto-close it and close cannot "
+                "verify/teardown. Either amend the message to include `Closes #{}` "
+                "before pushing (if unshared), or close manually: gh issue close {}".format(
+                    ref_sha[:12], ref_subject, issue, issue, issue, issue))
+        die('No unpushed commit references "Closes #{}". Commit the close '
+            "(marker deletion + `Closes #N`) FIRST, then run close. "
+            "This tool lands an existing close commit; it does not author one.".format(issue))
+
+    # Scope audit (informational, non-blocking, skippable).
+    if not opts["skipScopeAudit"]:
+        sh("git fetch origin main", True)
+        base = (sh("git merge-base HEAD origin/main", True) or "").strip()
+        stat = sh(scope_audit_diff_command(base), True)
+        if stat and stat.strip():
+            label = "merge-base..HEAD" if base else "origin/main (fallback)"
+            print("[close] scope audit (git diff --stat {}):".format(label))
+            print(stat.rstrip())
+
+    # Velocity-row guard (#5, skippable): config-gated; SQLite is source of truth.
+    if not opts["skipVelocityCheck"]:
+        check_velocity_guard(issue, fruit)
+
+    # Guard 2 (keyword): closing commit subject vs issue title.
+    if not opts["skipKeywordCheck"]:
+        check_keyword_match(issue, closing_commit_sha)
+    # Guard (marker): the puzzle marker must have been deleted before closing.
+    if not opts["skipMarkerCheck"]:
+        check_marker_deleted(issue)
+
+    if rebase_or_merge_in_progress():
+        die("a rebase/merge is already in progress here — finish or abort it first.")
+    if not tree_is_clean():
+        die("working tree is not clean. Commit or stash everything into the close "
+            "commit first (this tool only pushes what is already committed).")
+
+    # Pre-close verify gate (#106, ruling Q2: runs LAST, just before land; skippable).
+    if not opts["skipVerify"]:
+        run_preclose_verify(opts, wt_path, root)
+
+    sha = head_sha()
+
+    if opts["dryRun"]:
+        log("would loop fetch/rebase/push (max {}), verify {} on origin/main, then {} the worktree.".format(
+            opts["max"], sha[:12] if sha else "", "KEEP" if opts["keep"] else "remove"))
+        report(issue, branch, wt_path, None, None, opts["keep"], True)
+        return
+
+    # --- land: loop fetch/rebase/push until it sticks or we give up.
+    landed = False
+    for attempt in range(1, opts["max"] + 1):
+        verdict = try_land()
+        if verdict == "ok":
+            landed = True
+            break
+        if verdict == "rejected-other":
+            die("push was rejected for a non-racy reason (hook, auth, or protected "
+                "branch) on attempt {}. Your commit is SAFE and local — "
+                "fix the cause and re-run close. Worktree left intact.".format(attempt))
+        log("push lost the race (attempt {}/{}) — re-fetching and retrying.".format(attempt, opts["max"]))
+    if not landed:
+        die("push lost the race {} times — main is hot right now. Your commit {} is "
+            "SAFE and local; re-run close (or raise --max). Worktree left intact, "
+            "NOT removed.".format(opts["max"], sha[:12] if sha else ""))
+
+    landed_sha = head_sha()
+    closing_on_main = find_closing_commit_on_main(issue)
+
+    # --- the gate: verify on origin/main before ANY teardown.
+    sh("git fetch origin main", True)
+    if not should_cleanup({"onOriginMain": on_origin_main(landed_sha)}):
+        die("push reported success but {} is NOT on origin/main — refusing to remove "
+            "the worktree. Investigate before cleaning up; your work is intact.".format(
+                landed_sha[:12] if landed_sha else ""))
+    if closing_on_main:
+        log("commit {} confirmed on origin/main.".format(closing_on_main[:12]))
+        if landed_sha and landed_sha != closing_on_main:
+            log("tip {} is the post-rebase HEAD.".format(landed_sha[:12]))
+    else:
+        log("commit {} confirmed on origin/main.".format(landed_sha[:12] if landed_sha else ""))
+
+    delete_claim_ref(issue, log)
+
+    # --- best-effort: confirm the issue actually closed (the keyword can lag).
+    if opts["verifyIssue"]:
+        st = sh("gh issue view {} --json state -q .state".format(issue), True)
+        if st and st.strip().upper() == "OPEN":
+            log("#{} still shows OPEN — closing it explicitly.".format(issue))
+            comment = "Closed via pmtools close (commit {} on main).".format(
+                landed_sha[:12] if landed_sha else "")
+            # arg-array exec (#37): the only gh WRITE call — argv, never shell-parsed.
+            subprocess.run(["gh", "issue", "close", str(issue), "-c", comment],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif st:
+            log("#{} is {}.".format(issue, st.strip()))
+
+    # --- best-effort: tick the parent tracker's checkbox for this child (#36 guard 3).
+    scan_parent_trackers(issue, opts)
+
+    # --- finalize: keep-vs-teardown tail, shared with the recovery path (#76).
+    finalize_close(issue, branch, wt_path, root,
+                   closing_on_main, landed_sha, opts["keep"])
+
+
+def _teardown(wt_path, branch, root):
+    """Remove the worktree + branch + prune. Run synchronously from root (the
+    detached-subprocess trick in close.js dodges an npm getcwd bug we don't have)."""
+    # arg-array exec, short-circuited to mirror the old `&&` chain (#37).
+    res = git_capture(["worktree", "remove", wt_path])
+    if res["ok"]:
+        res = git_capture(["branch", "-D", branch])
+    if res["ok"]:
+        git_capture(["worktree", "prune"])
+    if not res["ok"]:
+        sys.stderr.write("[close] note: teardown may have failed — check: git worktree list\n")
+
+
+def finalize_close(issue, branch, wt_path, root, closing_sha, landed_sha, keep):
+    """The shared post-`delete_claim_ref` tail of close — identical between the
+    recovery (already-pushed) and normal land paths (#76). `keep` → report + the
+    closing-comment prompt only; otherwise chdir to the main root, ff-pull main,
+    report, re-root note, prompt, and tear down the worktree. The comment-prompt sha
+    falls back closing→landed. Twin of js finalizeClose."""
+    prompt_sha = closing_sha or landed_sha
+    if keep:
+        report(issue, branch, wt_path, closing_sha, landed_sha, True, False)
+        log_comment_prompt(issue, prompt_sha)
+        return
+    os.chdir(root)
+    pull = sh_capture("git pull --ff-only origin main")
+    if pull["ok"]:
+        log("main checkout synced.")
+    else:
+        log("warn: ff pull of main skipped ({}). Sync manually: "
+            'git -C "{}" pull --ff-only origin main'.format(
+                pull["out"].strip().split(chr(10))[0][:80], root))
+    report(issue, branch, wt_path, closing_sha, landed_sha, False, False)
+    log("Shell re-root: cd \"{}\"".format(root))
+    log_comment_prompt(issue, prompt_sha)
+    _teardown(wt_path, branch, root)
+
+
+if __name__ == "__main__":
+    main()

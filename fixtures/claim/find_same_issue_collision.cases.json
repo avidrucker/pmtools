@@ -1,0 +1,25 @@
+[
+  { "name": "fires when a DIFFERENT branch carries the same issue (forced --as race)",
+    "args": [[
+      { "branch": "apple/issue-997-fix-a", "fruit": "apple", "issue": 997 },
+      { "branch": "apple-2/issue-997-fix-a", "fruit": "apple-2", "issue": 997 }
+    ], 997, "apple-2/issue-997-fix-a"],
+    "expected": { "branch": "apple/issue-997-fix-a", "fruit": "apple", "issue": 997 } },
+  { "name": "fires when ownBranch sorts first (racer last)",
+    "args": [[
+      { "branch": "cherry/issue-997-x", "fruit": "cherry", "issue": 997 },
+      { "branch": "banana/issue-997-x", "fruit": "banana", "issue": 997 }
+    ], 997, "cherry/issue-997-x"],
+    "expected": { "branch": "banana/issue-997-x", "fruit": "banana", "issue": 997 } },
+  { "name": "returns null when ownBranch is the sole worktree for the issue",
+    "args": [[{ "branch": "cherry/issue-997-x", "fruit": "cherry", "issue": 997 }], 997, "cherry/issue-997-x"],
+    "expected": null },
+  { "name": "ignores worktrees for a different issue",
+    "args": [[
+      { "branch": "apple/issue-100-other", "fruit": "apple", "issue": 100 },
+      { "branch": "cherry/issue-997-x", "fruit": "cherry", "issue": 997 }
+    ], 997, "cherry/issue-997-x"],
+    "expected": null },
+  { "name": "returns null for empty entries", "args": [[], 997, "cherry/issue-997-x"], "expected": null },
+  { "name": "returns null for null entries", "args": [null, 997, "cherry/issue-997-x"], "expected": null }
+]

@@ -1,0 +1,8 @@
+[
+  { "name": "estimate minus actual", "args": [30, 25], "expected": 5 },
+  { "name": "negative delta when over estimate", "args": [20, 25], "expected": -5 },
+  { "name": "zero delta on the nose", "args": [25, 25], "expected": 0 },
+  { "name": "null estimate -> null", "args": [null, 25], "expected": null },
+  { "name": "null actual -> null", "args": [30, null], "expected": null },
+  { "name": "both null -> null", "args": [null, null], "expected": null }
+]

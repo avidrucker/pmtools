@@ -1,0 +1,9 @@
+[
+  { "name": "strips [OB-008]-style bracket prefix", "args": ["[OB-008] Fix the parser bug"], "expected": "fix-the-parser-bug" },
+  { "name": "lowercases and hyphenates", "args": ["Add Agent Identity Support"], "expected": "add-agent-identity-support" },
+  { "name": "keeps at most five parts", "args": ["one two three four five six seven"], "expected": "one-two-three-four-five" },
+  { "name": "trims leading and trailing separators", "args": ["  ::Hello, World!!  "], "expected": "hello-world" },
+  { "name": "collapses runs of non-alphanumerics", "args": ["foo___---bar"], "expected": "foo-bar" },
+  { "name": "numbers survive", "args": ["issue 179 part 2"], "expected": "issue-179-part-2" },
+  { "name": "empty string yields empty slug", "args": [""], "expected": "" }
+]

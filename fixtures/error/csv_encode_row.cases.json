@@ -1,0 +1,21 @@
+[
+  { "name": "plain row needs no quoting",
+    "args": [{ "id": 1, "occurred_iso": "i", "agent": "apple", "model": "opus-4.8", "ticket": 3, "repo": "pmtools", "error_type": "OTHER", "message": "plain", "context": null, "notes": null },
+             ["id", "occurred_iso", "agent", "model", "ticket", "repo", "error_type", "message", "context", "notes"]],
+    "expected": "1,i,apple,opus-4.8,3,pmtools,OTHER,plain,," },
+
+  { "name": "a field with a comma is quoted",
+    "args": [{ "id": 1, "occurred_iso": "i", "agent": null, "model": null, "ticket": null, "repo": null, "error_type": null, "message": "a, b, c", "context": null, "notes": null },
+             ["id", "occurred_iso", "agent", "model", "ticket", "repo", "error_type", "message", "context", "notes"]],
+    "expected": "1,i,,,,,,\"a, b, c\",," },
+
+  { "name": "a field with a double-quote is quote-doubled",
+    "args": [{ "id": 1, "occurred_iso": "i", "agent": null, "model": null, "ticket": null, "repo": null, "error_type": null, "message": "say \"hi\"", "context": null, "notes": null },
+             ["id", "occurred_iso", "agent", "model", "ticket", "repo", "error_type", "message", "context", "notes"]],
+    "expected": "1,i,,,,,,\"say \"\"hi\"\"\",," },
+
+  { "name": "a field with a newline is quoted",
+    "args": [{ "id": 1, "occurred_iso": "i", "agent": null, "model": null, "ticket": null, "repo": null, "error_type": null, "message": "line1\nline2", "context": null, "notes": null },
+             ["id", "occurred_iso", "agent", "model", "ticket", "repo", "error_type", "message", "context", "notes"]],
+    "expected": "1,i,,,,,,\"line1\nline2\",," }
+]

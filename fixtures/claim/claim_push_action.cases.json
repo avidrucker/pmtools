@@ -1,0 +1,8 @@
+[
+  { "name": "CONFLICT → ROLLBACK_DIE", "args": ["CONFLICT", false], "expected": "ROLLBACK_DIE" },
+  { "name": "TRANSIENT → WARN_PROCEED", "args": ["TRANSIENT", false], "expected": "WARN_PROCEED" },
+  { "name": "OK → PROCEED", "args": ["OK", false], "expected": "PROCEED" },
+  { "name": "--force → PROCEED even on CONFLICT", "args": ["CONFLICT", true], "expected": "PROCEED" },
+  { "name": "--force → PROCEED on TRANSIENT", "args": ["TRANSIENT", true], "expected": "PROCEED" },
+  { "name": "--force → PROCEED on OK", "args": ["OK", true], "expected": "PROCEED" }
+]

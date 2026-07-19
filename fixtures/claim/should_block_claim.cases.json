@@ -1,0 +1,12 @@
+[
+  { "name": "a definitively CLOSED issue is blocked",
+    "args": [{ "title": "t", "state": "CLOSED" }, false], "expected": true },
+  { "name": "an OPEN issue is not blocked",
+    "args": [{ "title": "t", "state": "OPEN" }, false], "expected": false },
+  { "name": "--force bypasses the block even for a CLOSED issue",
+    "args": [{ "title": "t", "state": "CLOSED" }, true], "expected": false },
+  { "name": "null info (gh unavailable) is best-effort: not blocked",
+    "args": [null, false], "expected": false },
+  { "name": "an empty state is not blocked (only CLOSED is definitive)",
+    "args": [{ "title": "t", "state": "" }, false], "expected": false }
+]

@@ -1,0 +1,15 @@
+[
+  { "name": "fruit/issue branch is safe", "args": ["grape/issue-37"], "expected": true },
+  { "name": "slugged worktree branch is safe", "args": ["apple/issue-5-fix-the-widget"], "expected": true },
+  { "name": "remote-qualified ref is safe (slash)", "args": ["origin/main"], "expected": true },
+  { "name": "dotted name is safe", "args": ["v1.2.3"], "expected": true },
+  { "name": "semicolon command-chain is rejected", "args": ["apple/issue-37;touch f"], "expected": false },
+  { "name": "branch teardown injection payload is rejected", "args": ["x/issue-1;touch /tmp/x;true"], "expected": false },
+  { "name": "whitespace is rejected", "args": ["x y"], "expected": false },
+  { "name": "command substitution is rejected", "args": ["$(touch f)"], "expected": false },
+  { "name": "backtick substitution is rejected", "args": ["`touch f`"], "expected": false },
+  { "name": "logical-and is rejected", "args": ["a&&b"], "expected": false },
+  { "name": "pipe is rejected", "args": ["a|b"], "expected": false },
+  { "name": "newline is rejected", "args": ["x\nrm -rf"], "expected": false },
+  { "name": "empty string is rejected", "args": [""], "expected": false }
+]

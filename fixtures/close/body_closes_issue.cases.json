@@ -1,0 +1,18 @@
+[
+  { "name": "single commit body with Closes #N → true",
+    "args": ["fix: fix the close bug\n\nCloses #619\n", "619"], "expected": true },
+  { "name": "concatenated bodies contain the close keyword → true",
+    "args": ["data(velocity): log #619 DEV close-scan fix\n\n\nfix: close.js — scan unpushed set\n\nCloses #619\n", "619"], "expected": true },
+  { "name": "no Closes keyword → false",
+    "args": ["data(velocity): log #619 DEV close-scan fix", "619"], "expected": false },
+  { "name": "CLOSES variant accepted", "args": ["CLOSES #619", "619"], "expected": true },
+  { "name": "Fixed variant accepted", "args": ["Fixed #619", "619"], "expected": true },
+  { "name": "Resolves variant accepted", "args": ["Resolves #619", "619"], "expected": true },
+  { "name": "close variant accepted", "args": ["close #619", "619"], "expected": true },
+  { "name": "resolve variant accepted", "args": ["resolve #619", "619"], "expected": true },
+  { "name": "wrong issue number → false", "args": ["Closes #620", "619"], "expected": false },
+  { "name": "issue number mid-word does not match (word boundary)",
+    "args": ["Closes #6190", "619"], "expected": false },
+  { "name": "empty → false", "args": ["", "619"], "expected": false },
+  { "name": "null → false", "args": [null, "619"], "expected": false }
+]

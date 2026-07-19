@@ -1,0 +1,7 @@
+{
+  "markers": [
+    { "issue": 300, "file": "a.js", "line": 1, "keyword": "@todo", "state": "OPEN", "worktree": null, "status": "IDLE", "blocked": true },
+    { "issue": 301, "file": "b.js", "line": 2, "keyword": "@todo", "state": "OPEN", "worktree": null, "status": "IDLE", "blocked": false }
+  ],
+  "stale": []
+}

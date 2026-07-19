@@ -1,0 +1,16 @@
+{
+  "grep": [
+    { "file": "src/a.py", "line": 42, "keyword": "@todo", "issue": 179 },
+    { "file": "src/b.py", "line": 10, "keyword": "@todo", "issue": 180 },
+    { "file": "src/c.py", "line": 7, "keyword": "@inprogress", "issue": 181 },
+    { "file": "src/d.py", "line": 99, "keyword": "@todo", "issue": 182 }
+  ],
+  "worktrees": [
+    { "branch": "apple/issue-180-foo", "issue": 180, "agent": "apple" }
+  ],
+  "issues": [
+    { "number": 179, "state": "CLOSED" },
+    { "number": 180, "state": "OPEN" },
+    { "number": 181, "state": "OPEN" }
+  ]
+}

@@ -1,0 +1,12 @@
+[
+  { "name": "fresh sentinel (1 hour old) → not stale",
+    "args": [1699996400, 1700000000, 604800], "expected": false },
+  { "name": "stale sentinel (one second past max age) → stale",
+    "args": [1699395199, 1700000000, 604800], "expected": true },
+  { "name": "sentinel exactly at max age → not stale (strictly greater)",
+    "args": [1699395200, 1700000000, 604800], "expected": false },
+  { "name": "6 days old under the 7-day default → not stale",
+    "args": [1699481600, 1700000000], "expected": false },
+  { "name": "8 days old under the 7-day default → stale",
+    "args": [1699308800, 1700000000], "expected": true }
+]

@@ -1,0 +1,20 @@
+[
+  { "name": "known fruit via --as → null (no action)",
+    "args": [{ "name": "apple", "source": "as" }, { "custom": false }], "expected": null },
+  { "name": "unknown name via --as without --custom → warn",
+    "args": [{ "name": "durian", "source": "as" }, { "custom": false }],
+    "expected": { "warn": "\"durian\" is not in the known fruit list — using it anyway." } },
+  { "name": "unknown name via --as with --custom → still a warn",
+    "args": [{ "name": "custard", "source": "as" }, { "custom": true }],
+    "expected": { "warn": "\"custard\" is not in the known fruit list — using it anyway." } },
+  { "name": "unknown name via env → warn regardless of --custom",
+    "args": [{ "name": "custard", "source": "env" }, { "custom": false }],
+    "expected": { "warn": "\"custard\" is not in the known fruit list — using it anyway." } },
+  { "name": "unknown name via branch-inference → warn",
+    "args": [{ "name": "custard", "source": "branch" }, { "custom": false }],
+    "expected": { "warn": "\"custard\" is not in the known fruit list — using it anyway." } },
+  { "name": "auto source (name null) → null",
+    "args": [{ "name": null, "source": "auto" }, { "custom": false }], "expected": null },
+  { "name": "known fruit via env → null",
+    "args": [{ "name": "cherry", "source": "env" }, { "custom": false }], "expected": null }
+]

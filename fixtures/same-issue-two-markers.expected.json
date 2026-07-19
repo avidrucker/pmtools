@@ -1,0 +1,9 @@
+{
+  "markers": [
+    { "issue": 300, "file": "src/x.py", "line": 3, "keyword": "@todo", "state": "OPEN", "worktree": null, "status": "IDLE", "blocked": false },
+    { "issue": 300, "file": "docs/notes.md", "line": 88, "keyword": "@inprogress", "state": "OPEN", "worktree": null, "status": "STALE", "blocked": false }
+  ],
+  "stale": [
+    { "issue": 300, "file": "docs/notes.md", "line": 88, "keyword": "@inprogress", "state": "OPEN", "worktree": null, "status": "STALE", "blocked": false }
+  ]
+}

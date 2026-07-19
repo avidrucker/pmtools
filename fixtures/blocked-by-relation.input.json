@@ -1,0 +1,11 @@
+{
+  "grep": [
+    { "file": "a.js", "line": 1, "keyword": "@todo", "issue": 300 },
+    { "file": "b.js", "line": 2, "keyword": "@todo", "issue": 301 }
+  ],
+  "worktrees": [],
+  "issues": [
+    { "number": 300, "state": "OPEN", "labels": ["bug"], "blockedByCount": 2 },
+    { "number": 301, "state": "OPEN", "labels": [], "blockedByCount": 0 }
+  ]
+}

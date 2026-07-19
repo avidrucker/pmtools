@@ -1,0 +1,18 @@
+[
+  { "name": "true when >=1 word in common",
+    "args": [["migration", "model"], ["velocity", "migration"]], "expected": true },
+  { "name": "false when no words in common",
+    "args": [["migration", "model"], ["cherry", "hardening"]], "expected": false },
+  { "name": "false for empty title words",
+    "args": [[], ["migration"]], "expected": false },
+  { "name": "false for empty subject words",
+    "args": [["migration"], []], "expected": false },
+  { "name": "false when both empty",
+    "args": [[], []], "expected": false },
+  { "name": "null arrays handled safely",
+    "args": [null, null], "expected": false },
+  { "name": "null title, real subject → false",
+    "args": [null, ["migration"]], "expected": false },
+  { "name": "real title, null subject → false",
+    "args": [["migration"], null], "expected": false }
+]

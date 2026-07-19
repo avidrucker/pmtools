@@ -1,0 +1,39 @@
+[
+  { "name": "minimal valid row (role + agent) derives null deltas",
+    "args": [{ "role": "DEV", "agent": "apple" }],
+    "expected": { "ticket": null, "title": null, "role": "DEV", "h_min": null, "c_min": null, "actual_min": null, "delta_h_min": null, "delta_c_min": null, "started_iso": null, "finished_iso": null, "closed_commit": null, "notes": null, "agent": "apple", "model": null, "repo": null } },
+
+  { "name": "full valid row derives both deltas (estimate - actual)",
+    "args": [{ "ticket": 3, "title": "do the thing", "role": "DEV", "h_min": 30, "c_min": 20, "actual_min": 25, "started_iso": "2026-06-23T10:00:00-1000", "finished_iso": "2026-06-23T10:25:00-1000", "closed_commit": "abc123", "notes": "n", "agent": "apple", "model": "opus-4.8", "repo": "pmtools" }],
+    "expected": { "ticket": 3, "title": "do the thing", "role": "DEV", "h_min": 30, "c_min": 20, "actual_min": 25, "delta_h_min": 5, "delta_c_min": -5, "started_iso": "2026-06-23T10:00:00-1000", "finished_iso": "2026-06-23T10:25:00-1000", "closed_commit": "abc123", "notes": "n", "agent": "apple", "model": "opus-4.8", "repo": "pmtools" } },
+
+  { "name": "delta is null when actual_min is omitted",
+    "args": [{ "role": "TEST", "agent": "banana", "h_min": 30, "c_min": 20 }],
+    "expected": { "ticket": null, "title": null, "role": "TEST", "h_min": 30, "c_min": 20, "actual_min": null, "delta_h_min": null, "delta_c_min": null, "started_iso": null, "finished_iso": null, "closed_commit": null, "notes": null, "agent": "banana", "model": null, "repo": null } },
+
+  { "name": "delta_c_min is null when only c_min operand is missing but h_min present",
+    "args": [{ "role": "DEV", "agent": "apple", "h_min": 30, "actual_min": 10 }],
+    "expected": { "ticket": null, "title": null, "role": "DEV", "h_min": 30, "c_min": null, "actual_min": 10, "delta_h_min": 20, "delta_c_min": null, "started_iso": null, "finished_iso": null, "closed_commit": null, "notes": null, "agent": "apple", "model": null, "repo": null } },
+
+  { "name": "a non-canonical model is RECORDED (notice-not-reject)",
+    "args": [{ "role": "DEV", "agent": "apple", "model": "Opus 4.8" }],
+    "expected": { "ticket": null, "title": null, "role": "DEV", "h_min": null, "c_min": null, "actual_min": null, "delta_h_min": null, "delta_c_min": null, "started_iso": null, "finished_iso": null, "closed_commit": null, "notes": null, "agent": "apple", "model": "Opus 4.8", "repo": null } },
+
+  { "name": "missing role raises",
+    "args": [{ "agent": "apple" }], "expected_error": true },
+
+  { "name": "missing agent raises",
+    "args": [{ "role": "DEV" }], "expected_error": true },
+
+  { "name": "unknown role raises (closed vocabulary)",
+    "args": [{ "role": "PROGRAMMER", "agent": "apple" }], "expected_error": true },
+
+  { "name": "non-positive ticket raises",
+    "args": [{ "role": "DEV", "agent": "apple", "ticket": -1 }], "expected_error": true },
+
+  { "name": "negative h_min raises",
+    "args": [{ "role": "DEV", "agent": "apple", "h_min": -5 }], "expected_error": true },
+
+  { "name": "non-numeric actual_min raises",
+    "args": [{ "role": "DEV", "agent": "apple", "actual_min": "soon" }], "expected_error": true }
+]

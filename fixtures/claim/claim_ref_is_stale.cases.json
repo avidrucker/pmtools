@@ -1,0 +1,22 @@
+[
+  { "name": "CLOSED issue → stale (claim outlived its issue)",
+    "args": [{ "issueState": "CLOSED", "claimCommitTs": 1000000000, "nowS": 1000000000, "ttl": 172800 }], "expected": true },
+  { "name": "MERGED issue → stale",
+    "args": [{ "issueState": "MERGED", "claimCommitTs": 1000000000, "nowS": 1000000000, "ttl": 172800 }], "expected": true },
+  { "name": "OPEN + fresh claim → not stale",
+    "args": [{ "issueState": "OPEN", "claimCommitTs": 999996400, "nowS": 1000000000, "ttl": 172800 }], "expected": false },
+  { "name": "OPEN + claim older than TTL → stale (abandoned)",
+    "args": [{ "issueState": "OPEN", "claimCommitTs": 999827199, "nowS": 1000000000, "ttl": 172800 }], "expected": true },
+  { "name": "OPEN exactly at TTL boundary → not stale (strictly greater)",
+    "args": [{ "issueState": "OPEN", "claimCommitTs": 999827200, "nowS": 1000000000, "ttl": 172800 }], "expected": false },
+  { "name": "OPEN with null commit timestamp → not stale (TTL undecidable)",
+    "args": [{ "issueState": "OPEN", "claimCommitTs": null, "nowS": 1000000000, "ttl": 172800 }], "expected": false },
+  { "name": "unknown state null (gh offline) → not stale",
+    "args": [{ "issueState": null, "claimCommitTs": 999827199, "nowS": 1000000000, "ttl": 172800 }], "expected": false },
+  { "name": "unknown state empty string → not stale",
+    "args": [{ "issueState": "", "claimCommitTs": 1000000000, "nowS": 1000000000, "ttl": 172800 }], "expected": false },
+  { "name": "case/whitespace tolerant on state ( closed )",
+    "args": [{ "issueState": " closed ", "claimCommitTs": 1000000000, "nowS": 1000000000, "ttl": 172800 }], "expected": true },
+  { "name": "defaults ttl to CLAIM_REF_MAX_AGE_S when omitted (3 days old → stale)",
+    "args": [{ "issueState": "OPEN", "claimCommitTs": 999740800, "nowS": 1000000000 }], "expected": true }
+]

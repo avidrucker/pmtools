@@ -1,0 +1,27 @@
+[
+  {
+    "name": "full human row computes ice_score",
+    "args": [{ "issue": 1360, "I": 1, "C": 0.8, "E": 10, "title": "x", "tier": "", "provisional": 0 }],
+    "expected": { "issue": 1360, "title": "x", "type": null, "I": 1, "C": 0.8, "E": 10, "ice_score": 8, "tier": "", "yegor_priority": null, "actionable": "Y", "provisional": 0, "labels": null, "notes": null }
+  },
+  {
+    "name": "minimal (issue only) leaves scores null",
+    "args": [{ "issue": 42 }],
+    "expected": { "issue": 42, "title": null, "type": null, "I": null, "C": null, "E": null, "ice_score": null, "tier": "", "yegor_priority": null, "actionable": "Y", "provisional": 0, "labels": null, "notes": null }
+  },
+  {
+    "name": "provisional auto row keeps flag + notes",
+    "args": [{ "issue": 99, "I": 0.5, "C": 0.8, "E": 5, "provisional": 1, "notes": "auto-swept" }],
+    "expected": { "issue": 99, "title": null, "type": null, "I": 0.5, "C": 0.8, "E": 5, "ice_score": 2, "tier": "", "yegor_priority": null, "actionable": "Y", "provisional": 1, "labels": null, "notes": "auto-swept" }
+  },
+  {
+    "name": "critical tier preserved",
+    "args": [{ "issue": 7, "I": 2, "C": 1.0, "E": 7, "tier": "critical" }],
+    "expected": { "issue": 7, "title": null, "type": null, "I": 2, "C": 1, "E": 7, "ice_score": 14, "tier": "critical", "yegor_priority": null, "actionable": "Y", "provisional": 0, "labels": null, "notes": null }
+  },
+  { "name": "missing issue raises", "args": [{ "I": 1, "C": 0.8, "E": 5 }], "expected_error": true },
+  { "name": "issue zero raises", "args": [{ "issue": 0 }], "expected_error": true },
+  { "name": "I outside vocabulary raises", "args": [{ "issue": 5, "I": 4 }], "expected_error": true },
+  { "name": "C outside vocabulary raises", "args": [{ "issue": 5, "C": 0.9 }], "expected_error": true },
+  { "name": "E outside vocabulary raises", "args": [{ "issue": 5, "E": 6 }], "expected_error": true }
+]

@@ -1,0 +1,8 @@
+[
+  { "name": "emits the deleting refspec for the issue (normal close)",
+    "args": [1039], "expected": "git push origin :refs/claims/issue-1039" },
+  { "name": "same command regardless of mode (issue-keyed)",
+    "args": [42], "expected": "git push origin :refs/claims/issue-42" },
+  { "name": "string issue number is interpolated verbatim",
+    "args": ["7"], "expected": "git push origin :refs/claims/issue-7" }
+]

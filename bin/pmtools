@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# pmtools — self-locating dispatcher.
+#
+# Resolves its OWN clone root (following symlinks), so the clone can live
+# anywhere and `pmtools` works from any cwd once this script is on PATH —
+# no hardcoded paths in any consumer config.
+#
+#   pmtools <status|claim|preflight|close|error|velocity> [--port py|js] [args...]
+#
+# Clone root:  $PMTOOLS_HOME  >  self-resolved (this script's dir/..)
+# Port:        --port <py|js>  >  $PMTOOLS_PORT  >  py (default)
+set -euo pipefail
+
+# Resolve this script's real path, following a chain of symlinks, without
+# depending on GNU `realpath` (portable to macOS too).
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+selfdir="$(cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd)"
+
+root="${PMTOOLS_HOME:-$(dirname "$selfdir")}"   # bin/.. == clone root
+port="${PMTOOLS_PORT:-py}"
+
+# Pull out the dispatcher-level --port flag wherever it appears; keep the rest
+# (command + the tool's own args) intact and in order.
+# `--help`/`-h` is command-aware (#117): GLOBAL only when it precedes any command
+# (prints the banner below); once a command has been seen it passes THROUGH to
+# that command, which prints its own usage at exit 0.
+args=()
+show_help=false
+seen_cmd=false
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --port)
+      if [ $# -lt 2 ]; then
+        echo "pmtools: --port requires a value (py|js)" >&2; exit 2
+      fi
+      port="$2"; shift 2 ;;
+    --help|-h)
+      if $seen_cmd; then args+=("$1"); else show_help=true; fi
+      shift ;;
+    *) args+=("$1"); seen_cmd=true; shift ;;
+  esac
+done
+
+cmd="${args[0]:-}"
+rest=("${args[@]:1}")
+
+if $show_help || [ -z "$cmd" ]; then
+    cat <<'HELPTEXT'
+pmtools — project-management helpers for the fruit-agent workflow.
+
+USAGE
+  pmtools <command> [--port py|js] [args...]
+  pmtools --help
+
+COMMANDS
+  status      Reconcile @todo/@inprogress markers against worktrees + issue state.
+  file        Create an issue through config-driven requirement gates (alias: create).
+  claim       Stake a worktree under an agent identity for a given issue.
+  preflight   Stamp start time, run start-of-task reads, assert issue OPEN.
+  close       Land the close commit on origin/main, then tear down the worktree.
+  release     Abandon a claim + tear down its worktree (issue stays OPEN).
+  sweep       Delete stale refs/claims/issue-N whose issue is CLOSED.
+  error       Log an agent error into the SQLite errors store.
+  velocity    Log a velocity row into the SQLite velocity store.
+  ice         Score GitHub issues by ICE (Impact x Confidence x Ease).
+
+FLAGS
+  --port py|js   Port to run (default: py). Overrides $PMTOOLS_PORT.
+  --help, -h     Show this help message.
+  --json         Output machine-readable JSON (where supported).
+
+EXAMPLES
+  pmtools status --json
+  pmtools file --title "feat: x" --area config --role DEV --body-file b.md
+  pmtools claim 42 --as apple
+  pmtools preflight 42
+  pmtools close 42
+  pmtools error log '{"occurred_iso":"...","error_type":"CLAIM_FAIL","message":"...","ticket":3}'
+  pmtools velocity log '{"role":"DEV","agent":"apple","ticket":3,"h_min":30,"actual_min":25}'
+  pmtools ice score '{"42":{"I":1,"C":0.8,"E":5}}'
+  pmtools ice score --auto
+  pmtools ice list --json
+
+CONFIG
+  ~/.config/pycats/settings.json   Per-project persisted preferences.
+  .claude/orchestrate.json          Fleet config (roster, worktree-dir, storage).
+  $PMTOOLS_HOME                    Override clone root (else self-resolved).
+  $PMTOOLS_PORT                    Override port (py|js).
+
+DOCS
+  CONTRACT.md   Language-neutral behavioral source of truth.
+  README.md     Install guide and project overview.
+HELPTEXT
+    exit 0
+fi
+
+# `create` is an alias for `file` (#111): normalize before dispatch.
+[ "$cmd" = create ] && cmd=file
+
+case "$cmd" in
+  status|file|claim|preflight|close|release|sweep|error|velocity|ice) ;;
+  *) echo "pmtools: unknown command '$cmd' (run 'pmtools --help' for usage)" >&2; exit 2 ;;
+esac
+
+case "$port" in
+  py) exec python3 "$root/py/$cmd.py" "${rest[@]}" ;;
+  js) exec node    "$root/js/$cmd.js" "${rest[@]}" ;;
+  *)  echo "pmtools: unknown port '$port' (expected py|js)" >&2; exit 2 ;;
+esac

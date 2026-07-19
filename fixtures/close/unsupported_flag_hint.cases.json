@@ -1,0 +1,13 @@
+[
+  { "name": "--as → teaching message (claim takes it; close infers identity)",
+    "args": ["--as"],
+    "expected": "`close` takes no --as; identity is inferred from the worktree branch ([br-]<agent>/issue-N), resolved from the issue number. Just run (from the main checkout): cd <main> && pmtools close <N>." },
+  { "name": "--branch is a real close flag → no hint (null)",
+    "args": ["--branch"], "expected": null },
+  { "name": "genuinely unknown flag → null (keeps generic rejection)",
+    "args": ["--bogus"], "expected": null },
+  { "name": "near-miss --as-if is not --as → null",
+    "args": ["--as-if"], "expected": null },
+  { "name": "empty → null", "args": [""], "expected": null },
+  { "name": "null → null", "args": [null], "expected": null }
+]

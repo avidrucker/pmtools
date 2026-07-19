@@ -1,0 +1,15 @@
+[
+  { "name": "extracts fruit from a canonical worktree branch", "args": ["cherry/issue-180-some-slug"], "expected": "cherry" },
+  { "name": "extracts fruit when branch has no slug tail", "args": ["apple/issue-99"], "expected": "apple" },
+  { "name": "returns null for main", "args": ["main"], "expected": null },
+  { "name": "returns null for a feature branch without issue-N", "args": ["feature/some-thing"], "expected": null },
+  { "name": "returns null for null", "args": [null], "expected": null },
+  { "name": "returns null for empty string", "args": [""], "expected": null },
+  { "name": "rejects an uppercase fruit prefix (regex is [a-z]+)", "args": ["Cherry/issue-1"], "expected": null },
+  { "name": "extracts agent from a new-scheme branch with br- prefix + project-lang", "args": ["br-banana/lccjs-js-issue-1461-naming-scheme"], "expected": "banana" },
+  { "name": "extracts agent from a new-scheme branch with br- prefix, no project-lang", "args": ["br-apple/issue-99"], "expected": "apple" },
+  { "name": "extracts a hyphenated fallback identity (apple-2) — new scheme (#49)", "args": ["br-apple-2/demo-js-issue-41"], "expected": "apple-2" },
+  { "name": "extracts a hyphenated fallback identity (apple-2) — legacy (#49)", "args": ["apple-2/issue-41"], "expected": "apple-2" },
+  { "name": "multi-digit fallback suffix (banana-10) (#49)", "args": ["banana-10/issue-7"], "expected": "banana-10" },
+  { "name": "plain fruit not over-captured by the -N suffix (#49)", "args": ["br-apple/lccjs-js-issue-1461"], "expected": "apple" }
+]

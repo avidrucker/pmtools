@@ -1,0 +1,6 @@
+[
+  { "name": "lowercases and trims (env names are conventionally uppercase)", "args": ["  DRAGONFRUIT  "], "expected": "dragonfruit" },
+  { "name": "leaves an already-lowercase fruit unchanged", "args": ["banana"], "expected": "banana" },
+  { "name": "mixed case is lowercased", "args": ["Pineapple"], "expected": "pineapple" },
+  { "name": "internal whitespace is preserved (only ends trimmed)", "args": [" red apple "], "expected": "red apple" }
+]

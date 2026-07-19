@@ -1,0 +1,8 @@
+[
+  { "name": "empty list → false (Check A: no velocity row)", "args": [[]], "expected": false },
+  { "name": "one row → true", "args": [[{ "ticket": 5, "agent": "apple" }]], "expected": true },
+  { "name": "several rows → true",
+    "args": [[{ "ticket": 5, "agent": "apple" }, { "ticket": 5, "agent": "banana" }]],
+    "expected": true },
+  { "name": "null → false", "args": [null], "expected": false }
+]

@@ -1,0 +1,10 @@
+[
+  { "name": "all tickets match the issue → empty (consistent)", "args": [[5, 5], "5"], "expected": [] },
+  { "name": "one ticket off → that ticket reported", "args": [[5, 6], "5"], "expected": [6] },
+  { "name": "none match → all reported", "args": [[6, 7], "5"], "expected": [6, 7] },
+  { "name": "no tickets (no row added) → empty", "args": [[], "5"], "expected": [] },
+  { "name": "numeric issue arg coerces", "args": [[6], 5], "expected": [6] },
+  { "name": "null tickets → empty", "args": [null, "5"], "expected": [] },
+  { "name": "null element (issueless PM row) ignored → empty (#56)", "args": [[null, 5], "5"], "expected": [] },
+  { "name": "null element among off-tickets → only the real off-ticket reported (#56)", "args": [[null, 6], "5"], "expected": [6] }
+]

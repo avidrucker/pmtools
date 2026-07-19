@@ -1,0 +1,10 @@
+[
+  { "name": "onOriginMain true → cleanup permitted",
+    "args": [{ "onOriginMain": true }], "expected": true },
+  { "name": "onOriginMain false → cleanup blocked",
+    "args": [{ "onOriginMain": false }], "expected": false },
+  { "name": "onOriginMain null → cleanup blocked (=== true required)",
+    "args": [{ "onOriginMain": null }], "expected": false },
+  { "name": "empty object → cleanup blocked",
+    "args": [{}], "expected": false }
+]

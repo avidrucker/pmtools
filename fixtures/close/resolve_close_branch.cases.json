@@ -1,0 +1,20 @@
+[
+  { "name": "from main (#104): no --branch, cwd on main → the worktree's branch",
+    "args": [{ "path": "/wt/wt-dragonfruit-issue-104", "branch": "br-dragonfruit/issue-104" }, null, "main"],
+    "expected": "br-dragonfruit/issue-104" },
+  { "name": "from inside the worktree: cwd branch already the worktree branch → unchanged",
+    "args": [{ "path": "/wt/grape-issue-22", "branch": "grape/issue-22" }, null, "grape/issue-22"],
+    "expected": "grape/issue-22" },
+  { "name": "explicit --branch overrides the resolved worktree branch",
+    "args": [{ "path": "/wt/x-issue-5", "branch": "auto/issue-5" }, "br-me/issue-5", "main"],
+    "expected": "br-me/issue-5" },
+  { "name": "explicit --branch wins even with no worktree resolved",
+    "args": [null, "br-me/issue-5", "main"],
+    "expected": "br-me/issue-5" },
+  { "name": "no worktree, no --branch → cwd branch (caller then validates/dies)",
+    "args": [null, null, "main"],
+    "expected": "main" },
+  { "name": "detached worktree (branch null) → falls back to cwd branch",
+    "args": [{ "path": "/wt/x-issue-7", "branch": null }, null, "main"],
+    "expected": "main" }
+]

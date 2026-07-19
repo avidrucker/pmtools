@@ -1,0 +1,41 @@
+[
+  { "name": "minimal valid row (occurred_iso + message) normalizes empties to null",
+    "args": [{ "occurred_iso": "2026-06-23T10:00:00-1000", "message": "boom" }],
+    "expected": { "occurred_iso": "2026-06-23T10:00:00-1000", "agent": null, "model": null, "ticket": null, "repo": null, "error_type": null, "message": "boom", "context": null, "notes": null } },
+
+  { "name": "full valid row with object context serialized to compact JSON",
+    "args": [{ "occurred_iso": "2026-06-23T10:00:00-1000", "agent": "apple", "model": "opus-4.8", "ticket": 3, "repo": "pmtools", "error_type": "CLAIM_FAIL", "message": "could not claim", "context": { "issue": 3, "k": "v" }, "notes": "n" }],
+    "expected": { "occurred_iso": "2026-06-23T10:00:00-1000", "agent": "apple", "model": "opus-4.8", "ticket": 3, "repo": "pmtools", "error_type": "CLAIM_FAIL", "message": "could not claim", "context": "{\"issue\":3,\"k\":\"v\"}", "notes": "n" } },
+
+  { "name": "a valid JSON string context passes through unchanged",
+    "args": [{ "occurred_iso": "2026-06-23T10:00:00-1000", "message": "m", "context": "{\"a\":1}" }],
+    "expected": { "occurred_iso": "2026-06-23T10:00:00-1000", "agent": null, "model": null, "ticket": null, "repo": null, "error_type": null, "message": "m", "context": "{\"a\":1}", "notes": null } },
+
+  { "name": "every valid error_type is accepted (OTHER)",
+    "args": [{ "occurred_iso": "i", "message": "m", "error_type": "OTHER" }],
+    "expected": { "occurred_iso": "i", "agent": null, "model": null, "ticket": null, "repo": null, "error_type": "OTHER", "message": "m", "context": null, "notes": null } },
+
+  { "name": "missing occurred_iso raises",
+    "args": [{ "message": "boom" }], "expected_error": true },
+
+  { "name": "missing message raises",
+    "args": [{ "occurred_iso": "i" }], "expected_error": true },
+
+  { "name": "whitespace-only message raises",
+    "args": [{ "occurred_iso": "i", "message": "   " }], "expected_error": true },
+
+  { "name": "unknown error_type raises",
+    "args": [{ "occurred_iso": "i", "message": "m", "error_type": "NOPE_FAIL" }], "expected_error": true },
+
+  { "name": "non-canonical model raises",
+    "args": [{ "occurred_iso": "i", "message": "m", "model": "Opus 4.8" }], "expected_error": true },
+
+  { "name": "non-integer ticket raises",
+    "args": [{ "occurred_iso": "i", "message": "m", "ticket": "3" }], "expected_error": true },
+
+  { "name": "non-positive ticket raises",
+    "args": [{ "occurred_iso": "i", "message": "m", "ticket": 0 }], "expected_error": true },
+
+  { "name": "non-JSON string context raises",
+    "args": [{ "occurred_iso": "i", "message": "m", "context": "not json" }], "expected_error": true }
+]
