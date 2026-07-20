@@ -14,6 +14,8 @@
 // and classifyRebaseConflict treats any conflict as 'blocking'.
 'use strict';
 
+const { parseBranchName, parseWorktreeName } = require('./claim_core');
+
 const DEFAULT_MAX_RETRIES = 5;
 
 // --- injection safety (#37) ------------------------------------------------
@@ -302,17 +304,22 @@ function parseWorktreePorcelain(porcelain) {
   return rows;
 }
 
-// The worktree staked for issue N: branch matching `[-/]issue-<N>` (so both
-// legacy `<agent>/issue-<N>` and new-scheme `…-issue-<N>` branches match by
-// branch, mirroring claimCore.worktreesWithIssue, #51) or path basename ending
-// `-issue-<N>`. Skips the main entry (rows[0]). The `(?:[^0-9]|$)` boundary
-// keeps `issue-9` from matching `issue-99`. Pure: rows + issue → {path, branch} | null.
+// The worktree staked for issue N: resolve each row by parsing its branch and its
+// path basename through the canonical name parsers (claimCore, the single source of
+// truth for all three schemes — standard `…-<N>`, self-describing `…-issue-<N>`, and
+// legacy `<fruit>/issue-<N>`) and comparing the parsed issue to N. Skips the main
+// entry (rows[0]). Int-equality on the parsed issue keeps `9` from matching `99`.
+// `issue` may arrive as a number (fixtures) or a digit string (the live wrapper's
+// positional arg) — both normalize. Pure: rows + issue → {path, branch} | null.
 function findWorktreeForIssue(rows, issue) {
-  const reBranch = new RegExp(`[-/]issue-${issue}(?:[^0-9]|$)`);
-  const rePath = new RegExp(`-issue-${issue}$`);
+  const want = Number(issue);
+  if (!Number.isInteger(want)) return null;
   for (const r of (rows || []).slice(1)) {
+    const pb = r.branch ? parseBranchName(r.branch) : null;
+    if (pb && pb.issue === want) return r;
     const base = String(r.path).split('/').pop();
-    if ((r.branch && reBranch.test(r.branch)) || rePath.test(base)) return r;
+    const pw = parseWorktreeName(base);
+    if (pw && pw.issue === want) return r;
   }
   return null;
 }

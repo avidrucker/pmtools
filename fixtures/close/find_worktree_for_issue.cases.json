@@ -14,5 +14,17 @@
   { "name": "never matches the main row (index 0)",
     "args": [[{ "path": "/wt-issue-22", "branch": "main" }], 22], "expected": null },
   { "name": "no candidate → null",
-    "args": [[{ "path": "/m", "branch": "main" }], 22], "expected": null }
+    "args": [[{ "path": "/m", "branch": "main" }], 22], "expected": null },
+  { "name": "standard branch (no issue- token) matches by branch (#135)",
+    "args": [[{ "path": "/m", "branch": "main" }, { "path": "/wt/wt-guava-pmtools-135", "branch": "br-guava/pmtools-135-bug-x" }], 135],
+    "expected": { "path": "/wt/wt-guava-pmtools-135", "branch": "br-guava/pmtools-135-bug-x" } },
+  { "name": "standard worktree matches by path basename when branch is null (#135)",
+    "args": [[{ "path": "/m", "branch": "main" }, { "path": "/wt/wt-apple-pycats-757", "branch": null }], 757],
+    "expected": { "path": "/wt/wt-apple-pycats-757", "branch": null } },
+  { "name": "standard proj-135 does NOT match issue 13 (int boundary, not substring) (#135)",
+    "args": [[{ "path": "/m", "branch": "main" }, { "path": "/wt/wt-x-proj-135", "branch": "br-x/proj-135" }], 13],
+    "expected": null },
+  { "name": "old self-describing …-issue-<N> still matches (tolerance) (#135)",
+    "args": [[{ "path": "/m", "branch": "main" }, { "path": "/wt/wt-apple-pycats-py-issue-757", "branch": "br-apple/pycats-py-issue-757-foo" }], 757],
+    "expected": { "path": "/wt/wt-apple-pycats-py-issue-757", "branch": "br-apple/pycats-py-issue-757-foo" } }
 ]

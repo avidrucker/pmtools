@@ -684,11 +684,18 @@ function main() {
     die(`branch "${branch || '?'}" contains unsafe characters — ` +
         'only letters, digits, and . _ / - are allowed.');
   }
-  if (!/^(?:br-)?[A-Za-z0-9._-]+\/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-\d+(?:-[A-Za-z0-9._-]+)?$/.test(branch)) {
-    die(`branch "${branch}" is not a [br-]<agent>/[<project>-<lang>-]issue-<N> worktree branch. ` +
+  // Shape + issue binding via the canonical parser (all three schemes, incl. the
+  // standard `…-<N>` form with no `issue-` token; #135). The parser is anchored, so a
+  // slug-embedded `-issue-M` / `-M` cannot masquerade as the issue token — the same
+  // anti-injection invariant the old anchored regexes gave, now sourced from the single
+  // name-parsing SSOT. isSafeRef above still guards the metacharacter set before this
+  // branch is interpolated into teardown's `git branch -D <branch>`.
+  const parsed = claimCore.parseBranchName(branch);
+  if (!parsed) {
+    die(`branch "${branch}" is not a [br-]<agent>/[<project>-[<lang>-]]<N> worktree branch. ` +
         'Wrong --branch, or a mislabeled worktree?');
   }
-  if (!new RegExp(`^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-${issue}(?:-[A-Za-z0-9._-]+)?$`).test(branch)) {
+  if (parsed.issue !== Number(issue)) {
     die(`branch "${branch}" does not match issue #${issue}. Wrong worktree?`);
   }
 

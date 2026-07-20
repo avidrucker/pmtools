@@ -56,9 +56,11 @@ function normalizeIdentity(s) {
 
 function inferFruitFromBranch(branch) {
   if (!branch) return null;
-  // agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
-  const m = branch.match(/^(?:br-)?([a-z0-9]+(?:-[0-9]+)?)\/(?:[a-z0-9]+-[a-z0-9]+-)?issue-\d+/);
-  return m ? m[1] : null;
+  // Any scheme (standard `…-<N>`, self-describing `…-issue-<N>`, legacy
+  // `<fruit>/issue-<N>`) via the canonical parser; the agent's `-<N>` collision-
+  // fallback suffix (#49) is already encoded there. parseBranchName is hoisted below.
+  const parsed = parseBranchName(branch);
+  return parsed ? parsed.agent : null;
 }
 
 // Parse `git ls-remote origin 'refs/claims/*'` output → sorted, unique claimed
@@ -169,8 +171,10 @@ function worktreesWithIssue(branches) {
   for (const entry of (branches || [])) {
     const branch = entry.branch;
     const fruit = entry.fruit;
-    const m = branch && branch.match(/[-/]issue-(\d+)/);
-    if (m) result.push({ branch, fruit, issue: Number(m[1]) });
+    // Canonical parseBranchName covers all three schemes (standard `…-<N>`,
+    // self-describing `…-issue-<N>`, legacy `<fruit>/issue-<N>`). Hoisted below.
+    const parsed = branch ? parseBranchName(branch) : null;
+    if (parsed && parsed.issue != null) result.push({ branch, fruit, issue: parsed.issue });
   }
   return result;
 }

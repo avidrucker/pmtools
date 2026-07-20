@@ -69,12 +69,14 @@ def normalize_identity(s):
 
 
 def infer_fruit_from_branch(branch):
-    """Extract <agent> from a [br-]<agent>/[<project>-<lang>-]issue-N[...] branch, else None."""
+    """Extract <agent> from a branch of any scheme (standard `…-<N>`, self-describing
+    `…-issue-<N>`, legacy `<fruit>/issue-<N>`) via the canonical parser, else None.
+    The agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`,
+    #49), which the canonical pattern already encodes."""
     if not branch:
         return None
-    # agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
-    m = re.match(r"^(?:br-)?([a-z0-9]+(?:-[0-9]+)?)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-\d+", branch)
-    return m.group(1) if m else None
+    parsed = parse_branch_name(branch)
+    return parsed["agent"] if parsed else None
 
 
 def parse_claim_refs(listing):
@@ -370,14 +372,16 @@ def apply_marker_flip(content, issue):
 # ---------------------------------------------------------------------------
 
 def worktrees_with_issue(branches):
-    """Filter worktree-branch entries to those with a parseable issue-<N> (new -issue- or legacy /issue-)."""
+    """Filter worktree-branch entries to those with a parseable issue, via the
+    canonical `parse_branch_name` (all three schemes: standard `…-<N>`,
+    self-describing `…-issue-<N>`, legacy `<fruit>/issue-<N>`)."""
     result = []
     for entry in (branches or []):
         branch = entry.get("branch")
         fruit = entry.get("fruit")
-        m = re.search(r"[-/]issue-(\d+)", branch) if branch else None
-        if m:
-            result.append({"branch": branch, "fruit": fruit, "issue": int(m.group(1))})
+        parsed = parse_branch_name(branch) if branch else None
+        if parsed and parsed.get("issue") is not None:
+            result.append({"branch": branch, "fruit": fruit, "issue": parsed["issue"]})
     return result
 
 

@@ -698,10 +698,17 @@ def main():
     if not branch or not is_safe_ref(branch):
         die('branch "{}" contains unsafe characters — '
             "only letters, digits, and . _ / - are allowed.".format(branch or "?"))
-    if not re.match(r"^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-\d+(?:-[A-Za-z0-9._-]+)?$", branch):
-        die('branch "{}" is not a [br-]<agent>/[<project>-<lang>-]issue-<N> worktree branch. '
+    # Shape + issue binding via the canonical parser (all three schemes, incl. the
+    # standard `…-<N>` form with no `issue-` token; #135). The parser is anchored, so
+    # a slug-embedded `-issue-M` / `-M` cannot masquerade as the issue token — the
+    # same anti-injection invariant the old anchored regexes gave, now sourced from
+    # the single name-parsing SSOT. `is_safe_ref` above still guards the metacharacter
+    # set before this branch is interpolated into teardown's `git branch -D <branch>`.
+    parsed = claim_core.parse_branch_name(branch)
+    if not parsed:
+        die('branch "{}" is not a [br-]<agent>/[<project>-[<lang>-]]<N> worktree branch. '
             "Wrong --branch, or a mislabeled worktree?".format(branch))
-    if not re.match(r"^(?:br-)?[A-Za-z0-9._-]+/(?:[A-Za-z0-9._-]+-[A-Za-z0-9._-]+-)?issue-{}(?:-[A-Za-z0-9._-]+)?$".format(issue), branch):
+    if parsed.get("issue") != int(issue):
         die('branch "{}" does not match issue #{}. Wrong worktree?'.format(branch, issue))
 
     fruit = claim_core.infer_fruit_from_branch(branch)

@@ -42,6 +42,18 @@ class ListWorktreesCanned(unittest.TestCase):
         rows = status.list_worktrees(r"^(?P<agent>[a-z]+)/issue-(?P<issue>\d+)", CANNED_PORCELAIN)
         self.assertEqual(rows, [{"branch": "grape/issue-22", "issue": 22, "agent": "grape"}])
 
+    def test_default_pattern_reconciles_standard_form(self):
+        # #135: DEFAULT_BRANCH_PATTERN delegates to the canonical pattern, so a
+        # standard-form worktree (br-<agent>/<project>-<N>, no issue- token) is
+        # reconciled rather than silently dropped.
+        porcelain = (
+            "worktree /repo/main\nHEAD aaa\nbranch refs/heads/main\n\n"
+            "worktree /repo/.claude/worktrees/wt-guava-pmtools-135\nHEAD bbb\n"
+            "branch refs/heads/br-guava/pmtools-135-bug-x\n\n"
+        )
+        rows = status.list_worktrees(status.DEFAULT_BRANCH_PATTERN, porcelain)
+        self.assertEqual(rows, [{"branch": "br-guava/pmtools-135-bug-x", "issue": 135, "agent": "guava"}])
+
 
 class StatusJsonSchema(unittest.TestCase):
     """Schema snapshot for `status --json` (#46): locks the serialized report

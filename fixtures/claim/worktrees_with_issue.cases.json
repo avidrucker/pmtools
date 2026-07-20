@@ -20,6 +20,12 @@
   { "name": "extracts issue from a new-scheme branch (-issue- after project-lang, not /issue-)",
     "args": [[{ "branch": "br-banana/lccjs-js-issue-1461-naming-scheme", "fruit": "banana" }]],
     "expected": [{ "branch": "br-banana/lccjs-js-issue-1461-naming-scheme", "fruit": "banana", "issue": 1461 }] },
+  { "name": "extracts issue from a standard branch (no issue- token, single project segment) (#135)",
+    "args": [[{ "branch": "br-guava/pmtools-135-bug-x", "fruit": "guava" }]],
+    "expected": [{ "branch": "br-guava/pmtools-135-bug-x", "fruit": "guava", "issue": 135 }] },
+  { "name": "extracts issue from a slugless standard branch (#135)",
+    "args": [[{ "branch": "br-apple/pycats-757", "fruit": "apple" }]],
+    "expected": [{ "branch": "br-apple/pycats-757", "fruit": "apple", "issue": 757 }] },
   { "name": "returns empty array for empty input", "args": [[]], "expected": [] },
   { "name": "returns empty array for null input", "args": [null], "expected": [] }
 ]

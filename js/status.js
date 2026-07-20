@@ -12,13 +12,16 @@ const { reconcile } = require('./reconcile');
 const { getProvider } = require('./provider');
 const { parseCanonicalMarker, parsePddignore, isPddIgnored, filterOpenClaims,
   parseArgs: coreParseArgs } = require('./status_core');
-const { parseClaimRefs } = require('./claim_core');
+const { parseClaimRefs, CANONICAL_BRANCH_PATTERN } = require('./claim_core');
 const { loadPddConfig } = require('./config');
 const { makeDie, wantsHelp } = require('./sh');
 const { parseWorktreePorcelain } = require('./close_core');
 
-// agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
-const DEFAULT_BRANCH_PATTERN = '^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?<issue>\\d+)';
+// Delegate to the canonical branch pattern (claim_core, the single source of truth)
+// so reconciliation sees all three schemes — standard `…-<N>`, self-describing
+// `…-issue-<N>`, legacy `<fruit>/issue-<N>` — not only the `issue-`-token forms
+// (#135). It exposes the same `agent`/`issue` named groups listWorktrees reads.
+const DEFAULT_BRANCH_PATTERN = CANONICAL_BRANCH_PATTERN;
 
 // Match the other fleet CLIs (claim/close/error/velocity): a bad flag is a loud
 // failure, not a silent no-op. exit 1 (the shared bad-arg code; #44 may later
@@ -188,4 +191,4 @@ function main(argv) {
 if (require.main === module) {
   process.exit(main(process.argv.slice(2)));
 }
-module.exports = { main, grepMarkers, listWorktrees, renderTable };
+module.exports = { main, grepMarkers, listWorktrees, renderTable, DEFAULT_BRANCH_PATTERN };

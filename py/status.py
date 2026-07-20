@@ -19,13 +19,16 @@ from reconcile import reconcile
 from provider import get_provider
 from status_core import (parse_canonical_marker, parse_pddignore, is_pdd_ignored,
                          filter_open_claims, parse_args as core_parse_args)
-from claim_core import parse_claim_refs
+from claim_core import parse_claim_refs, CANONICAL_BRANCH_PATTERN
 from config import load_pdd_config
 from sh import make_die, wants_help
 from close_core import parse_worktree_porcelain
 
-# agent tolerates a `-<N>` collision-fallback suffix (claim's `${roster[0]}-2`), #49.
-DEFAULT_BRANCH_PATTERN = r"^(?:br-)?(?P<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:[a-z0-9]+-[a-z0-9]+-)?issue-(?P<issue>\d+)"
+# Delegate to the canonical branch pattern (claim_core, the single source of truth)
+# so reconciliation sees all three schemes — standard `…-<N>`, self-describing
+# `…-issue-<N>`, legacy `<fruit>/issue-<N>` — not only the `issue-`-token forms
+# (#135). It exposes the same `agent`/`issue` named groups list_worktrees reads.
+DEFAULT_BRANCH_PATTERN = CANONICAL_BRANCH_PATTERN
 
 
 die = make_die("status")

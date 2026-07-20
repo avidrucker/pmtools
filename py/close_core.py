@@ -17,6 +17,8 @@ conflict as 'blocking'.
 
 import re
 
+from claim_core import parse_branch_name, parse_worktree_name
+
 DEFAULT_MAX_RETRIES = 5
 
 
@@ -375,17 +377,26 @@ def parse_worktree_porcelain(porcelain):
 
 
 def find_worktree_for_issue(rows, issue):
-    """The worktree staked for issue N: branch matching `[-/]issue-<N>` (so both
-    legacy `<agent>/issue-<N>` and new-scheme `…-issue-<N>` branches match by
-    branch, mirroring claim_core.worktrees_with_issue, #51) or path basename
-    ending `-issue-<N>`. Skips the main entry (rows[0]). The `(?:[^0-9]|$)`
-    boundary keeps `issue-9` from matching `issue-99`. Pure: rows + issue →
+    """The worktree staked for issue N: resolve each row by parsing its branch and
+    its path basename through the canonical name parsers (`claim_core`, the single
+    source of truth for all three schemes — standard `…-<N>`, self-describing
+    `…-issue-<N>`, and legacy `<fruit>/issue-<N>`) and comparing the parsed issue to
+    N. Skips the main entry (rows[0]). Int-equality on the parsed issue keeps `9`
+    from matching `99`. `issue` may arrive as an int (fixtures) or a digit string
+    (the live wrapper's positional arg) — both normalize. Pure: rows + issue →
     {path, branch} | None."""
-    re_branch = re.compile(r"[-/]issue-{}(?:[^0-9]|$)".format(issue))
-    re_path = re.compile(r"-issue-{}$".format(issue))
+    try:
+        want = int(issue)
+    except (TypeError, ValueError):
+        return None
     for r in (rows or [])[1:]:
+        branch = r.get("branch")
+        pb = parse_branch_name(branch) if branch else None
+        if pb and pb.get("issue") == want:
+            return r
         base = str(r["path"]).split("/")[-1]
-        if (r.get("branch") and re_branch.search(r["branch"])) or re_path.search(base):
+        pw = parse_worktree_name(base)
+        if pw and pw.get("issue") == want:
             return r
     return None
 

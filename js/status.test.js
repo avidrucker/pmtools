@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { renderTable, grepMarkers, listWorktrees } = require('./status');
+const { renderTable, grepMarkers, listWorktrees, DEFAULT_BRANCH_PATTERN } = require('./status');
 const { reconcile } = require('./reconcile');
 
 // Canned `git grep -nE @(todo|inprogress)` output (format "file:line:content").
@@ -40,6 +40,15 @@ const CANNED_PORCELAIN =
 test('listWorktrees (canned porcelain): extracts agent/issue from matching branches only', () => {
   const rows = listWorktrees('^(?<agent>[a-z]+)/issue-(?<issue>\\d+)', CANNED_PORCELAIN);
   assert.deepEqual(rows, [{ branch: 'grape/issue-22', issue: 22, agent: 'grape' }]);
+});
+
+test('listWorktrees: DEFAULT_BRANCH_PATTERN reconciles a standard-form worktree (no issue- token) (#135)', () => {
+  const porcelain =
+    'worktree /repo/main\nHEAD aaa\nbranch refs/heads/main\n\n'
+    + 'worktree /repo/.claude/worktrees/wt-guava-pmtools-135\nHEAD bbb\n'
+    + 'branch refs/heads/br-guava/pmtools-135-bug-x\n\n';
+  const rows = listWorktrees(DEFAULT_BRANCH_PATTERN, porcelain);
+  assert.deepEqual(rows, [{ branch: 'br-guava/pmtools-135-bug-x', issue: 135, agent: 'guava' }]);
 });
 
 // Schema snapshot for `status --json` (#46): locks the serialized report shape
