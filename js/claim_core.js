@@ -309,37 +309,56 @@ function langTag(language) {
   return slug || 'unk';
 }
 
-// branch       = br-<agent>/<project>-<lang>-issue-<N>[-<slug>]
-function buildBranch({ agent, project, lang, issue, slug }) {
+// branch = br-<agent>/<project>-<N>[-<slug>] — the `standard` format (#128). The
+// `<lang>` tag and literal `issue-` token were dropped as noise; a `lang` field
+// may still be passed but is ignored.
+function buildBranch({ agent, project, issue, slug }) {
   const tail = slug ? `-${slug}` : '';
-  return `br-${agent}/${project}-${lang}-issue-${issue}${tail}`;
+  return `br-${agent}/${project}-${issue}${tail}`;
 }
 
-// worktree dir = wt-<agent>-<project>-<lang>-issue-<N>  (slug never in the dir name)
-function buildWorktreeName({ agent, project, lang, issue }) {
-  return `wt-${agent}-${project}-${lang}-issue-${issue}`;
+// worktree dir = wt-<agent>-<project>-<N> — the `standard` format (#128); slug
+// never in the dir name, `lang` ignored if passed.
+function buildWorktreeName({ agent, project, issue }) {
+  return `wt-${agent}-${project}-${issue}`;
 }
 
-// Map a branch (new OR legacy) to its worktree dir name — the back-compat bridge
-// close uses to find the worktree it must tear down. New `br-…/…` -> `wt-…`;
-// legacy `<fruit>/issue-N…` -> `<fruit>-issue-N` (no prefix). Drops the theme tail.
+// Map a branch to its worktree dir name — the back-compat bridge close uses to
+// find the dir it must tear down. Reproduces the name minted at claim time under
+// whatever scheme the branch belongs to: `standard` -> wt-<agent>-<project>-<N>;
+// old-canonical -> wt-<agent>-<project>-<lang>-issue-<N>; legacy `<fruit>/issue-N…`
+// -> `<fruit>-issue-N` (no wt- prefix). Twin of py branch_to_worktree_name.
 function branchToWorktreeName(branch) {
   if (!branch) return null;
+  const parsed = parseBranchName(branch);
+  if (parsed) {
+    const { agent, project, lang, issue } = parsed;
+    if (project === null) return `${agent}-issue-${issue}`;               // legacy dir
+    if (lang !== null) return `wt-${agent}-${project}-${lang}-issue-${issue}`;  // old-canonical
+    return `wt-${agent}-${project}-${issue}`;                             // standard
+  }
+  // unrecognized branch: preserve the historical flatten behavior
   const isNew = branch.startsWith('br-');
   const core = isNew ? branch.slice(3) : branch;
   const flat = core.replace('/', '-').replace(/(issue-\d+).*$/, '$1');
   return isNew ? `wt-${flat}` : flat;
 }
 
-// Canonical self-describing name regexes (#72 — raise code to the published
-// CONTRACT/DESIGN spec). Tolerant of BOTH the new `br-`/`wt-` form and the legacy
-// `<fruit>/issue-N[-slug]` / `<fruit>-issue-N` (prefix + `<project>-<lang>-`
-// segment optional). The agent group allows the `-<N>` collision-fallback suffix
-// (#49) — the published regex omitted it; this is the corrected canonical.
+// Self-describing name regexes (#72 — raise code to the published CONTRACT/DESIGN
+// spec). Tolerant of THREE generate schemes so nothing in flight is stranded (#128):
+//   standard      br-<agent>/<project>-<N>[-<slug>]        (generated today)
+//   old-canonical br-<agent>/<project>-<lang>-issue-<N>…   (read-only, back-compat)
+//   legacy        <fruit>/issue-N[-slug]                   (read-only, back-compat)
+// The `<project>-<lang>-` and `issue-` pieces are each optional; the standard form
+// takes the issue as the first all-digit dash-segment after <project>. The negative
+// lookaheads keep `issue` from being mistaken for a <project>/<lang> segment, so the
+// legacy form still parses to project/lang null. Round-trips only because project
+// names are single dash-free [a-z0-9] tokens (#128 invariant). The agent group
+// allows the `-<N>` collision-fallback suffix (#49). Twin of py CANONICAL_*.
 const CANONICAL_BRANCH_PATTERN =
-  '^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\\d+)(?:-(?<theme>.+))?$';
+  '^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:(?!issue-\\d)(?<project>[a-z0-9]+)-(?:(?!issue-)(?<lang>[a-z0-9]+)-)?)?(?:issue-)?(?<issue>\\d+)(?:-(?<theme>.+))?$';
 const CANONICAL_WORKTREE_PATTERN =
-  '^(?:wt-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\\d+)$';
+  '^(?:wt-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)-(?:(?!issue-\\d)(?<project>[a-z0-9]+)-(?:(?!issue-)(?<lang>[a-z0-9]+)-)?)?(?:issue-)?(?<issue>\\d+)$';
 
 // Parse a branch name into { agent, project, lang, issue, theme } (project/lang/
 // theme null when the segment is absent; issue a number), or null if it is not a

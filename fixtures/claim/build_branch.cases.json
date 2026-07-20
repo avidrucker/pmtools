@@ -1,11 +1,11 @@
 [
-  { "name": "full new-scheme branch with theme/slug",
+  { "name": "standard branch with slug (lang arg present but ignored)",
     "args": [{ "agent": "banana", "project": "lccjs", "lang": "js", "issue": 1461, "slug": "naming-scheme" }],
-    "expected": "br-banana/lccjs-js-issue-1461-naming-scheme" },
-  { "name": "new-scheme branch without slug",
+    "expected": "br-banana/lccjs-1461-naming-scheme" },
+  { "name": "standard branch without slug",
     "args": [{ "agent": "apple", "project": "pmtools", "lang": "js", "issue": 17 }],
-    "expected": "br-apple/pmtools-js-issue-17" },
+    "expected": "br-apple/pmtools-17" },
   { "name": "null slug omits the tail",
     "args": [{ "agent": "cherry", "project": "lccjs", "lang": "js", "issue": 9, "slug": null }],
-    "expected": "br-cherry/lccjs-js-issue-9" }
+    "expected": "br-cherry/lccjs-9" }
 ]

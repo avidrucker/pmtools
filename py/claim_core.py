@@ -229,42 +229,67 @@ def lang_tag(language):
 
 
 def build_branch(parts):
-    """branch = br-<agent>/<project>-<lang>-issue-<N>[-<slug>]."""
+    """branch = br-<agent>/<project>-<N>[-<slug>] — the `standard` format (#128).
+    The `<lang>` tag and literal `issue-` token were dropped as noise; a `lang`
+    key may still be present in `parts` but is ignored."""
     slug = parts.get("slug")
     tail = "-{}".format(slug) if slug else ""
-    return "br-{}/{}-{}-issue-{}{}".format(
-        parts["agent"], parts["project"], parts["lang"], parts["issue"], tail)
+    return "br-{}/{}-{}{}".format(
+        parts["agent"], parts["project"], parts["issue"], tail)
 
 
 def build_worktree_name(parts):
-    """worktree dir = wt-<agent>-<project>-<lang>-issue-<N> (slug never in dir name)."""
-    return "wt-{}-{}-{}-issue-{}".format(
-        parts["agent"], parts["project"], parts["lang"], parts["issue"])
+    """worktree dir = wt-<agent>-<project>-<N> — the `standard` format (#128);
+    slug never in dir name, `lang` ignored if present."""
+    return "wt-{}-{}-{}".format(
+        parts["agent"], parts["project"], parts["issue"])
 
 
 def branch_to_worktree_name(branch):
-    """Map a branch (new OR legacy) to its worktree dir name — the back-compat
-    bridge close uses. New br-…/… -> wt-…; legacy <fruit>/issue-N… -> <fruit>-issue-N."""
+    """Map a branch to its worktree dir name — the back-compat bridge close uses
+    to find the dir it must tear down. Reproduces the name minted at claim time
+    under whatever scheme the branch belongs to: `standard` -> wt-<agent>-<project>-<N>;
+    old-canonical -> wt-<agent>-<project>-<lang>-issue-<N>; legacy <fruit>/issue-N…
+    -> <fruit>-issue-N (no wt- prefix). Twin of js branchToWorktreeName."""
     if not branch:
         return None
+    parsed = parse_branch_name(branch)
+    if parsed:
+        agent, project, lang, issue = (
+            parsed["agent"], parsed["project"], parsed["lang"], parsed["issue"])
+        if project is None:
+            return "{}-issue-{}".format(agent, issue)          # legacy dir
+        if lang is not None:
+            return "wt-{}-{}-{}-issue-{}".format(agent, project, lang, issue)  # old-canonical
+        return "wt-{}-{}-{}".format(agent, project, issue)     # standard
+    # unrecognized branch: preserve the historical flatten behavior
     is_new = branch.startswith("br-")
     core = branch[3:] if is_new else branch
     flat = re.sub(r"(issue-\d+).*$", r"\1", core.replace("/", "-", 1))
     return "wt-" + flat if is_new else flat
 
 
-# Canonical self-describing name regexes (#72 — raise code to the published
-# CONTRACT/DESIGN spec). Tolerant of both new br-/wt- and legacy forms; the agent
-# group allows the -<N> collision-fallback suffix (#49) the published regex
-# omitted. Twin of js claim_core's CANONICAL_*_PATTERN.
+# Self-describing name regexes (#72 — raise code to the published CONTRACT/DESIGN
+# spec). Tolerant of THREE generate schemes so nothing in flight is stranded (#128):
+#   standard      br-<agent>/<project>-<N>[-<slug>]        (generated today)
+#   old-canonical br-<agent>/<project>-<lang>-issue-<N>…   (read-only, back-compat)
+#   legacy        <fruit>/issue-N[-slug]                   (read-only, back-compat)
+# The `<project>-<lang>-` and `issue-` pieces are each optional; the standard form
+# takes the issue as the first all-digit dash-segment after <project>. The negative
+# lookaheads keep `issue` from being mistaken for a <project>/<lang> segment, so the
+# legacy form still parses to project/lang None. This round-trips only because
+# project names are single dash-free [a-z0-9] tokens (#128 invariant). The agent
+# group allows the -<N> collision-fallback suffix (#49). Twin of js CANONICAL_*.
 CANONICAL_BRANCH_PATTERN = (
     r"^(?:br-)?(?P<agent>[a-z0-9]+(?:-[0-9]+)?)/"
-    r"(?:(?P<project>[a-z0-9]+)-(?P<lang>[a-z0-9]+)-)?issue-(?P<issue>\d+)"
+    r"(?:(?!issue-\d)(?P<project>[a-z0-9]+)-(?:(?!issue-)(?P<lang>[a-z0-9]+)-)?)?"
+    r"(?:issue-)?(?P<issue>\d+)"
     r"(?:-(?P<theme>.+))?$"
 )
 CANONICAL_WORKTREE_PATTERN = (
     r"^(?:wt-)?(?P<agent>[a-z0-9]+(?:-[0-9]+)?)-"
-    r"(?:(?P<project>[a-z0-9]+)-(?P<lang>[a-z0-9]+)-)?issue-(?P<issue>\d+)$"
+    r"(?:(?!issue-\d)(?P<project>[a-z0-9]+)-(?:(?!issue-)(?P<lang>[a-z0-9]+)-)?)?"
+    r"(?:issue-)?(?P<issue>\d+)$"
 )
 
 
