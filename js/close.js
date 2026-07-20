@@ -49,6 +49,7 @@ const { sh, shCapture, gitCapture, makeDie, makeLog, wantsHelp } = require('./sh
 const { deleteClaimRef } = require('./claimref');
 const core = require('./close_core');
 const config = require('./config');
+const { parsePddignore } = require('./status_core');
 const { getProvider } = require('./provider');
 const store = require('./store');
 const storeCore = require('./store_core');
@@ -217,13 +218,25 @@ function checkKeywordMatch(issue, closingCommitSha) {
       `  Paraphrased title? Add --skip-keyword-check to your close command.`);
 }
 
+// Read the repo-root .pddignore into a pattern list, so the close guard skips
+// the same fixture/doc test-data `status` skips (#137). Tolerant of absence
+// (→ [] = scan everything). Mirrors status.js's loadIgnorePatterns.
+function loadPddIgnore() {
+  try {
+    const ignoreFile = config.loadPddConfig().ignoreFile || '.pddignore';
+    const root = gitCapture(['rev-parse', '--show-toplevel']).out.trim();
+    if (!root) return [];
+    return parsePddignore(fs.readFileSync(path.join(root, ignoreFile), 'utf8'));
+  } catch { return []; }
+}
+
 function checkMarkerDeleted(issue) {
   // LANGUAGE-AGNOSTIC: search ALL tracked files, not just *.js/*.ts/*.mjs. Split
   // marker keywords so a PDD scanner doesn't treat these grep patterns as markers.
   const tPat = '@' + `todo #${issue}`;
   const iPat = '@' + `inprogress #${issue}`;
   const result = shCapture(`git grep -rn -e "${tPat}" -e "${iPat}"`);
-  const { found, lines } = markerStillPresent(issue, result.out);
+  const { found, lines } = markerStillPresent(issue, result.out, loadPddIgnore());
   if (found) {
     die(`puzzle marker for #${issue} still present — delete it in the closing commit first.\n` +
         lines.map((l) => `  Found: ${l}`).join('\n') + '\n' +

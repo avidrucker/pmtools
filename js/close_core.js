@@ -15,6 +15,7 @@
 'use strict';
 
 const { parseBranchName, parseWorktreeName } = require('./claim_core');
+const { parseCanonicalMarker, isPddIgnored } = require('./status_core');
 
 const DEFAULT_MAX_RETRIES = 5;
 
@@ -162,12 +163,29 @@ function keywordsOverlap(titleWords, subjectWords) {
 
 // --- marker-presence (Guard) + scope audit ---------------------------------
 
-// Does a puzzle marker (todo/inprogress) for the issue still appear in the grep
-// output? Returns { found, lines }.
-function markerStillPresent(issue, grepOutput) {
-  const re = new RegExp(`@(?:todo|inprogress)\\s+#${issue}\\b`, 'i');
+// Does a real leftover puzzle marker for the issue still appear in the grep
+// output? A grep hit counts only when (a) its file is not .pddignore-excluded
+// and (b) its text is a canonical `@(todo|inprogress) #N:<estimate>` marker for
+// exactly this issue — the SAME definition `status`/`grepMarkers` uses, so
+// "leftover marker for #N" means the same thing across status/claim/close (#137).
+// This drops the two false-positive classes that forced `--skip-marker-check`:
+// canonical example markers in .pddignore'd fixtures (the #134 repro) and
+// estimate-less prose mentions like `@todo #88` in source comments (the #88
+// repro). Requiring `:<estimate>` also subsumes the old #42-in-#420 word-boundary
+// guard, since the canonical parse pins the issue number exactly.
+// `ignorePatterns` is the parsed .pddignore (from parsePddignore); [] = scan all.
+// Each grep line is `file:lineno:content`. Returns { found, lines }.
+function markerStillPresent(issue, grepOutput, ignorePatterns = []) {
+  const want = parseInt(issue, 10);
   const lines = String(grepOutput || '').split('\n').map((l) => l.trim()).filter(Boolean);
-  const matched = lines.filter((l) => re.test(l));
+  const matched = lines.filter((line) => {
+    const idx1 = line.indexOf(':');
+    const idx2 = line.indexOf(':', idx1 + 1);
+    if (idx1 < 0 || idx2 < 0) return false;
+    if (isPddIgnored(line.slice(0, idx1), ignorePatterns)) return false;
+    const marker = parseCanonicalMarker(line.slice(idx2 + 1));
+    return marker !== null && marker.issue === want;
+  });
   return { found: matched.length > 0, lines: matched };
 }
 

@@ -30,7 +30,17 @@ const path = require('node:path');
 const { sh, gitCapture, makeDie, wantsHelp } = require('./sh');
 const config = require('./config');
 const { parseWorktreePorcelain } = require('./close_core');
+const { parsePddignore, isPddIgnored } = require('./status_core');
 const core = require('./claim_core');
+
+// Read <wtPath>/.pddignore into a pattern list (fixtures/docs carry example
+// markers that are test-data, not live puzzles). Tolerant of absence (#137).
+function loadPddIgnore(wtPath) {
+  try {
+    const ignoreFile = config.loadPddConfig().ignoreFile || '.pddignore';
+    return parsePddignore(fs.readFileSync(path.join(wtPath, ignoreFile), 'utf8'));
+  } catch { return []; }
+}
 const { getProvider } = require('./provider');
 
 // One batched issue-state lookup → Map(number → STATE) for the given numbers (#42).
@@ -178,11 +188,16 @@ function flipMarker(issue, wtPath) {
     return;
   }
   const grep = git(['-C', wtPath, 'grep', '-nIE', `${todoKw} #${issue}:[0-9]`], true);
-  if (!grep || !grep.trim()) {
+  // Skip hits in .pddignore'd files (fixtures/docs carry example markers that are
+  // test-data, not live puzzles) so the flip never rewrites them (#137).
+  const ignorePatterns = loadPddIgnore(wtPath);
+  const firstLine = (grep || '').trim().split('\n')
+    .filter(Boolean)
+    .find((l) => !isPddIgnored(l.split(':')[0], ignorePatterns));
+  if (!firstLine) {
     console.log(`[claim] no ${todoKw} #${issue} marker found — skipping flip`);
     return;
   }
-  const firstLine = grep.trim().split('\n')[0];
   const relFile = firstLine.split(':')[0];
   const absFile = path.join(wtPath, relFile);
   let content;

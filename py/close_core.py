@@ -18,6 +18,7 @@ conflict as 'blocking'.
 import re
 
 from claim_core import parse_branch_name, parse_worktree_name
+from status_core import parse_canonical_marker, is_pdd_ignored
 
 DEFAULT_MAX_RETRIES = 5
 
@@ -224,13 +225,34 @@ def keywords_overlap(title_words, subject_words):
 # marker-presence (Guard) + scope audit
 # ---------------------------------------------------------------------------
 
-def marker_still_present(issue, grep_output):
-    """Does a puzzle marker (todo/inprogress) for the issue still appear in the
-    grep output? Returns {"found": bool, "lines": [str]}."""
-    rx = re.compile(r"@(?:todo|inprogress)\s+#{}\b".format(issue), re.I)
+def marker_still_present(issue, grep_output, ignore_patterns=None):
+    """Does a real leftover puzzle marker for the issue still appear in the grep
+    output? A grep hit counts only when (a) its file is not .pddignore-excluded
+    and (b) its text is a canonical ``@(todo|inprogress) #N:<estimate>`` marker
+    for exactly this issue — the SAME definition ``status``/``grep_markers`` uses,
+    so "leftover marker for #N" means the same thing across status/claim/close
+    (#137). Drops the two false-positive classes that forced ``--skip-marker-check``:
+    canonical example markers in .pddignore'd fixtures (the #134 repro) and
+    estimate-less prose mentions like ``@todo #88`` in source comments (the #88
+    repro). The canonical parse pins the issue number exactly, subsuming the old
+    #42-in-#420 word-boundary guard. ``ignore_patterns`` is the parsed .pddignore
+    (from parse_pddignore); None/[] = scan all. Each grep line is
+    ``file:lineno:content``. Returns {"found": bool, "lines": [str]}."""
+    patterns = ignore_patterns or []
+    want = int(issue)
     lines = [l.strip() for l in ("" if grep_output is None else str(grep_output)).split("\n")]
     lines = [l for l in lines if l]
-    matched = [l for l in lines if rx.search(l)]
+    matched = []
+    for line in lines:
+        idx1 = line.find(":")
+        idx2 = line.find(":", idx1 + 1)
+        if idx1 < 0 or idx2 < 0:
+            continue
+        if is_pdd_ignored(line[:idx1], patterns):
+            continue
+        marker = parse_canonical_marker(line[idx2 + 1:])
+        if marker is not None and marker["issue"] == want:
+            matched.append(line)
     return {"found": len(matched) > 0, "lines": matched}
 
 

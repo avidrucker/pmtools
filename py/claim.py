@@ -32,6 +32,18 @@ from datetime import datetime, timezone
 import config
 import provider
 from close_core import parse_worktree_porcelain
+from status_core import parse_pddignore, is_pdd_ignored
+
+
+def load_pdd_ignore(wt_path):
+    """Read <wt_path>/.pddignore into a pattern list (fixtures/docs carry example
+    markers that are test-data, not live puzzles). Tolerant of absence (#137)."""
+    try:
+        ignore_file = config.load_pdd_config().get("ignoreFile") or ".pddignore"
+        with open(os.path.join(wt_path, ignore_file), encoding="utf-8") as f:
+            return parse_pddignore(f.read())
+    except Exception:
+        return []
 import claim_core as core
 from claim_core import (
     FRUITS, slugify, resolve_identity, check_identity_name,
@@ -185,10 +197,16 @@ def flip_marker(issue, wt_path):
         print("[claim] {} #{} already present — skipping flip".format(INPROGRESS_KW, issue))
         return
     grep = git(["-C", wt_path, "grep", "-nIE", "{} #{}:[0-9]".format(TODO_KW, issue)], True)
-    if not grep or not grep.strip():
+    # Skip hits in .pddignore'd files (fixtures/docs carry example markers that are
+    # test-data, not live puzzles) so the flip never rewrites them (#137).
+    ignore_patterns = load_pdd_ignore(wt_path)
+    first_line = next(
+        (l for l in (grep or "").strip().split("\n")
+         if l and not is_pdd_ignored(l.split(":")[0], ignore_patterns)),
+        None)
+    if not first_line:
         print("[claim] no {} #{} marker found — skipping flip".format(TODO_KW, issue))
         return
-    first_line = grep.strip().split("\n")[0]
     rel_file = first_line.split(":")[0]
     abs_file = os.path.join(wt_path, rel_file)
     try:

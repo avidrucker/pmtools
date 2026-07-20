@@ -20,5 +20,15 @@
     "expected": { "found": false, "lines": [] } },
   { "name": "returns all matched lines when multiple markers present",
     "args": ["359", "src/a.py:1: # @todo #359:10/DEV\nsrc/b.py:2: # @inprogress #359:20/DEV"],
-    "expected": { "found": true, "lines": ["src/a.py:1: # @todo #359:10/DEV", "src/b.py:2: # @inprogress #359:20/DEV"] } }
+    "expected": { "found": true, "lines": ["src/a.py:1: # @todo #359:10/DEV", "src/b.py:2: # @inprogress #359:20/DEV"] } },
+
+  { "name": "#137 repro A — a canonical marker in a .pddignore'd fixture file does NOT count (was found=true)",
+    "args": ["134", "fixtures/status/parse_canonical_marker.cases.json:3:  \"args\": [\"@todo #134:60m/ARC implement X\"]", ["fixtures/**"]],
+    "expected": { "found": false, "lines": [] } },
+  { "name": "#137 repro B — a non-canonical mention (no :estimate) in a source file does NOT count (was found=true)",
+    "args": ["88", "py/claim_core.py:330:  # (@todo #88 in a note/TIL) is never flipped", []],
+    "expected": { "found": false, "lines": [] } },
+  { "name": "#137 — a real canonical marker in a non-ignored file still counts (guard still works)",
+    "args": ["88", "py/claim.py:200:  # @todo #88:15m/DEV wire the flip", []],
+    "expected": { "found": true, "lines": ["py/claim.py:200:  # @todo #88:15m/DEV wire the flip"] } }
 ]

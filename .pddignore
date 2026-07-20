@@ -14,6 +14,13 @@ node_modules/**
 fixtures/**
 tests/**
 
+# --- colocated unit tests carry canned marker strings as test input. pmtools
+#     keeps tests beside sources (js/*.test.js, py/test_*.py) rather than in a
+#     tests/ dir, so the tests/** rule above misses them — this is the
+#     layout-equivalent of lccjs's `tests/**/*.spec.js` entry (#137). ---
+*.test.js
+test_*.py
+
 # --- docs + the committed CSV store mirrors (prose / data that quotes markers) ---
 docs/**
 *.md

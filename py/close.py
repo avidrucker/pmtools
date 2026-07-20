@@ -41,6 +41,7 @@ import sys
 
 import close_core as core
 import config
+import status_core
 import store
 import store_core
 import claim_core
@@ -284,13 +285,29 @@ def run_preclose_verify(opts, wt_path, root):
                 "left intact — fix and re-run close, or bypass with --skip-verify.".format(cmd, why), 1)
 
 
+def load_pdd_ignore():
+    """Read the repo-root .pddignore into a pattern list, so the close guard skips
+    the same fixture/doc test-data ``status`` skips (#137). Tolerant of absence
+    (-> [] = scan everything). Mirrors status's loader."""
+    try:
+        ignore_file = config.load_pdd_config().get("ignoreFile") or ".pddignore"
+        root = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                              capture_output=True, text=True).stdout.strip()
+        if not root:
+            return []
+        with open(os.path.join(root, ignore_file), encoding="utf-8") as f:
+            return status_core.parse_pddignore(f.read())
+    except Exception:
+        return []
+
+
 def check_marker_deleted(issue):
     """Guard: no puzzle marker (todo/inprogress) for the issue may remain in any
     tracked file. LANGUAGE-AGNOSTIC: search all tracked files, not just *.js/ts."""
     t_pat = "@" + "todo #{}".format(issue)
     i_pat = "@" + "inprogress #{}".format(issue)
     result = sh_capture('git grep -rn -e "{}" -e "{}"'.format(t_pat, i_pat))
-    res = marker_still_present(issue, result["out"])
+    res = marker_still_present(issue, result["out"], load_pdd_ignore())
     if res["found"]:
         die("puzzle marker for #{} still present — delete it in the closing commit first.\n".format(issue)
             + "\n".join("  Found: {}".format(l) for l in res["lines"]) + "\n"
