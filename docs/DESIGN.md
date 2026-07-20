@@ -102,56 +102,67 @@ as best-effort over dirty legacy data, never as a precondition for writes.
 
 ## 5. Worktree/branch naming scheme
 
-`claim` emits **self-describing** branch and worktree names so that an agent,
-its project, its language, and its issue are all readable at a glance from
-`git branch` / `git worktree list` across a fleet that shares one machine.
-Designed and ratified in avidrucker/lccjs#1460; implemented in #17; the
-canonical written convention (forms + regexes) lives in `CONTRACT.md`.
+`claim` emits **standard** branch and worktree names so that an agent, its
+project, and its issue are all readable at a glance from `git branch` /
+`git worktree list` across a fleet that shares one machine. The scheme was
+designed in avidrucker/lccjs#1460 and first implemented in #17; the name format
+was trimmed to the standard shape in #128/#131. The written convention (forms +
+regexes) lives in `CONTRACT.md`.
 
 ### Forms
 
 ```
-branch       = br-<agent>/<project>-<lang>-issue-<N>[-<theme>]
-worktree dir = <worktreeDir>/wt-<agent>-<project>-<lang>-issue-<N>
+branch       = br-<agent>/<project>-<N>[-<theme>]
+worktree dir = <worktreeDir>/wt-<agent>-<project>-<N>
 ```
 
-The `br-`/`wt-` prefix marks the artifact type; `<theme>` is an optional
-branch-only slug. `<agent>`, `<project>`, `<lang>` each normalize to a single
-`[a-z0-9]` token (the scheme delimiter is `-`).
+This is the **standard** format — the single shape `claim` generates. The
+`br-`/`wt-` prefix marks the artifact type; `<theme>` is an optional branch-only
+slug. `<agent>` and `<project>` each normalize to a single dash-free `[a-z0-9]`
+token (the scheme delimiter is `-`); the single-token `<project>` is the invariant
+that lets a generated name parse back to `{agent, project, issue}` unambiguously.
 
 ### Field sourcing (the consumer-owns-policy rule)
 
-`<project>` and `<lang>` come from the consumer's `.claude/orchestrate.json`,
-read from the **main checkout** (`mainRoot()` = `git --git-common-dir`'s parent),
-never the worktree dir — keying off the worktree basename is the pmtools#26 /
-lccjs#1454 trap. `project` = the explicit `"project"` key, else the main-repo
-basename; `lang` = `langTag(languages[0])` (a tag map: `javascript`→`js`,
-`python`→`py`, `clojure`→`clj`, …). Both fall back to a safe default when
-absent, so an unconfigured repo still produces a valid name.
+`<project>` comes from the consumer's `.claude/orchestrate.json`, read from the
+**main checkout** (`mainRoot()` = `git --git-common-dir`'s parent), never the
+worktree dir — keying off the worktree basename is the pmtools#26 / lccjs#1454
+trap. `project` = the explicit `"project"` key, else the main-repo basename,
+falling back to a safe default when absent, so an unconfigured repo still produces
+a valid name. (`langTag` survives as a helper for reading the old `<lang>`-tagged
+shape below, but the standard format carries no language tag.)
 
-### Back-compatibility — no flag day
+### Back-compatibility — generate one, read three (no flag day)
 
-Parsing tolerates **both** the new form and the legacy
-`<fruit>/issue-<N>[-<slug>]` / `<fruit>-issue-<N>`: in every parse regex the
-`br-`/`wt-` prefix and the `<project>-<lang>-` segment are optional, and the
-`issue-<N>` token is always present. So in-flight legacy worktrees still
-reconcile, claim, and close while new claims adopt the richer name — there is
-no migration step and no cutover. The canonical named-group regexes:
+`claim` writes only the standard form, but parsing tolerates **three** shapes so
+nothing in flight is stranded:
+- standard — `br-<agent>/<project>-<N>[-<theme>]` / `wt-<agent>-<project>-<N>`;
+- old self-describing — `br-<agent>/<project>-<lang>-issue-<N>[-<theme>]` /
+  `wt-<agent>-<project>-<lang>-issue-<N>` (a `<lang>` tag and an `issue-` token,
+  both dropped from generation in #128 as more noise than signal);
+- legacy — `<fruit>/issue-<N>[-<slug>]` / `<fruit>-issue-<N>`.
+
+In every parse regex the `br-`/`wt-` prefix, the `<project>[-<lang>]-` segment, and
+the `issue-` token are all optional, so all three shapes still reconcile, claim,
+and close — no migration step and no cutover. The named-group regexes:
 
 ```
-branch:   ^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)(?:-(?<theme>.+))?$
-worktree: ^(?:wt-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
+branch:   ^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:(?!issue-\d)(?<project>[a-z0-9]+)-(?:(?!issue-)(?<lang>[a-z0-9]+)-)?)?(?:issue-)?(?<issue>\d+)(?:-(?<theme>.+))?$
+worktree: ^(?:wt-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)-(?:(?!issue-\d)(?<project>[a-z0-9]+)-(?:(?!issue-)(?<lang>[a-z0-9]+)-)?)?(?:issue-)?(?<issue>\d+)$
 ```
 
-These are the **canonical, consumer-facing contract** (the form lccjs#1461
-mirrors), and pmtools now implements + fixture-grades them (#72): `parseBranchName`
-/ `parseWorktreeName` in `claim_core.{js,py}` parse via the exact patterns above
-(`CANONICAL_BRANCH_PATTERN` / `CANONICAL_WORKTREE_PATTERN`), graded across both
-ports against `fixtures/claim/parse_{branch,worktree}_name.cases.json`. The `-N`
-collision-fallback agent (#49) the published regex had omitted is corrected here.
-`status`'s `DEFAULT_BRANCH_PATTERN` stays a **deliberate reduced** scan (it only
-needs `agent`+`issue`, with `--branch-pattern` for overrides) — a scoped read, no
-longer a capability gap. See `CONTRACT.md` §claim (#53 → #72).
+These are the consumer-facing **read** contract, implemented + fixture-graded
+across both ports (#72, broadened to all three shapes in #131/#135):
+`parseBranchName` / `parseWorktreeName` in `claim_core.{js,py}` parse via the exact
+patterns above (`CANONICAL_BRANCH_PATTERN` / `CANONICAL_WORKTREE_PATTERN`), graded
+against `fixtures/claim/parse_{branch,worktree}_name.cases.json`; the negative
+lookaheads `(?!issue-\d)` / `(?!issue-)` keep a legacy `issue-<N>` from being
+mis-read as a `<project>`/`<lang>` segment. Every resolver (`close`, `status`,
+`release`) routes through these parsers rather than a bespoke `issue-`-token regex
+(#135). The `-N` collision-fallback agent (#49) the published regex had omitted is
+corrected here. `status`'s `DEFAULT_BRANCH_PATTERN` stays a **deliberate reduced**
+scan — it only needs `agent`+`issue`, delegates to `CANONICAL_BRANCH_PATTERN`, and
+exposes `--branch-pattern` for overrides. See `CONTRACT.md` §claim (#53 → #72 → #135).
 
 ### Pure helpers (the testable seam)
 
@@ -159,11 +170,11 @@ Name construction and the branch→worktree-dir bridge are pure functions in
 `claim_core.{js,py}`, graded byte-for-byte across both ports against shared
 `fixtures/claim/*` cases: `langTag`, `buildBranch`, `buildWorktreeName`,
 `branchToWorktreeName` (used by `close` to find a worktree from a branch name,
-handling both new and legacy forms), `parseBranchName` / `parseWorktreeName` (the
-canonical name parsers — #72), plus the prefix-tolerant
-`inferFruitFromBranch` and `worktreesWithIssue`. Construction is exposed so
-consumers (lccjs) **call pmtools** rather than re-templating the scheme — keeping
-pmtools the single canonical definition. Consumer follow-on: avidrucker/lccjs#1461.
+handling all three read shapes), `parseBranchName` / `parseWorktreeName` (the name
+parsers — #72), plus the prefix-tolerant `inferFruitFromBranch` and
+`worktreesWithIssue`. Construction is exposed so consumers (lccjs) **call pmtools**
+rather than re-templating the scheme — keeping pmtools the single source of truth
+for the name format. Consumer follow-on: avidrucker/lccjs#1461.
 
 Since #51, `close` **self-discovers** the worktree from the issue/branch via
 `git worktree list` (it no longer rebuilds the path from `--worktree-dir`), so

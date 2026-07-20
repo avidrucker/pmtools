@@ -109,7 +109,8 @@ issues:     [ { "number": int, "state": "OPEN" | "CLOSED" } ]
   scanning is enabled but the file is absent, `status` warns once to stderr and
   scans everything. See `.pddignore.example` for a starter exclude list.
 - `worktrees` rows come from `git worktree list --porcelain`, with `issue`/`agent`
-  parsed from the branch via the caller's `worktreeBranchPattern`.
+  parsed from the branch via `status`'s `DEFAULT_BRANCH_PATTERN` (which delegates to
+  the standard-format parser; override with `--branch-pattern`).
 - `issues` rows come from the host provider adapter (`gh`/`glab`). When the
   provider is offline, `issues` may be empty → affected markers get `state: "UNKNOWN"`.
 
@@ -304,52 +305,64 @@ orchestration in `claim.{py,js}`. The two language ports are faithful twins.
 ### Convention
 
 ```
-branch   = br-<agent>/<project>-<lang>-issue-<N>[-<theme>]
-worktree = <worktreeDir>/wt-<agent>-<project>-<lang>-issue-<N>   (worktreeDir relative to main repo root)
+branch   = br-<agent>/<project>-<N>[-<theme>]
+worktree = <worktreeDir>/wt-<agent>-<project>-<N>   (worktreeDir relative to main repo root)
 ```
 
-The name is self-describing: agent, project, language, and issue are all
-readable at a glance, with the `br-`/`wt-` prefix marking the artifact type.
-`<project>` and `<lang>` come from `.claude/orchestrate.json` (`project` key →
-else repo basename, normalized to `[a-z0-9]`; `lang` = `langTag(languages[0])`,
-e.g. `javascript`→`js`). `<theme>` is an optional slug, branch-only.
+This is the **standard** format — the single shape `claim` generates (#128, the
+name-format decision). The `br-`/`wt-` prefix marks the artifact type; `<project>`
+comes from `.claude/orchestrate.json` (`project` key → else repo basename,
+normalized to `[a-z0-9]`); `<theme>` is an optional slug, branch-only. `<project>`
+is a single dash-free `[a-z0-9]+` token — the invariant that lets a generated name
+parse back to `{agent, project, issue}` unambiguously.
 
-**Back-compat (no flag day):** parsing tolerates BOTH the new form and the
-legacy `<fruit>/issue-<N>[-<slug>]` / `<fruit>-issue-<N>` — the `br-`/`wt-`
-prefix and the `<project>-<lang>-` segment are optional in every parse regex,
-and the `issue-<N>` token is always present, so in-flight legacy worktrees still
-claim, reconcile, and close. The canonical regexes:
+**Generate one, read three (no flag day):** `claim` writes only the standard form,
+but every parser also tolerates two older read-only shapes so nothing in flight is
+stranded (#131, the format switch; #135, the resolver fix):
+
+- old self-describing — `br-<agent>/<project>-<lang>-issue-<N>[-<theme>]` /
+  `wt-<agent>-<project>-<lang>-issue-<N>` (carried a `<lang>` tag and an `issue-`
+  token, both dropped from generation as more noise than signal);
+- legacy — `<fruit>/issue-<N>[-<slug>]` / `<fruit>-issue-<N>`.
+
+In the parse regexes the `br-`/`wt-` prefix, the `<project>[-<lang>]-` segment, and
+the `issue-` token are all optional, and negative lookaheads keep a legacy
+`issue-<N>` from being mis-read as a `<project>`/`<lang>` segment — so all three
+shapes still claim, reconcile, and close. The regexes (`CANONICAL_BRANCH_PATTERN` /
+`CANONICAL_WORKTREE_PATTERN` in `claim_core.{js,py}`, the single source of truth
+every consumer parses through):
 
 ```
-branch:   ^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)(?:-(?<theme>.+))?$
-worktree: ^(?:wt-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)-(?:(?<project>[a-z0-9]+)-(?<lang>[a-z0-9]+)-)?issue-(?<issue>\d+)$
+branch:   ^(?:br-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)/(?:(?!issue-\d)(?<project>[a-z0-9]+)-(?:(?!issue-)(?<lang>[a-z0-9]+)-)?)?(?:issue-)?(?<issue>\d+)(?:-(?<theme>.+))?$
+worktree: ^(?:wt-)?(?<agent>[a-z0-9]+(?:-[0-9]+)?)-(?:(?!issue-\d)(?<project>[a-z0-9]+)-(?:(?!issue-)(?<lang>[a-z0-9]+)-)?)?(?:issue-)?(?<issue>\d+)$
 ```
 
-> **Canonical contract — now implemented + fixture-graded (#72, closing the #53
-> gap).** The two regexes above are the **canonical, consumer-facing contract**
-> (the form lccjs#1461 mirrors, and the form the construction helpers below emit),
-> and pmtools now implements + grades them: `parseBranchName` /
-> `parseWorktreeName` in `claim_core.{js,py}` parse a name into
-> `{agent, project, lang, issue[, theme]}` via the exact patterns above
-> (`CANONICAL_BRANCH_PATTERN` / `CANONICAL_WORKTREE_PATTERN`), graded byte-for-byte
-> across both ports against `fixtures/claim/parse_branch_name.cases.json` +
-> `parse_worktree_name.cases.json`. The earlier `-N` collision-fallback agent gap
-> (#49 — a `banana-2` agent the published regex omitted) is corrected here, so the
-> canonical now matches real branches. `status`'s marker-reconciliation scan keeps
-> a **deliberate reduced** `DEFAULT_BRANCH_PATTERN` (it only needs `agent`+`issue`
-> to reconcile, and exposes `--branch-pattern` for consumer overrides) — a
-> scoped-down read, no longer a *capability* gap now that the full canonical
-> parsers exist.
+> **Parse contract — implemented + fixture-graded (#72, closing the #53 gap;
+> broadened to all three shapes in #131/#135).** The two regexes above are the
+> consumer-facing **read** contract. `parseBranchName` / `parseWorktreeName` in
+> `claim_core.{js,py}` parse a name into `{agent, project, lang, issue[, theme]}`
+> via the exact patterns above (`CANONICAL_BRANCH_PATTERN` /
+> `CANONICAL_WORKTREE_PATTERN`), graded byte-for-byte across both ports against
+> `fixtures/claim/parse_branch_name.cases.json` + `parse_worktree_name.cases.json`.
+> Generation is the standard subset: `buildBranch` / `buildWorktreeName` emit only
+> the standard form, and every resolver (`close`, `status`, `release`) routes
+> through these parsers rather than a bespoke `issue-`-token regex (#135) — so a
+> standard-form worktree resolves, closes, and reconciles. The earlier `-N`
+> collision-fallback agent gap (#49 — a `banana-2` agent the published regex
+> omitted) is corrected here. `status`'s marker-reconciliation scan keeps a
+> **deliberate reduced** read via `DEFAULT_BRANCH_PATTERN` — it only needs
+> `agent`+`issue`, delegates to `CANONICAL_BRANCH_PATTERN`, and exposes
+> `--branch-pattern` for consumer overrides.
 
 Pure helpers (graded by `fixtures/claim/*`): `langTag`, `buildBranch`,
 `buildWorktreeName`, `branchToWorktreeName` (the branch→worktree-dir bridge that
-close uses, handling both forms), `parseBranchName` / `parseWorktreeName` (the
-canonical name parsers, #72), plus the prefix-tolerant `inferFruitFromBranch`
+close uses, handling all three read shapes), `parseBranchName` / `parseWorktreeName`
+(the name parsers, #72), plus the prefix-tolerant `inferFruitFromBranch`
 and `worktreesWithIssue`. Design + rationale: avidrucker/lccjs#1460.
 
 ### Identity precedence (highest first)
 
-`--as <name>` → `CLAUDE_AGENT_NAME` env → branch-inferred (`[br-]<agent>/…issue-N`) →
+`--as <name>` → `CLAUDE_AGENT_NAME` env → branch-inferred (`[br-]<agent>/…`, the segment before the `/`) →
 auto. **Auto (no identity) is a hard error** — agents must be named by the human
 orchestrator. A forced identity is a single candidate; auto walks the roster
 minus already-taken names, falling back to `<roster[0]>-2` when all are taken.
@@ -429,7 +442,7 @@ the gated teardown — so it can never fabricate a close.
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--branch <name>` | resolved from the issue # | **Override** the auto-resolved branch (e.g. `br-<agent>/<project>-<lang>-issue-N`, or legacy `<fruit>/issue-N`). Rarely needed: `close` resolves the worktree + branch from the issue number (#104), so a bare `pmtools close <N>` works from the main checkout. Supply this only to force a specific branch. |
+| `--branch <name>` | resolved from the issue # | **Override** the auto-resolved branch (e.g. standard `br-<agent>/<project>-N`, or legacy `<fruit>/issue-N`). Rarely needed: `close` resolves the worktree + branch from the issue number (#104), so a bare `pmtools close <N>` works from the main checkout. Supply this only to force a specific branch. |
 | `--max N` | `5` | Push-race retry budget (invalid → default). |
 | `--dry-run` | off | Print the `WOULD CLOSE` plan, change nothing, exit 0. |
 | `--keep` | off | Land the commit but do NOT tear down the worktree/branch. |
@@ -498,8 +511,10 @@ transform; and the parent-tracker seams `find_parent_trackers` +
 
 ### Guard / flow sequence (in `main()` order)
 
-1. `parseArgs`; pre-flight: branch must match `[-/]issue-<N>` AND the given issue;
-   with `--branch`, chdir into the worktree.
+1. `parseArgs`; pre-flight: the branch must parse (any of the three schemes) to the
+   given issue via the shared name parser (`CANONICAL_BRANCH_PATTERN`), and
+   `is_safe_ref` must pass (#135); with
+   `--branch`, chdir into the worktree.
 2. `findClosingCommitSha`: scan `origin/main..HEAD` for a `Closes #N` body.
    Recovery path: if none, fetch + scan `origin/main -100` for an already-pushed
    close; if the issue is non-OPEN, treat as a clean close (delete claim ref,
@@ -656,8 +671,9 @@ be discarded.
 1. `parseArgs`: a single issue number + optional `--force`.
 2. `parseWorktreePorcelain(git worktree list --porcelain)` → `[{path, branch}]`;
    the main checkout is row 0. `findWorktreeForIssue(rows, issue)` matches a
-   non-main worktree by branch `/issue-<N>` (digit boundary — `issue-9` ≠
-   `issue-99`) or path basename `-issue-<N>`.
+   non-main worktree by parsing its branch and path basename through the shared name
+   parsers (all three schemes) and comparing the parsed issue to N — int-equality
+   keeps `9` from matching `99` (#135).
 3. **No worktree** → free the (possibly orphaned) claim ref and return `0`
    ("nothing to tear down"); the issue is left as-is.
 4. **Data-loss guard FIRST** (skipped by `--force`), so a refusal leaves the
